@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /gracias.html
+Disallow: /reserva.html
+
+Sitemap: https://franciscabustos.cl/sitemap.xml
