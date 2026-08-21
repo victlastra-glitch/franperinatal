@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Resultado del pago · Francisca Bustos</title>
+<meta name="description" content="Resultado del pago de tu sesión. La hora se confirma una vez aprobado el pago." />
+<meta name="robots" content="noindex,nofollow" />
+<link rel="canonical" href="https://franciscabustos.cl/pago-resultado" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="assets/styles.css?v=3" />
+<link rel="stylesheet" href="assets/home.css?v=2" />
+<link rel="stylesheet" href="assets/pages.css?v=2" />
+<style>
+  .pr-shell { padding: 64px 20px 96px; max-width: 640px; margin: 0 auto; text-align: center; }
+  .pr-state { padding: 32px 28px; border-radius: 14px; background: var(--paper, #FDFBF7); border: 1px solid var(--line, #E5DED1); }
+  .pr-state.is-loading { color: var(--ink-2, #5A534D); }
+  .pr-state.is-confirmed { border-color: #C9A8B3; background: #FAF6F0; }
+  .pr-state.is-pending { border-color: #E2D8C9; }
+  .pr-state.is-rejected { border-color: #C9A8B3; background: #F3E4E4; }
+  .pr-state.is-review { border-color: #E2D8C9; background: #FAF6F0; }
+  .pr-icon { font-size: 44px; line-height: 1; margin-bottom: 12px; font-family: var(--serif, Georgia, serif); }
+  .pr-title { font-family: var(--serif, Georgia, serif); font-size: 28px; font-weight: 300; color: var(--ink, #231F1C); margin: 8px 0 12px; line-height: 1.2; }
+  .pr-msg { font-size: 15px; color: var(--ink-2, #5A534D); line-height: 1.6; margin: 0 0 18px; }
+  .pr-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+  .pr-meta { margin-top: 24px; font-size: 13px; color: var(--ink-3, #8A8178); }
+  .pr-meta a { color: inherit; }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="/"><span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span></a>
+    <nav class="nav-links" aria-label="Principal">
+      <a class="nav-link" href="/">Inicio</a>
+      <a class="nav-link" href="/sobre-mi">Sobre mí</a>
+      <a class="nav-link" href="/servicios">Servicios</a>
+      <a class="nav-link" href="/faq">Preguntas</a>
+      <a class="nav-link" href="/contacto">Contacto</a>
+    </nav>
+  </div>
+</header>
+
+<main class="pr-shell">
+
+  <div id="pr-state-loading" class="pr-state is-loading">
+    <div class="pr-icon">•••</div>
+    <h1 class="pr-title">Estamos validando tu pago</h1>
+    <p class="pr-msg">Esto puede tomar unos segundos. No cierres esta página.</p>
+  </div>
+
+  <div id="pr-state-confirmed" class="pr-state is-confirmed" hidden>
+    <div class="pr-icon">✓</div>
+    <h1 class="pr-title">Reserva confirmada</h1>
+    <p class="pr-msg">Hemos recibido tu pago correctamente. Te enviamos un correo con los detalles de tu sesión, el enlace de Meet (si aplica) y la información administrativa.</p>
+    <div class="pr-actions">
+      <a href="/" class="btn btn-primary">Volver al inicio</a>
+    </div>
+  </div>
+
+  <div id="pr-state-pending" class="pr-state is-pending" hidden>
+    <div class="pr-icon">…</div>
+    <h1 class="pr-title">Pago en validación</h1>
+    <p class="pr-msg">Tu pago aún se está procesando. Si pagaste hace pocos minutos, podemos esperar y volver a consultar. Si necesitas ayuda, escríbenos por WhatsApp.</p>
+    <div class="pr-actions">
+      <button id="pr-retry" class="btn btn-primary">Volver a consultar</button>
+      <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">Escribir por WhatsApp</a>
+    </div>
+  </div>
+
+  <div id="pr-state-rejected" class="pr-state is-rejected" hidden>
+    <div class="pr-icon">!</div>
+    <h1 class="pr-title">Pago no aprobado</h1>
+    <p class="pr-msg">El pago no fue aprobado. Tu hora no quedó confirmada. Puedes intentar nuevamente desde el proceso de reserva o contactarnos directamente.</p>
+    <div class="pr-actions">
+      <a href="/reserva" class="btn btn-primary">Volver a reservar</a>
+      <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">Escribir por WhatsApp</a>
+    </div>
+  </div>
+
+  <div id="pr-state-review" class="pr-state is-review" hidden>
+    <div class="pr-icon">i</div>
+    <h1 class="pr-title">Estamos revisando tu reserva</h1>
+    <p class="pr-msg">Recibimos tu pago. Estamos validando administrativamente la hora. Te contactaremos a la brevedad por correo o WhatsApp para confirmar.</p>
+    <div class="pr-actions">
+      <a href="https://wa.me/56957663038" class="btn btn-primary" rel="noopener">Escribir por WhatsApp</a>
+    </div>
+  </div>
+
+  <p class="pr-meta">
+    Si tienes dudas, escríbenos a <a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a>.
+  </p>
+</main>
+
+<script src="assets/analytics.js?v=2"></script>
+<script>
+  // Web 04.9 PRODUCTION: payment_status query goes through the Cloudflare
+  // proxy /api/payment-status (see _worker.js). The Apps Script Web App URL
+  // is never exposed to the browser. The proxy enforces a no-PII allowlist.
+  var PAYMENT_STATUS_ENDPOINT = '/api/payment-status';
+  var CONFIRMED_PAYMENT_STATUSES = {
+    paid_confirmed: true,
+    confirmed: true,
+    paid: true,
+    success: true
+  };
+
+  function showState(id) {
+    ['loading','confirmed','pending','rejected','review'].forEach(function(s) {
+      var el = document.getElementById('pr-state-' + s);
+      if (el) el.hidden = (s !== id);
+    });
+  }
+
+  function isConfirmedPaymentStatus(status) {
+    return !!CONFIRMED_PAYMENT_STATUSES[String(status || '').trim().toLowerCase()];
+  }
+
+  function statusToView(status) {
+    var normalized = String(status || '').trim().toLowerCase();
+    if (isConfirmedPaymentStatus(normalized)) return 'confirmed';
+    if (normalized === 'payment_rejected' || normalized === 'rejected') return 'rejected';
+    if (normalized === 'payment_review_required') return 'review';
+    return 'pending';
+  }
+
+  function safeString(value) {
+    return String(value == null ? '' : value).trim();
+  }
+
+  function safeDimension(value) {
+    var normalized = safeString(value).toLowerCase();
+    return /^[a-z0-9_-]{1,40}$/.test(normalized) ? normalized : '';
+  }
+
+  function safeAmount(value) {
+    var amount = Number(value);
+    return Number.isFinite(amount) && amount > 0 ? amount : null;
+  }
+
+  function getTrackingStorage() {
+    var testKey = '__fb_ga4_storage_test__';
+    try {
+      localStorage.setItem(testKey, '1');
+      localStorage.removeItem(testKey);
+      return localStorage;
+    } catch (_) {}
+    try {
+      sessionStorage.setItem(testKey, '1');
+      sessionStorage.removeItem(testKey);
+      return sessionStorage;
+    } catch (_) {}
+    return null;
+  }
+
+  function buildPaidConversionPayload(data) {
+    if (!data || !isConfirmedPaymentStatus(data.status)) return null;
+
+    var transactionId = safeString(data.commerceOrder || data.reservationId);
+    if (!transactionId) {
+      console.warn('[payment-result] GA4 purchase blocked: missing safe transaction id.');
+      return null;
+    }
+
+    var amount = safeAmount(data.amount);
+    if (amount == null) {
+      console.warn('[payment-result] GA4 purchase blocked: missing valid amount.');
+      return null;
+    }
+
+    return {
+      transaction_id: transactionId,
+      value: amount,
+      currency: 'CLP',
+      payment_provider: 'flow',
+      service_type: safeDimension(data.serviceType),
+      modality: safeDimension(data.modality),
+      status: safeString(data.status).toLowerCase()
+    };
+  }
+
+  function sendPaidConversionEvents(data) {
+    var payload = buildPaidConversionPayload(data);
+    if (!payload) return;
+
+    if (window._ga4Loaded !== true || typeof window.gtag !== 'function') {
+      console.warn('[payment-result] GA4 purchase not sent: analytics consent not accepted or GA4 not loaded.');
+      return;
+    }
+
+    var storage = getTrackingStorage();
+    if (!storage) {
+      console.warn('[payment-result] GA4 purchase blocked: storage unavailable for idempotency.');
+      return;
+    }
+
+    var storageKey = 'ga4_purchase_sent_' + payload.transaction_id;
+    if (storage.getItem(storageKey)) return;
+
+    var purchasePayload = {
+      transaction_id: payload.transaction_id,
+      value: payload.value,
+      currency: payload.currency,
+      payment_provider: payload.payment_provider,
+      service_type: payload.service_type,
+      modality: payload.modality
+    };
+
+    window.gtag('event', 'purchase', purchasePayload);
+    window.gtag('event', 'reserva_pagada_confirmada', payload);
+    storage.setItem(storageKey, '1');
+  }
+
+  async function fetchStatus(st) {
+    try {
+      var resp = await fetch(PAYMENT_STATUS_ENDPOINT + '?st=' + encodeURIComponent(st), {
+        method: 'GET', cache: 'no-store'
+      });
+      var data = await resp.json();
+      if (!data || !data.ok) { showState('pending'); return false; }
+      var view = statusToView(data.status);
+      showState(view);
+      if (view === 'confirmed') sendPaidConversionEvents(data);
+      return (view === 'confirmed' || view === 'rejected');
+    } catch (e) {
+      showState('pending');
+      return false;
+    }
+  }
+
+  var params = new URLSearchParams(window.location.search);
+  var st = params.get('st');
+  if (!st) {
+    try { st = sessionStorage.getItem('fb_last_status_token'); } catch (_) {}
+  }
+
+  if (!st) {
+    showState('pending');
+  } else {
+    fetchStatus(st);
+    var attempts = 0;
+    var interval = setInterval(function() {
+      attempts++;
+      if (attempts >= 12) { clearInterval(interval); return; }
+      var pendingEl = document.getElementById('pr-state-pending');
+      var loadingEl = document.getElementById('pr-state-loading');
+      var isPolling = (pendingEl && !pendingEl.hidden) || (loadingEl && !loadingEl.hidden);
+      if (isPolling) {
+        fetchStatus(st).then(function(done) { if (done) clearInterval(interval); });
+      } else {
+        clearInterval(interval);
+      }
+    }, 5000);
+  }
+
+  var retryBtn = document.getElementById('pr-retry');
+  if (retryBtn) retryBtn.addEventListener('click', function() {
+    showState('loading');
+    if (st) fetchStatus(st);
+  });
+</script>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span>
+    </div>
+    <nav class="footer-nav" aria-label="Navegación inferior">
+      <a href="/">Inicio</a>
+      <a href="/sobre-mi">Sobre mí</a>
+      <a href="/servicios">Servicios</a>
+      <a href="/faq">Preguntas frecuentes</a>
+      <a href="/contacto">Contacto</a>
+      <a href="/privacidad">Privacidad</a>
+    </nav>
+  </div>
+</footer>
+
+</body>
+</html>

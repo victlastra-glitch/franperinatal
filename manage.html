@@ -1,0 +1,1057 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta name="theme-color" content="#FAF6F0" />
+  <title>Gestionar reserva · Francisca Bustos</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+  <link rel="stylesheet" href="assets/styles.css?v=3" />
+  <link rel="stylesheet" href="assets/pages.css?v=3" />
+
+  <style>
+    /* ── Manage page shell ── */
+    .manage-page {
+      padding-top: 80px;
+      min-height: 100vh;
+      background: var(--bg);
+    }
+    .manage-hero {
+      padding: 4rem 2rem 2.5rem;
+      text-align: center;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+    .manage-hero .eyebrow {
+      margin-bottom: 14px;
+      color: var(--sage-deep);
+    }
+    .manage-hero h1 {
+      font-size: clamp(30px, 5vw, 46px);
+      line-height: 1.1;
+      margin: 0 0 16px;
+    }
+    .manage-hero h1 em {
+      font-style: italic;
+      font-weight: 300;
+      color: var(--sage-deep);
+    }
+    .manage-hero p {
+      color: var(--ink-2);
+      font-size: 15.5px;
+      line-height: 1.6;
+      max-width: 420px;
+      margin: 0 auto;
+    }
+    .manage-container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 0 1.5rem 6rem;
+    }
+
+    /* ── Card ── */
+    .mg-card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: var(--r-lg);
+      box-shadow: var(--shadow-sm);
+      overflow: hidden;
+    }
+
+    /* ── Views ── */
+    .mg-view { display: none; }
+    .mg-view.active { display: block; }
+
+    /* ── Loading ── */
+    .mg-loading {
+      text-align: center;
+      padding: 4rem 2rem;
+    }
+    .mg-spinner {
+      width: 36px; height: 36px;
+      border: 2px solid var(--line);
+      border-top-color: var(--sage-deep);
+      border-radius: 50%;
+      animation: mg-spin 0.8s linear infinite;
+      margin: 0 auto 1.25rem;
+    }
+    @keyframes mg-spin { to { transform: rotate(360deg); } }
+    .mg-loading p { color: var(--ink-2); font-size: 15px; }
+
+    /* ── Reservation detail ── */
+    .mg-det-header {
+      padding: 2rem 2rem 1.5rem;
+      border-bottom: 1px solid var(--line);
+    }
+    .mg-det-header .eyebrow { color: var(--sage-deep); margin-bottom: 8px; }
+    .mg-det-header h2 {
+      font-family: var(--serif);
+      font-size: 1.5rem;
+      font-weight: 400;
+      margin: 0;
+    }
+    .mg-det-grid {
+      padding: 1.5rem 2rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem 2rem;
+    }
+    .mg-det-item label {
+      display: block;
+      font-family: var(--sans);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--ink-2);
+      margin-bottom: 4px;
+    }
+    .mg-det-item span { font-size: 15px; color: var(--ink); }
+
+    /* Status badge */
+    .mg-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--sans);
+      font-size: 12.5px;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 999px;
+    }
+    .mg-badge::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .mg-badge.active    { background: #EAF4EB; color: #2D7A38; }
+    .mg-badge.cancelled { background: #F5EAE4; color: #8B2A20; }
+    .mg-badge.rescheduled { background: #EAF0F5; color: #2A5A80; }
+
+    /* ── Action buttons ── */
+    .mg-actions {
+      padding: 1.25rem 2rem 1.75rem;
+      border-top: 1px solid var(--line);
+      display: flex;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+    .mg-actions .btn { flex: 1; min-width: 160px; justify-content: center; }
+
+    /* ── Panel (cancel / reschedule) ── */
+    .mg-panel {
+      padding: 1.75rem 2rem 2rem;
+      border-top: 1px solid var(--line);
+      display: none;
+    }
+    .mg-panel.open { display: block; }
+    .mg-panel h3 {
+      font-family: var(--serif);
+      font-size: 1.3rem;
+      font-weight: 400;
+      margin: 0 0 0.75rem;
+    }
+    .mg-panel > p {
+      font-size: 15px;
+      color: var(--ink-2);
+      margin-bottom: 1.5rem;
+      line-height: 1.6;
+    }
+    .mg-panel > p a { color: var(--ink); }
+    .mg-panel-actions { display: flex; gap: 0.75rem; flex-wrap: wrap; margin-top: 1.25rem; }
+
+    /* Alert */
+    .mg-alert {
+      padding: 12px 14px;
+      border-radius: var(--r-sm);
+      font-size: 14px;
+      margin-bottom: 1rem;
+      display: none;
+    }
+    .mg-alert.error   { background: #fbeaec; border: 1px solid #e8c2c9; color: #8e2430; }
+    .mg-alert.success { background: #EAF4EB; border: 1px solid #A8D9AE; color: #1E5C27; }
+    .mg-alert.show    { display: block; }
+
+    /* ── Calendar ── */
+    .mg-cal-head { margin-bottom: 1rem; }
+    .mg-cal-head h4 {
+      font-family: var(--sans);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--ink-2);
+      margin: 0 0 1rem;
+    }
+    .mg-cal-nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+    .mg-cal-btn {
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 50%;
+      width: 32px; height: 32px;
+      cursor: pointer;
+      font-size: 1rem;
+      color: var(--ink);
+      display: flex; align-items: center; justify-content: center;
+      transition: background .15s, border-color .15s;
+    }
+    .mg-cal-btn:hover { background: var(--bg-2); border-color: var(--ink); }
+    .mg-cal-btn:disabled { opacity: 0.3; cursor: default; }
+    .mg-cal-month { font-size: 15px; font-weight: 600; color: var(--ink); }
+
+    .mg-cal-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 3px;
+    }
+    .mg-cal-label {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--ink-3);
+      padding: 0.25rem 0;
+    }
+    .mg-cal-day {
+      text-align: center;
+      font-size: 14px;
+      padding: 6px 2px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background .12s;
+      color: var(--ink);
+    }
+    .mg-cal-day:empty { cursor: default; }
+    .mg-cal-day.avail:hover { background: var(--bg-2); }
+    .mg-cal-day.selected { background: var(--ink); color: var(--bg); font-weight: 600; }
+    .mg-cal-day.disabled { color: var(--ink-3); cursor: default; }
+    .mg-cal-day.today { font-weight: 700; text-decoration: underline; }
+
+    /* ── Slots ── */
+    .mg-slots-section { margin-top: 1.5rem; display: none; }
+    .mg-slots-section h4 {
+      font-family: var(--sans);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--ink-2);
+      margin: 0 0 0.75rem;
+    }
+    .mg-slots { display: flex; flex-wrap: wrap; gap: 8px; }
+    .mg-slot {
+      padding: 6px 14px;
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      font-size: 14px;
+      cursor: pointer;
+      background: transparent;
+      color: var(--ink);
+      transition: background .12s, border-color .12s;
+      font-family: var(--sans);
+    }
+    .mg-slot:hover { background: var(--bg-2); border-color: var(--ink); }
+    .mg-slot.selected { background: var(--ink); border-color: var(--ink); color: var(--bg); }
+    .mg-slot.booked { opacity: 0.35; cursor: default; }
+
+    /* ── Final state views ── */
+    .mg-final {
+      text-align: center;
+      padding: 3.5rem 2rem;
+    }
+    .mg-final-icon {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1.25rem;
+    }
+    .mg-final-icon.ok  { background: #EAF4EB; }
+    .mg-final-icon.err { background: #F5EAE4; }
+    .mg-final-icon svg { width: 26px; height: 26px; }
+    .mg-final h2 {
+      font-family: var(--serif);
+      font-size: 1.6rem;
+      font-weight: 400;
+      margin: 0 0 0.75rem;
+    }
+    .mg-final p {
+      color: var(--ink-2);
+      font-size: 15px;
+      max-width: 400px;
+      margin: 0 auto 2rem;
+      line-height: 1.6;
+    }
+
+    /* ── Inline btn spinner ── */
+    .btn-spin {
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.4);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: mg-spin .7s linear infinite;
+      display: none;
+      vertical-align: middle;
+      margin-left: 6px;
+    }
+    .btn.is-loading .btn-spin  { display: inline-block; }
+    .btn.is-loading .btn-label { opacity: 0.4; }
+    .btn.is-loading { pointer-events: none; }
+
+    /* ── btn-danger ── */
+    .btn-danger {
+      background: #8B2A20;
+      border-color: #8B2A20;
+      color: #fff;
+    }
+    .btn-danger:hover { background: #6B1E16; border-color: #6B1E16; transform: translateY(-1px); }
+
+    /* ── btn-sage ── */
+    .btn-sage {
+      background: var(--sage-deep);
+      border-color: var(--sage-deep);
+      color: #fff;
+    }
+    .btn-sage:hover { background: #5d6c56; border-color: #5d6c56; transform: translateY(-1px); }
+
+    @media (max-width: 600px) {
+      .manage-hero { padding: 3rem 1.25rem 2rem; }
+      .manage-container { padding: 0 0 4rem; }
+      .mg-card { border-radius: 0; border-left: none; border-right: none; }
+      .mg-det-grid { grid-template-columns: 1fr; padding: 1.25rem; }
+      .mg-det-header, .mg-actions, .mg-panel { padding: 1.25rem; }
+      .mg-actions .btn { min-width: 130px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ========== NAV ========== -->
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="index.html">
+      <span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span>
+    </a>
+    <nav class="nav-links" aria-label="Principal">
+      <a class="nav-link" href="index.html">Inicio</a>
+      <a class="nav-link" href="sobre-mi.html">Sobre mí</a>
+      <a class="nav-link" href="servicios.html">Servicios</a>
+      <a class="nav-link" href="faq.html">Preguntas</a>
+      <a class="nav-link" href="contacto.html">Contacto</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="/reserva" class="btn btn-primary">Reservar hora <span class="arrow">→</span></a>
+      <button class="nav-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="nav-panel" id="nav-panel" role="menu">
+    <a class="nav-link" href="index.html">Inicio</a>
+    <a class="nav-link" href="sobre-mi.html">Sobre mí</a>
+    <a class="nav-link" href="servicios.html">Servicios</a>
+    <a class="nav-link" href="faq.html">Preguntas</a>
+    <a class="nav-link" href="contacto.html">Contacto</a>
+    <a href="/reserva" class="btn btn-primary btn-lg" style="margin-top:16px;">Reservar hora →</a>
+  </div>
+</header>
+
+<!-- ========== MAIN ========== -->
+<main class="manage-page">
+
+  <div class="manage-hero">
+    <div class="eyebrow eyebrow-mark">Gestión de reserva</div>
+    <h1>Tu <em>sesión</em>.</h1>
+    <p>Cancela o reagenda tu hora directamente desde aquí, sin necesidad de llamar.</p>
+  </div>
+
+  <div class="manage-container">
+
+    <!-- VIEW: Loading -->
+    <div class="mg-view active" id="view-loading">
+      <div class="mg-card">
+        <div class="mg-loading">
+          <div class="mg-spinner"></div>
+          <p>Cargando tu reserva…</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Error -->
+    <div class="mg-view" id="view-error">
+      <div class="mg-card">
+        <div class="mg-final">
+          <div class="mg-final-icon err">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#8B2A20" stroke-width="1.5">
+              <circle cx="12" cy="12" r="10"/>
+              <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+          </div>
+          <h2 id="err-title">Enlace no válido</h2>
+          <p id="err-body">Este enlace ha expirado o no es válido. Si crees que es un error, contáctame directamente.</p>
+          <a href="contacto.html" class="btn btn-ghost">Contactar a Francisca</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Detalle + acciones -->
+    <div class="mg-view" id="view-detail">
+      <div class="mg-card">
+
+        <div class="mg-det-header">
+          <div class="eyebrow">Tu reserva</div>
+          <h2 id="det-nombre">—</h2>
+        </div>
+
+        <div class="mg-det-grid">
+          <div class="mg-det-item"><label>Fecha</label><span id="det-fecha">—</span></div>
+          <div class="mg-det-item"><label>Hora</label><span id="det-hora">—</span></div>
+          <div class="mg-det-item"><label>Servicio</label><span id="det-servicio">—</span></div>
+          <div class="mg-det-item"><label>Modalidad</label><span id="det-modalidad">—</span></div>
+          <div class="mg-det-item"><label>Estado</label><span id="det-estado">—</span></div>
+        </div>
+
+        <!-- Botones (solo si activa) -->
+        <div class="mg-actions" id="det-actions" style="display:none">
+          <button class="btn btn-sage" id="btn-reschedule">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0">
+              <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-.22-3.42"/>
+            </svg>
+            Reagendar
+          </button>
+          <button class="btn btn-ghost" id="btn-cancel" style="color:#8B2A20;border-color:#c2a0a0;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            Cancelar hora
+          </button>
+        </div>
+
+        <!-- Panel: CANCELAR -->
+        <div class="mg-panel" id="panel-cancel">
+          <h3>Cancelar sesión</h3>
+          <p>Tu sesión será cancelada y recibirás confirmación por correo. Si quieres reagendar más adelante, puedes hacerlo desde <a href="/reserva">reservar hora</a>.</p>
+
+          <div class="mg-alert error" id="cancel-alert"></div>
+
+          <div class="mg-panel-actions">
+            <button class="btn btn-danger" id="btn-cancel-confirm">
+              <span class="btn-label">Confirmar cancelación</span>
+              <span class="btn-spin"></span>
+            </button>
+            <button class="btn btn-ghost" id="btn-cancel-back">Volver</button>
+          </div>
+        </div>
+
+        <!-- Panel: REAGENDAR -->
+        <div class="mg-panel" id="panel-reschedule">
+          <h3>Reagendar sesión</h3>
+          <p>Elige un nuevo día y hora. La hora actual se cancelará automáticamente y se confirmará la nueva.</p>
+
+          <div class="mg-alert error" id="reschedule-alert"></div>
+
+          <!-- Calendario -->
+          <div class="mg-cal-head">
+            <h4>Selecciona fecha</h4>
+            <div class="mg-cal-nav">
+              <button class="mg-cal-btn" id="cal-prev" aria-label="Mes anterior">←</button>
+              <span class="mg-cal-month" id="cal-month-label">—</span>
+              <button class="mg-cal-btn" id="cal-next" aria-label="Mes siguiente">→</button>
+            </div>
+            <div class="mg-cal-grid" id="cal-grid"></div>
+          </div>
+
+          <!-- Horarios -->
+          <div class="mg-slots-section" id="slots-section">
+            <h4>Selecciona horario</h4>
+            <div class="mg-slots" id="slots-grid"></div>
+          </div>
+
+          <div class="mg-panel-actions" id="reschedule-actions" style="display:none">
+            <button class="btn btn-sage" id="btn-reschedule-confirm">
+              <span class="btn-label">Confirmar reagendamiento</span>
+              <span class="btn-spin"></span>
+            </button>
+            <button class="btn btn-ghost" id="btn-reschedule-back">Volver</button>
+          </div>
+          <div id="reschedule-back-only" style="margin-top:0.75rem;display:none">
+            <button class="btn btn-ghost" id="btn-reschedule-back2">Volver</button>
+          </div>
+        </div>
+
+      </div><!-- /.mg-card -->
+    </div><!-- /#view-detail -->
+
+    <!-- VIEW: Cancelación exitosa -->
+    <div class="mg-view" id="view-cancelled">
+      <div class="mg-card">
+        <div class="mg-final">
+          <div class="mg-final-icon ok">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2D7A38" stroke-width="1.5">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h2>Hora cancelada</h2>
+          <p>Tu sesión ha sido cancelada. Recibirás un correo de confirmación en breve. Cuando quieras, puedes reservar una nueva hora.</p>
+          <a href="/reserva" class="btn btn-primary">Reservar nueva hora →</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW: Reagendamiento exitoso -->
+    <div class="mg-view" id="view-rescheduled">
+      <div class="mg-card">
+        <div class="mg-final">
+          <div class="mg-final-icon ok">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2D7A38" stroke-width="1.5">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <h2>Sesión reagendada</h2>
+          <p id="rescheduled-text">Tu hora ha sido reagendada correctamente. Recibirás confirmación por correo.</p>
+          <a href="index.html" class="btn btn-ghost">Volver al inicio</a>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /.manage-container -->
+</main>
+
+<!-- ========== FOOTER ========== -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand-name">Francisca Bustos</div>
+        <p class="footer-brand-desc">Psicología clínica especializada en salud mental perinatal, depresión posparto y acompañamiento emocional en la maternidad.</p>
+      </div>
+      <div class="footer-col">
+        <h5>Navegación</h5>
+        <ul>
+          <li><a href="index.html">Inicio</a></li>
+          <li><a href="sobre-mi.html">Sobre mí</a></li>
+          <li><a href="servicios.html">Servicios</a></li>
+          <li><a href="/reserva">Reservar hora</a></li>
+          <li><a href="faq.html">Preguntas frecuentes</a></li>
+          <li><a href="contacto.html">Contacto</a></li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Contacto</h5>
+        <ul>
+          <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
+          <li><a href="https://wa.me/56957663038">+56 9 5766 3038</a></li>
+          <li>Atención online para personas en Chile</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <h5>Respaldo</h5>
+        <ul>
+          <li>Col. Psicólogos Chile · 12.847</li>
+          <li>Reg. Superint. Salud · 598177</li>
+          <li>Univ. Zaragoza</li>
+          <li><a href="privacidad.html">Aviso de privacidad</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 Francisca Bustos · Todos los derechos reservados</span>
+      <span>Consulta confidencial · Secreto profesional garantizado</span>
+    </div>
+  </div>
+</footer>
+
+<script src="assets/app.js?v=5"></script>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ─── Config ─── */
+  const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxdIwUJKDl0lPARf5noM_lm7MqWGq-B5lyljmOL5jr9lqvEV5eq9ZDHNENs-DSma6JH/exec';
+  const RESERVATION_TIME_ZONE = 'America/Santiago';
+  const MIN_BOOKING_LEAD_MINUTES = 120;
+  const RESCHEDULE_CONFIG = Object.freeze({
+    // Fuente operativa local de feriados para el flujo de reagendamiento.
+    // Si se requiere mantenimiento anual o sincronización con backend, mover esto a una configuración central en fase 2.
+    holidays: [
+      '2026-01-01','2026-04-03','2026-04-04','2026-05-01','2026-05-21',
+      '2026-06-29','2026-07-16','2026-08-15','2026-09-18','2026-09-19',
+      '2026-10-12','2026-10-31','2026-11-01','2026-12-08','2026-12-25',
+      '2027-01-01','2027-04-02','2027-04-03','2027-05-01','2027-05-21',
+      '2027-06-28','2027-07-16','2027-08-15','2027-09-18','2027-09-19',
+      '2027-10-12','2027-10-30','2027-11-01','2027-12-08','2027-12-25'
+    ],
+    hours: ['10:00','11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00']
+  });
+  const HOLIDAYS_CL = new Set(RESCHEDULE_CONFIG.holidays);
+
+  const MONTHS    = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  const DAY_ABRS  = ['Lu','Ma','Mi','Ju','Vi'];
+  const DAYS_FULL = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+  const ALL_HOURS = RESCHEDULE_CONFIG.hours.slice();
+
+  /* ─── Estado ─── */
+  let token       = null;
+  let reserva     = null;
+  let bookedSlots = [];
+  let calYear, calMonth;
+  let selDate = null;
+  let selTime = null;
+  let autoOpen = null;
+
+  /* ─── Helpers de vista ─── */
+  function showView(id) {
+    document.querySelectorAll('.mg-view').forEach(function(v){ v.classList.remove('active'); });
+    var el = document.getElementById(id);
+    if (el) el.classList.add('active');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function showAlert(id, msg, type) {
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = msg;
+    el.className = 'mg-alert ' + (type || 'error') + ' show';
+  }
+  function hideAlert(id) {
+    var el = document.getElementById(id);
+    if (el) { el.className = 'mg-alert'; el.textContent = ''; }
+  }
+
+  function setLoading(btnId, on) {
+    var btn = document.getElementById(btnId);
+    if (!btn) return;
+    if (on) btn.classList.add('is-loading');
+    else btn.classList.remove('is-loading');
+  }
+
+  function openPanel(id) {
+    document.querySelectorAll('.mg-panel').forEach(function(p){ p.classList.remove('open'); });
+    var p = document.getElementById(id);
+    if (p) {
+      p.classList.add('open');
+      setTimeout(function(){ p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
+    }
+  }
+  function closePanels() {
+    document.querySelectorAll('.mg-panel').forEach(function(p){ p.classList.remove('open'); });
+  }
+
+  /* ─── Formateo ─── */
+  function pad(n) { return String(n).padStart(2, '0'); }
+
+  const santiagoNowFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: RESERVATION_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23'
+  });
+
+  function getSantiagoNowParts() {
+    var parts = {};
+    santiagoNowFormatter.formatToParts(new Date()).forEach(function(part) {
+      if (part.type !== 'literal') parts[part.type] = part.value;
+    });
+    return {
+      year: Number(parts.year),
+      month: Number(parts.month),
+      day: Number(parts.day),
+      hour: Number(parts.hour),
+      minute: Number(parts.minute)
+    };
+  }
+
+  function dateKeyFromNumbers(year, month, day) {
+    return year + '-' + pad(month) + '-' + pad(day);
+  }
+
+  function dateKeyFromDate(date) {
+    return dateKeyFromNumbers(date.getFullYear(), date.getMonth() + 1, date.getDate());
+  }
+
+  function todayISO() {
+    var now = getSantiagoNowParts();
+    return dateKeyFromNumbers(now.year, now.month, now.day);
+  }
+
+  function toISO(y, m, d) { return y + '-' + pad(m+1) + '-' + pad(d); }
+
+  function formatFechaLarga(iso) {
+    if (!iso) return '—';
+    // Soporta: "lunes, 11 mayo | 2026-05-11" · "2026-05-11" · "2026-05-11T04:00:00.000Z"
+    var s = String(iso);
+    if (s.includes(' | ')) s = s.split(' | ')[1].trim();
+    var match = s.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return s; // fallback seguro: mostrar valor original, nunca lanzar error
+    var y = Number(match[1]), m = Number(match[2]), d = Number(match[3]);
+    var dow = DAYS_FULL[new Date(y, m - 1, d).getDay()];
+    if (!dow) return match[1] + '-' + match[2] + '-' + match[3]; // fallback si día inválido
+    return dow.charAt(0).toUpperCase() + dow.slice(1) + ' ' + d + ' de ' + MONTHS[m - 1] + ' de ' + y;
+  }
+
+  function extractISODate(value) {
+    var s = String(value || '').trim();
+    if (!s) return '';
+    if (s.includes(' | ')) s = s.split(' | ')[1].trim();
+    var match = s.match(/(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : s;
+  }
+
+  function normalizeHourValue(value) {
+    var s = String(value || '').trim();
+    if (!s) return '';
+    var match = s.match(/(\d{1,2}):(\d{2})/);
+    if (!match) return s;
+    return match[1].padStart(2, '0') + ':' + match[2];
+  }
+
+  function statusBadge(s) {
+    var labels = { active: 'Activa', cancelled: 'Cancelada', rescheduled: 'Reagendada' };
+    return '<span class="mg-badge ' + (s||'active') + '">' + (labels[s]||s) + '</span>';
+  }
+
+  /* ─── Regla mínimo 120 minutos de anticipación ─── */
+  function minBookableHour() {
+    var now = getSantiagoNowParts();
+    var nowMins = now.hour * 60 + now.minute;
+    return Math.ceil((nowMins + MIN_BOOKING_LEAD_MINUTES) / 60);
+  }
+
+  function isSlotTooSoon(dateISO, hourStr) {
+    if (dateISO !== todayISO()) return false;
+    var hh = parseInt(hourStr.split(':')[0], 10);
+    return hh < minBookableHour();
+  }
+
+  /* ─── Init ─── */
+  function init() {
+    var params = new URLSearchParams(window.location.search);
+    token    = params.get('token');
+    autoOpen = params.get('open');
+    if (!token) {
+      showError('Enlace no válido', 'No se encontró un código de reserva. Usa el enlace que recibiste en tu email de confirmación.');
+      return;
+    }
+    loadReservation();
+  }
+
+  /* ─── Cargar reserva ─── */
+  // Usamos POST text/plain para evitar fallos del GET cross-origin con redirect.
+  async function loadReservation() {
+    showView('view-loading');
+    try {
+      var resp = await fetch(WEBAPP_URL, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'manage', token: token })
+      });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      var data = await resp.json();
+      if (!data.ok) {
+        var errTitles = { token_not_found: 'Reserva no encontrada', already_processed: 'Reserva ya procesada' };
+        showError(
+          errTitles[data.error] || 'Enlace no válido',
+          data.error === 'token_not_found'
+            ? 'No encontramos una reserva activa con este enlace. Si crees que es un error, contáctame directamente.'
+            : 'Esta reserva ya fue cancelada o reagendada anteriormente.'
+        );
+        return;
+      }
+      reserva = data;
+      try {
+        renderDetail();
+      } catch (renderErr) {
+        // Error de render (no de red): los datos llegaron bien pero algo falló al mostrarlos.
+        // Seguimos mostrando view-detail aunque algún campo quede en blanco.
+        console.error('[manage] renderDetail error:', renderErr && renderErr.message, renderErr);
+      }
+      showView('view-detail');
+
+      if (autoOpen === 'cancel' && reserva.status === 'active') {
+        document.getElementById('btn-cancel').click();
+      } else if (autoOpen === 'reschedule' && reserva.status === 'active') {
+        document.getElementById('btn-reschedule').click();
+      }
+    } catch (e) {
+      console.error('[manage] loadReservation error:', e && e.message, e);
+      showError(
+        'Error de conexión',
+        'No pudimos cargar los detalles de tu reserva. Puedes intentarlo nuevamente o contactar directamente a Francisca.'
+      );
+    }
+  }
+
+  /* ─── Mostrar detalle ─── */
+  function renderDetail() {
+    // Normaliza hora: extrae HH:mm desde cualquier valor que devuelva el Sheet
+    // ("18:00", "18:00 h", "1899-12-30T22:42:45.000Z", etc.)
+    var _horaDisplay = normalizeHourValue(reserva.hora) || '—';
+
+    document.getElementById('det-nombre').textContent    = reserva.nombre    || '—';
+    document.getElementById('det-fecha').textContent     = reserva.fecha     ? formatFechaLarga(reserva.fecha) : '—';
+    document.getElementById('det-hora').textContent      = _horaDisplay;
+    document.getElementById('det-servicio').textContent  = reserva.servicio  || '—';
+    document.getElementById('det-modalidad').textContent = reserva.modalidad || '—';
+    document.getElementById('det-estado').innerHTML      = statusBadge(reserva.status);
+    document.getElementById('det-actions').style.display = (reserva.status === 'active') ? 'flex' : 'none';
+  }
+
+  function showError(title, body) {
+    document.getElementById('err-title').textContent = title;
+    document.getElementById('err-body').textContent  = body;
+    showView('view-error');
+  }
+
+  /* ─── Cancelar ─── */
+  document.getElementById('btn-cancel').addEventListener('click', function () {
+    closePanels();
+    hideAlert('cancel-alert');
+    openPanel('panel-cancel');
+  });
+
+  document.getElementById('btn-cancel-back').addEventListener('click', closePanels);
+
+  document.getElementById('btn-cancel-confirm').addEventListener('click', async function () {
+    hideAlert('cancel-alert');
+    setLoading('btn-cancel-confirm', true);
+    try {
+      var resp = await fetch(WEBAPP_URL, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action: 'cancel_confirm', token: token })
+      });
+      var data = await resp.json();
+      if (data.ok) {
+        showView('view-cancelled');
+      } else {
+        var msg = data.error === 'already_processed'
+          ? 'Esta reserva ya fue procesada anteriormente.'
+          : (data.message || 'No se pudo cancelar. Por favor contáctame directamente.');
+        showAlert('cancel-alert', msg, 'error');
+      }
+    } catch (e) {
+      showAlert('cancel-alert', 'Error de conexión. Intenta de nuevo o contáctame directamente.', 'error');
+    }
+    setLoading('btn-cancel-confirm', false);
+  });
+
+  /* ─── Reagendar ─── */
+  document.getElementById('btn-reschedule').addEventListener('click', async function () {
+    closePanels();
+    hideAlert('reschedule-alert');
+    selDate = null;
+    selTime = null;
+
+    var now = getSantiagoNowParts();
+    calYear  = now.year;
+    calMonth = now.month - 1;
+
+    openPanel('panel-reschedule');
+
+    document.getElementById('slots-section').style.display = 'none';
+    document.getElementById('reschedule-actions').style.display = 'none';
+    document.getElementById('reschedule-back-only').style.display = 'block';
+
+    try {
+      var resp = await fetch(WEBAPP_URL, { method: 'GET', cache: 'no-store', credentials: 'omit' });
+      if (resp.ok) {
+        var data = await resp.json();
+        bookedSlots = Array.isArray(data) ? data : [];
+      }
+    } catch (_) { bookedSlots = []; }
+
+    renderCalendar();
+  });
+
+  function backFromReschedule() {
+    closePanels();
+    selDate = null;
+    selTime = null;
+  }
+  document.getElementById('btn-reschedule-back').addEventListener('click', backFromReschedule);
+  document.getElementById('btn-reschedule-back2').addEventListener('click', backFromReschedule);
+
+  /* ─── Calendario: lunes a viernes, feriados bloqueados ─── */
+  function renderCalendar() {
+    var label = document.getElementById('cal-month-label');
+    var grid  = document.getElementById('cal-grid');
+    var today = todayISO();
+
+    label.textContent = MONTHS[calMonth] + ' ' + calYear;
+
+    var now = getSantiagoNowParts();
+    document.getElementById('cal-prev').disabled =
+      (calYear === now.year && calMonth <= (now.month - 1));
+
+    grid.innerHTML = '';
+    DAY_ABRS.forEach(function(d) {
+      var cell = document.createElement('div');
+      cell.className = 'mg-cal-label';
+      cell.textContent = d;
+      grid.appendChild(cell);
+    });
+
+    var daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+    var minH        = minBookableHour();
+    var lastHourNum = parseInt(ALL_HOURS[ALL_HOURS.length - 1].split(':')[0], 10);
+
+    for (var d = 1; d <= daysInMonth; d++) {
+      var iso  = toISO(calYear, calMonth, d);
+      var dow  = new Date(calYear, calMonth, d).getDay();
+      if (dow === 0 || dow === 6) continue;
+
+      var isToday   = (iso === today);
+      var isPast    = (iso < today);
+      var isHoliday = HOLIDAYS_CL.has(iso);
+      var todayDone = (isToday && lastHourNum < minH);
+
+      var cell = document.createElement('div');
+      cell.textContent = d;
+      cell.style.gridColumn = String(dow);
+
+      if (isPast || isHoliday || todayDone) {
+        cell.className = 'mg-cal-day disabled';
+      } else {
+        cell.className = 'mg-cal-day avail'
+          + (isToday        ? ' today'    : '')
+          + (iso === selDate ? ' selected' : '');
+        (function(isoD) {
+          cell.addEventListener('click', function () {
+            selDate = isoD;
+            selTime = null;
+            renderCalendar();
+            renderSlots();
+            document.getElementById('slots-section').style.display = 'block';
+            document.getElementById('reschedule-actions').style.display = 'none';
+            document.getElementById('reschedule-back-only').style.display = 'none';
+            document.getElementById('slots-section').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          });
+        })(iso);
+      }
+      grid.appendChild(cell);
+    }
+  }
+
+  document.getElementById('cal-prev').addEventListener('click', function () {
+    calMonth--;
+    if (calMonth < 0) { calMonth = 11; calYear--; }
+    selDate = null; selTime = null;
+    document.getElementById('slots-section').style.display = 'none';
+    document.getElementById('reschedule-actions').style.display = 'none';
+    document.getElementById('reschedule-back-only').style.display = 'block';
+    renderCalendar();
+  });
+  document.getElementById('cal-next').addEventListener('click', function () {
+    calMonth++;
+    if (calMonth > 11) { calMonth = 0; calYear++; }
+    selDate = null; selTime = null;
+    document.getElementById('slots-section').style.display = 'none';
+    document.getElementById('reschedule-actions').style.display = 'none';
+    document.getElementById('reschedule-back-only').style.display = 'block';
+    renderCalendar();
+  });
+
+  /* ─── Horarios ─── */
+  function renderSlots() {
+    var grid = document.getElementById('slots-grid');
+    grid.innerHTML = '';
+    if (!selDate) return;
+
+    var bookedHours = bookedSlots
+      .filter(function(s){ return s.fecha === selDate; })
+      .map(function(s){ return normalizeHourValue(s.hora); });
+
+    var reservaFechaISO = extractISODate(reserva.fecha);
+    var reservaHoraNorm = normalizeHourValue(reserva.hora);
+
+    var hasAvail = false;
+
+    ALL_HOURS.forEach(function (h) {
+      var isBooked   = bookedHours.indexOf(h) >= 0;
+      var isSameSlot = (selDate === reservaFechaISO && h === reservaHoraNorm);
+      var isTooSoon  = isSlotTooSoon(selDate, h);
+      var blocked    = isBooked || isSameSlot || isTooSoon;
+      var isSelected = (h === selTime);
+
+      var btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'mg-slot' + (blocked ? ' booked' : '') + (isSelected ? ' selected' : '');
+      btn.textContent = h;
+      btn.disabled = blocked;
+
+      if (!blocked) {
+        hasAvail = true;
+        (function(hour) {
+          btn.addEventListener('click', function () {
+            selTime = hour;
+            renderSlots();
+            document.getElementById('reschedule-actions').style.display = 'flex';
+            document.getElementById('reschedule-back-only').style.display = 'none';
+          });
+        })(h);
+      }
+      grid.appendChild(btn);
+    });
+
+    if (!hasAvail) {
+      var msg = document.createElement('p');
+      msg.style.cssText = 'font-size:14px;color:var(--ink-2);margin:0';
+      msg.textContent = 'No hay horarios disponibles para este día. Elige otra fecha.';
+      grid.appendChild(msg);
+    }
+  }
+
+  /* ─── Confirmar reagendamiento ─── */
+  document.getElementById('btn-reschedule-confirm').addEventListener('click', async function () {
+    if (!selDate || !selTime) {
+      showAlert('reschedule-alert', 'Por favor selecciona fecha y horario.', 'error');
+      return;
+    }
+    hideAlert('reschedule-alert');
+    setLoading('btn-reschedule-confirm', true);
+    try {
+      var payload = { action: 'reschedule_confirm', token: token, fecha: selDate, hora: selTime };
+      var resp = await fetch(WEBAPP_URL, {
+        method: 'POST',
+        credentials: 'omit',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify(payload)
+      });
+      var data = await resp.json();
+      if (data.ok) {
+        document.getElementById('rescheduled-text').textContent =
+          'Tu sesión ha sido reagendada para el ' + formatFechaLarga(selDate) + ' a las ' + selTime + '. Recibirás confirmación por correo.';
+        showView('view-rescheduled');
+      } else {
+        console.error('[manage] reschedule_confirm error response:', data, payload);
+        var errMsg = data.code === 'SLOT_TAKEN'
+          ? 'Ese horario ya fue reservado por alguien más. Elige otra hora.'
+          : (data.message || data.error || 'No se pudo reagendar. Intenta con otro horario.');
+        showAlert('reschedule-alert', errMsg, 'error');
+      }
+    } catch (e) {
+      console.error('[manage] reschedule_confirm network/runtime error:', e && e.message, e);
+      showAlert('reschedule-alert', 'Error de conexión. Intenta de nuevo o contáctame directamente.', 'error');
+    }
+    setLoading('btn-reschedule-confirm', false);
+  });
+
+  /* ─── Arrancar ─── */
+  init();
+
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,850 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#FAF6F0" />
+
+<title>Test de Edimburgo (EPDS) · Autoevaluación de depresión perinatal — Francisca Bustos</title>
+<meta name="description" content="Escala de Edimburgo para depresión postnatal (EPDS). Autoevaluación clínica validada, anónima y gratuita. 10 preguntas. Resultado inmediato con orientación clínica." />
+<meta name="keywords" content="test Edimburgo, EPDS, escala depresión postparto, autoevaluación depresión postnatal, test depresión posparto online, Chile" />
+<link rel="canonical" href="https://franciscabustos.cl/recursos/test-edimburgo" />
+
+<meta property="og:type" content="website" />
+<meta property="og:locale" content="es_CL" />
+<meta property="og:title" content="Test de Edimburgo (EPDS) · Autoevaluación anónima" />
+<meta property="og:description" content="Escala clínica validada para detectar depresión perinatal. 10 preguntas, 2 minutos, resultado inmediato." />
+<meta property="og:url" content="https://franciscabustos.cl/recursos/test-edimburgo" />
+
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+
+<!-- Web 04.16: paridad exacta de CSS loads con resto del sitio (sobre-mi/faq/servicios)
+     para que el header herede correctamente todas las reglas de layout + tokens.
+     Bump de versiones para invalidar CDN/browser cache. -->
+<link rel="stylesheet" href="../assets/styles.css?v=3" />
+<link rel="stylesheet" href="../assets/home.css?v=2" />
+<link rel="stylesheet" href="../assets/pages.css?v=2" />
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "MedicalWebPage",
+  "name": "Test de Edimburgo (EPDS)",
+  "description": "Escala de Depresión Postnatal de Edimburgo — autoevaluación clínica validada, 10 preguntas.",
+  "medicalAudience": "Patient",
+  "lastReviewed": "2025-01-15",
+  "reviewedBy": {
+    "@type": "Person",
+    "@id": "https://franciscabustos.cl/#francisca-bustos-maldonado",
+    "name": "Francisca Bustos Maldonado",
+    "jobTitle": "Psicóloga clínica perinatal",
+    "identifier": "SSS 598177"
+  }
+}
+</script>
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  "name": "Test de Edimburgo (EPDS)",
+  "applicationCategory": "HealthApplication",
+  "operatingSystem": "Web",
+  "url": "https://franciscabustos.cl/recursos/test-edimburgo",
+  "description": "Autoevaluación orientativa de síntomas emocionales en embarazo y posparto. No constituye diagnóstico.",
+  "isAccessibleForFree": true,
+  "author": {
+    "@type": "Person",
+    "@id": "https://franciscabustos.cl/#francisca-bustos-maldonado",
+    "name": "Francisca Bustos Maldonado"
+  },
+  "publisher": {
+    "@type": "Organization",
+    "name": "Francisca Bustos Psicología Perinatal"
+  },
+  "medicalAudience": {
+    "@type": "MedicalAudience",
+    "audienceType": "Pacientes"
+  }
+}
+</script>
+
+<style>
+/* ==================================================
+   TEST EDIMBURGO · UI
+   ================================================== */
+.epds-wrap {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 72px 24px 96px;
+}
+.epds-intro { text-align: left; }
+.epds-intro .eyebrow-mark { color: var(--accent-deep); }
+.epds-intro h1 {
+  font-family: var(--serif); font-weight: 300;
+  font-size: clamp(40px, 6vw, 64px);
+  line-height: 1.02; letter-spacing: -0.015em;
+  margin-top: 16px;
+}
+.epds-intro h1 em { font-style: italic; }
+.epds-intro .lede {
+  margin-top: 22px; max-width: 52ch;
+  font-size: clamp(16px, 1.25vw, 18px); line-height: 1.55;
+  color: var(--ink-2);
+}
+
+.epds-meta {
+  display: grid; grid-template-columns: repeat(3, 1fr);
+  gap: 1px; margin-top: 36px;
+  background: var(--line);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+.epds-meta > div {
+  background: var(--paper);
+  padding: 14px 16px;
+}
+.epds-meta strong {
+  display: block; font-family: var(--sans);
+  font-size: 10px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink-3);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+.epds-meta span {
+  font-family: var(--serif); font-size: 15px;
+  font-weight: 400; color: var(--ink);
+}
+@media (max-width: 580px) {
+  .epds-meta { grid-template-columns: 1fr; }
+}
+
+.epds-disclaimer {
+  margin-top: 32px;
+  padding: 18px 20px;
+  background: color-mix(in oklab, var(--accent-deep) 6%, transparent);
+  border-left: 2px solid var(--accent-deep);
+  font-size: 13.5px; line-height: 1.55; color: var(--ink-2);
+}
+.epds-disclaimer strong { color: var(--ink); }
+
+.epds-start {
+  margin-top: 36px;
+  display: flex; flex-wrap: wrap; gap: 12px; align-items: center;
+}
+
+/* Test view */
+.epds-test { display: none; }
+.epds-test.active { display: block; }
+
+.epds-progress {
+  display: flex; gap: 3px; margin-bottom: 36px;
+}
+.epds-progress-step {
+  flex: 1; height: 3px; background: var(--line);
+  transition: background .3s ease;
+}
+.epds-progress-step.done { background: var(--accent-deep); }
+.epds-progress-step.current { background: var(--ink); }
+
+.epds-qnum {
+  font-family: var(--sans);
+  font-size: 11px; letter-spacing: .22em;
+  text-transform: uppercase; color: var(--ink-3);
+  font-weight: 500;
+}
+.epds-qtext {
+  font-family: var(--serif); font-weight: 300;
+  font-size: clamp(24px, 3.4vw, 32px);
+  line-height: 1.2; letter-spacing: -0.01em;
+  color: var(--ink);
+  margin: 14px 0 28px;
+  text-wrap: balance;
+}
+.epds-qhint {
+  font-size: 13px; color: var(--ink-3); font-style: italic;
+  margin-bottom: 24px;
+}
+
+.epds-options { display: flex; flex-direction: column; gap: 10px; }
+.epds-option {
+  display: flex; align-items: flex-start; gap: 14px;
+  padding: 16px 18px;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  cursor: pointer;
+  font-family: var(--sans);
+  font-size: 15px; line-height: 1.45;
+  color: var(--ink);
+  transition: border-color .14s ease, background .14s ease;
+  text-align: left;
+  width: 100%;
+}
+.epds-option:hover {
+  border-color: var(--accent-deep);
+  background: color-mix(in oklab, var(--accent-deep) 4%, var(--paper));
+}
+.epds-option:focus-visible {
+  outline: 2px solid var(--accent-deep);
+  outline-offset: 2px;
+}
+.epds-option .bullet {
+  flex: 0 0 18px; width: 18px; height: 18px; margin-top: 1px;
+  border: 1.5px solid var(--line-strong, var(--ink-3));
+  border-radius: 50%;
+  position: relative;
+  transition: border-color .14s ease;
+}
+.epds-option:hover .bullet { border-color: var(--accent-deep); }
+.epds-option.selected {
+  border-color: var(--accent-deep);
+  background: color-mix(in oklab, var(--accent-deep) 7%, var(--paper));
+}
+.epds-option.selected .bullet {
+  border-color: var(--accent-deep);
+}
+.epds-option.selected .bullet::after {
+  content: ""; position: absolute;
+  inset: 3px; border-radius: 50%;
+  background: var(--accent-deep);
+}
+
+.epds-nav {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 36px; padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+.epds-back {
+  font-family: var(--sans);
+  font-size: 13px; color: var(--ink-3);
+  background: none; border: 0; cursor: pointer;
+  padding: 6px 0;
+}
+.epds-back:disabled { opacity: .3; cursor: not-allowed; }
+.epds-back:hover:not(:disabled) { color: var(--ink); }
+.epds-counter {
+  font-family: var(--sans);
+  font-size: 12px; letter-spacing: .1em;
+  color: var(--ink-3);
+}
+
+/* Results view — Web 04.15: card ordenada, jerarquía clara, tono no-alarmista */
+.epds-result { display: none; }
+.epds-result.active { display: block; }
+
+.epds-result-header {
+  text-align: left;
+  background: var(--paper, #FDFBF7);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 32px 32px 28px;
+}
+.epds-result-band {
+  display: inline-flex; align-items: center; gap: 10px;
+  font-family: var(--sans);
+  font-size: 11px; letter-spacing: .22em;
+  text-transform: uppercase; font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 999px;
+}
+/* Bandas: tono suave en todos los niveles. No usamos rojo intenso. */
+.epds-result-band.low    { background: color-mix(in oklab, #4a7c59 12%, transparent); color: #2d5039; }
+.epds-result-band.mid    { background: color-mix(in oklab, #c88a3d 14%, transparent); color: #7d5423; }
+.epds-result-band.high   { background: color-mix(in oklab, #b14a4a 12%, transparent); color: #7a2e2e; }
+.epds-result-band.crisis { background: color-mix(in oklab, #b14a4a 16%, transparent); color: #6f2828; }
+
+.epds-score-display {
+  display: flex; align-items: baseline; gap: 10px;
+  margin-top: 20px;
+  flex-wrap: wrap;
+}
+.epds-score-num {
+  font-family: var(--serif); font-weight: 300;
+  font-size: clamp(56px, 9vw, 80px);
+  line-height: 1; letter-spacing: -0.02em;
+  color: var(--ink);
+}
+.epds-score-of {
+  font-family: var(--serif); font-weight: 300;
+  font-size: clamp(18px, 2vw, 22px);
+  color: var(--ink-3);
+}
+.epds-result-title {
+  font-family: var(--serif); font-weight: 300;
+  font-size: clamp(22px, 3.2vw, 28px);
+  line-height: 1.3;
+  margin: 18px 0 0;
+  text-wrap: balance;
+  color: var(--ink);
+}
+.epds-result-title em { font-style: italic; }
+.epds-result-body {
+  margin-top: 14px;
+  font-size: 15.5px; line-height: 1.65;
+  color: var(--ink-2);
+  max-width: 60ch;
+}
+.epds-result-body p { margin: 0 0 12px; }
+.epds-result-body p:last-child { margin-bottom: 0; }
+.epds-result-body strong { color: var(--ink); }
+
+.epds-crisis-box {
+  margin-top: 20px;
+  padding: 20px 22px;
+  background: color-mix(in oklab, #b14a4a 7%, var(--paper, #FDFBF7));
+  border-left: 3px solid #b14a4a;
+  border-radius: 8px;
+  color: var(--ink);
+}
+.epds-crisis-box h3 {
+  font-family: var(--serif); font-weight: 400;
+  font-size: 18px; margin: 0 0 10px;
+  color: var(--ink);
+}
+.epds-crisis-box p {
+  font-size: 14.5px; line-height: 1.6;
+  margin: 0 0 8px;
+  color: var(--ink-2);
+}
+.epds-crisis-box p:last-child { margin-bottom: 0; }
+.epds-crisis-box a {
+  color: #7a2e2e; font-weight: 600;
+  text-decoration: underline; text-decoration-thickness: 1.5px;
+  text-underline-offset: 3px;
+}
+
+@media (max-width: 580px) {
+  .epds-result-header { padding: 24px 20px; }
+}
+
+.epds-next {
+  margin-top: 40px;
+}
+.epds-next h3 {
+  font-family: var(--serif); font-weight: 300;
+  font-size: 22px; letter-spacing: -0.005em;
+  margin: 0 0 14px;
+}
+.epds-next-actions {
+  display: flex; gap: 12px; flex-wrap: wrap;
+  margin-top: 20px;
+}
+.epds-next-fine {
+  margin-top: 28px; padding-top: 20px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px; line-height: 1.55; color: var(--ink-3);
+}
+
+.epds-restart {
+  background: none; border: 0;
+  font-family: var(--sans); font-size: 12.5px;
+  color: var(--ink-3); text-decoration: underline;
+  cursor: pointer; padding: 0;
+}
+.epds-restart:hover { color: var(--ink); }
+
+/* Breadcrumb */
+.epds-breadcrumb {
+  max-width: 720px; margin: 0 auto;
+  padding: 28px 24px 0;
+  font-family: var(--sans);
+  font-size: 12px; letter-spacing: .08em;
+  color: var(--ink-3);
+}
+.epds-breadcrumb a { color: var(--ink-3); text-decoration: none; }
+.epds-breadcrumb a:hover { color: var(--ink); }
+.epds-breadcrumb span { margin: 0 8px; color: var(--line-strong, var(--ink-3)); }
+
+@media (max-width: 720px) {
+  .epds-wrap { padding: 48px 20px 72px; }
+  .epds-option { font-size: 14.5px; padding: 14px 16px; }
+}
+</style>
+</head>
+<body>
+
+<!-- =================== NAV (Web 04.17: estructura canónica + rutas root-relative limpias) =================== -->
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="Francisca Bustos · Inicio">
+      <span class="brand-name">Francisca Bustos<small>Psicología Perinatal</small></span>
+    </a>
+    <nav class="nav-links" aria-label="Principal">
+      <a class="nav-link" href="/">Inicio</a>
+      <a class="nav-link" href="/sobre-mi">Sobre mí</a>
+      <a class="nav-link" href="/servicios">Servicios</a>
+      <a class="nav-link" href="/faq">Preguntas</a>
+      <a class="nav-link" href="/contacto">Contacto</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="/reserva" class="btn btn-primary">Reservar sesión <span class="arrow" aria-hidden="true">→</span></a>
+      <button class="nav-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="nav-panel" id="nav-panel" role="menu">
+    <a href="/" role="menuitem">Inicio</a>
+    <a href="/sobre-mi" role="menuitem">Sobre mí</a>
+    <a href="/servicios" role="menuitem">Servicios</a>
+    <a href="/faq" role="menuitem">Preguntas</a>
+    <a href="/contacto" role="menuitem">Contacto</a>
+    <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión →</a>
+    <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20me%20gustar%C3%ADa%20agendar%20una%20sesi%C3%B3n." class="btn btn-wa btn-lg" style="margin-top:12px;">Escribir por WhatsApp</a>
+  </div>
+</header>
+
+<nav class="epds-breadcrumb" aria-label="Ubicación">
+  <a href="/">Inicio</a><span>·</span>
+  <a href="/servicios">Recursos</a><span>·</span>
+  Test de Edimburgo
+</nav>
+
+<main class="epds-wrap">
+
+  <!-- ============================================================
+       STATE 1 — INTRO
+       ============================================================ -->
+  <section class="epds-intro" id="intro">
+    <div class="eyebrow eyebrow-mark">Autoevaluación clínica · Anónima y gratuita</div>
+    <h1>Test de <em>Edimburgo</em>.<br/>Diez preguntas para saber si lo que sientes merece consulta.</h1>
+    <p class="lede">
+      La Escala de Depresión Postnatal de Edimburgo (EPDS) es la herramienta más usada
+      en el mundo para detectar depresión y ansiedad en el embarazo y el postparto.
+      Validada en Chile y recomendada por el Ministerio de Salud.
+    </p>
+
+    <dl class="epds-meta">
+      <div>
+        <strong>Duración</strong>
+        <span>2 minutos · 10 preguntas</span>
+      </div>
+      <div>
+        <strong>Resultado</strong>
+        <span>Inmediato · Con orientación</span>
+      </div>
+      <div>
+        <strong>Privacidad</strong>
+        <span>Anónimo · Nada se guarda</span>
+      </div>
+    </dl>
+
+    <div class="epds-disclaimer">
+      <strong>No es un diagnóstico.</strong> Este test orienta, no reemplaza a
+      una evaluación clínica profesional. Si obtienes un puntaje alto o tienes
+      dudas sobre cómo te sientes, agenda una consulta con tu matrona, médico
+      o con un profesional de salud mental.
+    </div>
+
+    <p class="lede" style="font-size:15px; margin-top:18px;">
+      ¿Quieres entender mejor qué mide este test y cómo interpretar tu resultado?
+      Lee esta <a href="/blog/test-edimburgo-que-mide">guía sobre el Test de Edimburgo</a>.
+    </p>
+
+    <div class="epds-start">
+      <button class="btn btn-primary btn-lg" id="epds-begin">
+        Comenzar test <span class="arrow" aria-hidden="true">→</span>
+      </button>
+      <span style="font-size:12.5px; color:var(--ink-3);">Puedes detenerte cuando quieras.</span>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       STATE 2 — TEST
+       ============================================================ -->
+  <section class="epds-test" id="test" aria-live="polite">
+    <div class="epds-progress" id="progress" aria-hidden="true"></div>
+    <div class="epds-qnum" id="qnum">Pregunta 1 de 10</div>
+    <h2 class="epds-qtext" id="qtext">—</h2>
+    <p class="epds-qhint" id="qhint">En los últimos 7 días:</p>
+    <div class="epds-options" id="options" role="radiogroup" aria-labelledby="qtext" aria-describedby="qhint"></div>
+    <div class="epds-nav">
+      <button type="button" class="epds-back" id="epds-back" disabled>← Pregunta anterior</button>
+      <span class="epds-counter" id="counter">1 / 10</span>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       STATE 3 — RESULT
+       ============================================================ -->
+  <section class="epds-result" id="result" aria-live="polite">
+    <header class="epds-result-header">
+      <span class="epds-result-band" id="band">—</span>
+      <div class="epds-score-display">
+        <span class="epds-score-num" id="score-num">0</span>
+        <span class="epds-score-of">de 30 puntos</span>
+      </div>
+      <h2 class="epds-result-title" id="result-title">—</h2>
+      <div class="epds-result-body" id="result-body"></div>
+    </header>
+
+    <!-- Web 04.15: copy de seguridad reformulada — orientación responsable, no detalle gráfico. -->
+    <div class="epds-crisis-box" id="crisis-box" style="display:none;">
+      <h3>Si necesitas apoyo urgente, hay ayuda disponible ahora.</h3>
+      <p>Si marcaste el ítem de seguridad o sientes que podrías estar en riesgo, busca apoyo inmediato en tu red cercana o en servicios de urgencia.</p>
+      <p>
+        <strong>Salud Responde</strong> · 600 360 7777 (24 horas, gratuito)<br/>
+        <strong>*4141</strong> desde tu celular<br/>
+        <strong>SAMU</strong> · 131<br/>
+        Urgencia psiquiátrica más cercana, o <a href="/contacto">escríbeme directamente</a>.
+      </p>
+    </div>
+
+    <div class="epds-next">
+      <h3>¿Qué hacer ahora?</h3>
+      <div id="result-next"></div>
+      <div class="epds-next-actions">
+        <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión <span class="arrow" aria-hidden="true">→</span></a>
+        <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20hice%20el%20test%20de%20Edimburgo%20y%20me%20gustar%C3%ADa%20consultar." class="btn btn-ghost btn-lg" data-cta="whatsapp">Consultar por WhatsApp</a>
+      </div>
+      <div class="epds-next-fine">
+        <button class="epds-restart" id="epds-restart">← Volver a hacer el test</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- =================== FOOTER MINI =================== -->
+<footer class="footer">
+  <div class="container">
+    <div class="footer-bottom">
+      <small>
+        © <span id="yr"></span> Francisca Bustos · Psicóloga clínica perinatal ·
+        Reg. SSS 598177 · Atención online para personas en Chile.
+      </small>
+      <small>
+        El test de Edimburgo (Cox, Holden &amp; Sagovsky, 1987) está validado en
+        Chile y forma parte del Programa de Apoyo al Desarrollo Biopsicosocial
+        del MINSAL.
+      </small>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* ==================================================
+   EDINBURGH POSTNATAL DEPRESSION SCALE (EPDS)
+   Cox, Holden & Sagovsky 1987 — validación Chile 2015
+   Puntaje 0-30. Corte ≥10 sugiere evaluación clínica.
+   Pregunta 10 (ideación de autolesión) es bandera roja.
+   ================================================== */
+
+const EPDS_QUESTIONS = [
+  {
+    text: "He podido reír y ver el lado gracioso de las cosas",
+    options: [
+      { text: "Tanto como siempre", score: 0 },
+      { text: "No tanto ahora", score: 1 },
+      { text: "Mucho menos", score: 2 },
+      { text: "No, nada", score: 3 },
+    ],
+  },
+  {
+    text: "He mirado el futuro con placer",
+    options: [
+      { text: "Tanto como siempre", score: 0 },
+      { text: "Algo menos que antes", score: 1 },
+      { text: "Definitivamente menos", score: 2 },
+      { text: "No, nada", score: 3 },
+    ],
+  },
+  {
+    text: "Me he culpado innecesariamente cuando las cosas han salido mal",
+    options: [
+      { text: "No, nunca", score: 0 },
+      { text: "No, no muy a menudo", score: 1 },
+      { text: "Sí, a veces", score: 2 },
+      { text: "Sí, la mayor parte del tiempo", score: 3 },
+    ],
+  },
+  {
+    text: "He estado ansiosa o preocupada sin motivo",
+    options: [
+      { text: "No, nunca", score: 0 },
+      { text: "Casi nunca", score: 1 },
+      { text: "Sí, a veces", score: 2 },
+      { text: "Sí, a menudo", score: 3 },
+    ],
+  },
+  {
+    text: "He sentido miedo o pánico sin motivo alguno",
+    options: [
+      { text: "No, nunca", score: 0 },
+      { text: "No, no mucho", score: 1 },
+      { text: "Sí, a veces", score: 2 },
+      { text: "Sí, bastante", score: 3 },
+    ],
+  },
+  {
+    text: "Las cosas me han agobiado",
+    options: [
+      { text: "No, he podido con ellas como siempre", score: 0 },
+      { text: "No, la mayoría de las veces lo he hecho bien", score: 1 },
+      { text: "Sí, a veces no he podido con las cosas", score: 2 },
+      { text: "Sí, la mayor parte del tiempo no he podido", score: 3 },
+    ],
+  },
+  {
+    text: "Me he sentido tan infeliz que he tenido dificultad para dormir",
+    options: [
+      { text: "No, nunca", score: 0 },
+      { text: "No muy a menudo", score: 1 },
+      { text: "Sí, a veces", score: 2 },
+      { text: "Sí, la mayor parte del tiempo", score: 3 },
+    ],
+  },
+  {
+    text: "Me he sentido triste o desgraciada",
+    options: [
+      { text: "No, nunca", score: 0 },
+      { text: "No muy a menudo", score: 1 },
+      { text: "Sí, bastante a menudo", score: 2 },
+      { text: "Sí, la mayor parte del tiempo", score: 3 },
+    ],
+  },
+  {
+    text: "Me he sentido tan infeliz que he estado llorando",
+    options: [
+      { text: "No, nunca", score: 0 },
+      { text: "Solo ocasionalmente", score: 1 },
+      { text: "Sí, bastante a menudo", score: 2 },
+      { text: "Sí, la mayor parte del tiempo", score: 3 },
+    ],
+  },
+  {
+    // Pregunta 10: bandera roja de ideación
+    text: "Se me ha ocurrido la idea de hacerme daño",
+    options: [
+      { text: "Nunca", score: 0 },
+      { text: "Casi nunca", score: 1 },
+      { text: "A veces", score: 2 },
+      { text: "Sí, bastante a menudo", score: 3 },
+    ],
+    alert: true,
+  },
+];
+
+// ================== STATE ==================
+let current = 0;
+let answers = new Array(EPDS_QUESTIONS.length).fill(null);
+
+const $intro    = document.getElementById('intro');
+const $test     = document.getElementById('test');
+const $result   = document.getElementById('result');
+const $progress = document.getElementById('progress');
+const $qnum     = document.getElementById('qnum');
+const $qtext    = document.getElementById('qtext');
+const $options  = document.getElementById('options');
+const $back     = document.getElementById('epds-back');
+const $counter  = document.getElementById('counter');
+
+function show(stateEl) {
+  [$intro, $test, $result].forEach(el => el.classList.remove('active'));
+  stateEl.classList.add('active');
+  if (stateEl === $intro) $intro.style.display = '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// Init
+$intro.classList.add('active');
+// Build progress dots once
+for (let i = 0; i < EPDS_QUESTIONS.length; i++) {
+  const d = document.createElement('div');
+  d.className = 'epds-progress-step';
+  $progress.appendChild(d);
+}
+
+function renderQuestion() {
+  const q = EPDS_QUESTIONS[current];
+  $qnum.textContent = `Pregunta ${current + 1} de ${EPDS_QUESTIONS.length}`;
+  $qtext.textContent = q.text;
+  $counter.textContent = `${current + 1} / ${EPDS_QUESTIONS.length}`;
+  $back.disabled = current === 0;
+
+  // Progress dots
+  $progress.querySelectorAll('.epds-progress-step').forEach((d, i) => {
+    d.className = 'epds-progress-step' + (i < current ? ' done' : i === current ? ' current' : '');
+  });
+
+  // Options
+  $options.innerHTML = '';
+  q.options.forEach((opt, idx) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'epds-option' + (answers[current] === idx ? ' selected' : '');
+    btn.setAttribute('role', 'radio');
+    btn.setAttribute('aria-checked', answers[current] === idx ? 'true' : 'false');
+    btn.innerHTML = `<span class="bullet" aria-hidden="true"></span><span>${opt.text}</span>`;
+    btn.addEventListener('click', () => choose(idx));
+    $options.appendChild(btn);
+  });
+}
+
+function choose(idx) {
+  answers[current] = idx;
+  renderQuestion();
+  // Advance after tiny delay for visual feedback
+  setTimeout(() => {
+    if (current < EPDS_QUESTIONS.length - 1) {
+      current += 1;
+      renderQuestion();
+    } else {
+      finish();
+    }
+  }, 260);
+}
+
+$back.addEventListener('click', () => {
+  if (current > 0) {
+    current -= 1;
+    renderQuestion();
+  }
+});
+
+document.getElementById('epds-begin').addEventListener('click', () => {
+  current = 0;
+  answers = new Array(EPDS_QUESTIONS.length).fill(null);
+  show($test);
+  renderQuestion();
+});
+
+document.getElementById('epds-restart').addEventListener('click', () => {
+  current = 0;
+  answers = new Array(EPDS_QUESTIONS.length).fill(null);
+  show($intro);
+});
+
+// ================== RESULT LOGIC ==================
+function finish() {
+  const total = answers.reduce((sum, idx, i) => sum + EPDS_QUESTIONS[i].options[idx].score, 0);
+  const q10 = EPDS_QUESTIONS[9].options[answers[9]].score;
+  const crisis = q10 >= 1;
+
+  const $band      = document.getElementById('band');
+  const $scoreNum  = document.getElementById('score-num');
+  const $title     = document.getElementById('result-title');
+  const $body      = document.getElementById('result-body');
+  const $next      = document.getElementById('result-next');
+  const $crisisBox = document.getElementById('crisis-box');
+
+  $scoreNum.textContent = total;
+
+  // Web 04.15: copy reformulada — tono orientativo, no diagnóstico, no alarmista.
+  // Formato puntaje: "X de 30" (más legible que "X/30"). No es un diagnóstico.
+  let band, title, body, next;
+  if (total <= 9) {
+    band = { cls: 'low', label: 'Rango esperable' };
+    title = 'Tu resultado está dentro del <em>rango esperable</em>.';
+    body = `
+      <p>Un puntaje de <strong>${total} de 30</strong> sugiere que lo que sientes
+      está dentro del rango emocional habitual del embarazo o el postparto.</p>
+      <p>Este test es orientativo, no es un diagnóstico. Si en algún momento los síntomas
+      aumentan o persisten por más de dos semanas, vale la pena volver a evaluar.</p>
+    `;
+    next = `
+      <p>Algunas cosas que pueden ayudar en esta etapa:</p>
+      <ul style="margin:0; padding-left:20px; line-height:1.7; color:var(--ink-2);">
+        <li>Mantener una red de apoyo cercana y decir en voz alta cómo estás.</li>
+        <li>Priorizar el sueño dentro de lo posible.</li>
+        <li>Caminar 20 minutos al día cuando puedas.</li>
+        <li>Volver a este test en 2-3 semanas si algo cambia.</li>
+      </ul>
+    `;
+  } else if (total <= 12) {
+    band = { cls: 'mid', label: 'Zona intermedia' };
+    title = 'Algunos síntomas <em>parecen estar presentes</em>. Conviene mirarlo con calma.';
+    body = `
+      <p>Un puntaje de <strong>${total} de 30</strong> está en la zona intermedia.
+      Sugiere que aparecen síntomas ansiosos o depresivos que ya empiezan
+      a interferir, pero no necesariamente son severos.</p>
+      <p>Este test no es un diagnóstico. Una conversación clínica puede ayudarte
+      a entender mejor qué te está pasando y qué pasos pueden ser útiles para ti.</p>
+    `;
+    next = `
+      <p>Algunas opciones que pueden ayudar:</p>
+      <ul style="margin:0; padding-left:20px; line-height:1.7; color:var(--ink-2);">
+        <li>Agendar una evaluación clínica con una psicóloga perinatal.</li>
+        <li>Compartir cómo te sientes con tu matrona o médico de cabecera.</li>
+        <li>Intervenir temprano suele acortar el proceso.</li>
+      </ul>
+    `;
+  } else if (total <= 19) {
+    band = { cls: 'high', label: 'Consulta recomendada' };
+    title = 'Tu resultado sugiere que sería recomendable <em>conversar con una profesional</em>.';
+    body = `
+      <p>Un puntaje de <strong>${total} de 30</strong> está por sobre el corte
+      clínico de referencia usado en Chile (≥13). Este test es orientativo,
+      no es un diagnóstico.</p>
+      <p>Tu resultado sugiere que sería recomendable conversar con una
+      profesional de salud mental perinatal. Una sesión inicial permite
+      entender mejor cómo te sientes y definir, juntas, los pasos que pueden ayudarte.</p>
+    `;
+    next = `
+      <p>Algunas opciones que pueden ayudar:</p>
+      <ul style="margin:14px 0 0; padding-left:20px; line-height:1.7; color:var(--ink-2);">
+        <li>Agendar una primera sesión en las próximas semanas.</li>
+        <li>Si estás embarazada, comentarlo en tu próximo control con matrona.</li>
+        <li>Si ya nació tu bebé, puedes asistir con él o ella a la sesión.</li>
+        <li>La terapia con boleta clínica es reembolsable por Isapre.</li>
+      </ul>
+    `;
+  } else {
+    band = { cls: 'crisis', label: 'Consulta prioritaria' };
+    title = 'Tu resultado sugiere que sería <em>importante consultar pronto</em> con una profesional.';
+    body = `
+      <p>Un puntaje de <strong>${total} de 30</strong> es alto. Este test es
+      orientativo y no diagnostica, pero sí sugiere que conviene buscar
+      apoyo profesional en los próximos días.</p>
+      <p>Lo que estás viviendo tiene tratamiento. No tienes que atravesarlo sola.
+      Una psicóloga perinatal puede ayudarte a definir un plan concreto y,
+      si corresponde, coordinar apoyo médico complementario.</p>
+    `;
+    next = `
+      <p>Algunas opciones inmediatas:</p>
+      <ul style="margin:14px 0 0; padding-left:20px; line-height:1.7; color:var(--ink-2);">
+        <li>Agendar una sesión o escribir por WhatsApp en los próximos días.</li>
+        <li>Si no es posible una atención pronto, derivación a una colega de confianza.</li>
+        <li>Considerar una evaluación médica complementaria si corresponde.</li>
+        <li>Apoyarte en alguien cercano durante esta etapa.</li>
+      </ul>
+    `;
+  }
+
+  $band.className = 'epds-result-band ' + band.cls;
+  $band.textContent = band.label;
+  $title.innerHTML = title;
+  $body.innerHTML = body;
+  $next.innerHTML = next;
+  $crisisBox.style.display = crisis ? 'block' : 'none';
+
+  // Analytics desactivado para resultados EPDS.
+  // No se envía score, banda de riesgo ni crisis a GA4 ni a plataformas publicitarias,
+  // porque corresponde a información clínica sensible.
+
+  show($result);
+}
+
+// Year
+document.getElementById('yr').textContent = new Date().getFullYear();
+
+// Nav burger (basic)
+const burger = document.querySelector('.nav-burger');
+const panel  = document.getElementById('nav-panel');
+if (burger && panel) {
+  burger.addEventListener('click', () => {
+    const open = panel.classList.toggle('open');
+    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+  });
+}
+</script>
+
+<script src="../assets/analytics.js?v=1"></script>
+</body>
+</html>

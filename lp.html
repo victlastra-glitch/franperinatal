@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#FAF6F0" />
+<meta name="format-detection" content="telephone=no" />
+<meta name="robots" content="noindex, nofollow" /><!-- Landing de pauta: no indexar -->
+
+<title>Psicóloga Perinatal Online · Francisca Bustos</title>
+<meta name="description" content="Psicoterapia online especializada en embarazo, posparto y duelo gestacional. Atención online para personas en Chile. Agenda tu primera sesión." />
+
+<!-- Canonical apunta a home para no duplicar -->
+<link rel="canonical" href="https://franciscabustos.cl/" />
+
+<!-- Fonts -->
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+
+<link rel="stylesheet" href="assets/styles.css?v=3" />
+<link rel="stylesheet" href="assets/landing.css?v=1" />
+
+<!-- Google Ads tag base — AW-18187430553 (tag base + Consent Mode v2 + GCLID) -->
+<!-- Conversiones via GA4 import: reserva_click y whatsapp_click (no requieren send_to labels) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=AW-18187430553"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+
+  // Consent Mode v2 (requerido por Google desde 2024) — debe ir ANTES de config
+  gtag('consent', 'default', {
+    'ad_storage': 'denied',
+    'analytics_storage': 'denied',
+    'ad_user_data': 'denied',
+    'ad_personalization': 'denied',
+    'wait_for_update': 500
+  });
+
+  // Cargar tag base Google Ads
+  gtag('config', 'AW-18187430553');
+
+  // Conversiones vía GA4 import — disparar evento GA4, Google Ads lo importa automáticamente
+  window.gadsReserva = function() {
+    gtag('event', 'reserva_click', {
+      'event_category': 'conversion',
+      'value': 1.0,
+      'currency': 'CLP'
+    });
+  };
+
+  window.gadsWhatsapp = function() {
+    gtag('event', 'whatsapp_click', {
+      'event_category': 'conversion',
+      'value': 0.5,
+      'currency': 'CLP'
+    });
+  };
+</script>
+
+<!-- GA4 — sin requerir cookie consent (privacy-safe: anonymize_ip + no cookies) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LZ9TBN34ZN"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('config', 'G-LZ9TBN34ZN', {
+    anonymize_ip: true,
+    cookie_flags: 'SameSite=None;Secure',
+    send_page_view: true
+  });
+</script>
+
+<!-- Favicon -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+
+<style>
+/* ── Landing de pauta: sin nav, header mínimo ── */
+.lp-topbar {
+  padding: 20px clamp(20px, 4vw, 48px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: var(--container);
+  margin-inline: auto;
+}
+.lp-topbar-brand {
+  font-family: var(--sans);
+  font-weight: 500;
+  font-size: 15.5px;
+  color: var(--ink);
+  text-decoration: none;
+  letter-spacing: -0.01em;
+}
+.lp-topbar-brand small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-2);
+  letter-spacing: 0;
+}
+.lp-topbar-cta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.lp-services-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 40px;
+}
+.lp-service-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  transition: border-color .2s, transform .2s;
+}
+.lp-service-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.lp-service-icon {
+  width: 40px; height: 40px;
+  background: var(--bg-2);
+  border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  margin-bottom: 14px;
+  font-size: 18px;
+}
+.lp-service-card h3 {
+  font-family: var(--sans); font-size: 15.5px; font-weight: 500;
+  color: var(--ink); margin: 0 0 6px; letter-spacing: -0.01em;
+}
+.lp-service-card p {
+  font-size: 13.5px; color: var(--ink-2); line-height: 1.5; margin: 0;
+}
+.lp-about {
+  padding-block: clamp(56px, 8vw, 100px);
+  background: var(--bg-2);
+}
+.lp-about-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: clamp(32px, 5vw, 80px);
+  align-items: center;
+  max-width: var(--container); margin-inline: auto;
+  padding-inline: clamp(20px, 4vw, 48px);
+}
+.lp-about-portrait {
+  border-radius: var(--r-xl);
+  overflow: hidden;
+  aspect-ratio: 3/4;
+  box-shadow: var(--shadow-lg);
+}
+.lp-about-portrait img { width: 100%; height: 100%; object-fit: cover; object-position: 62% center; }
+.lp-creds {
+  display: flex; flex-direction: column; gap: 10px; margin-top: 28px;
+}
+.lp-cred {
+  display: flex; align-items: flex-start; gap: 10px;
+  font-size: 14px; color: var(--ink-2); line-height: 1.4;
+}
+.lp-cred::before { content: "✓"; color: var(--accent-deep); font-weight: 600; flex-shrink: 0; margin-top: 1px; }
+.lp-footer-min {
+  padding: 28px clamp(20px, 4vw, 48px);
+  border-top: 1px solid var(--line);
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lp-footer-min a { color: var(--ink-2); text-decoration: underline; }
+.lp-wa-float {
+  position: fixed;
+  bottom: 24px; right: 24px;
+  z-index: 100;
+  background: #25D366;
+  color: #fff;
+  border-radius: 999px;
+  padding: 14px 20px;
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,.18);
+  transition: transform .2s, box-shadow .2s;
+}
+.lp-wa-float:hover { transform: translateY(-2px); box-shadow: 0 6px 28px rgba(0,0,0,.22); }
+@media (max-width: 900px) {
+  .lp-about-grid { grid-template-columns: 1fr; }
+  .lp-about-portrait { max-width: 360px; margin-inline: auto; }
+  .lp-topbar-brand small { display: none; }
+}
+@media (max-width: 600px) {
+  .lp-topbar-cta .btn-ghost { display: none; }
+}
+</style>
+
+</head>
+<body data-landing="general-perinatal">
+
+<!-- ══════════════════════════════════════════
+     TOPBAR MÍNIMA (sin nav completa)
+     ══════════════════════════════════════════ -->
+<header style="border-bottom: 1px solid var(--line);">
+  <div class="lp-topbar">
+    <a class="lp-topbar-brand" href="https://franciscabustos.cl">
+      Francisca Bustos
+      <small>Psicóloga Perinatal · Atención online</small>
+    </a>
+    <div class="lp-topbar-cta">
+      <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20quisiera%20consultar%20por%20una%20sesi%C3%B3n." class="btn btn-ghost btn-sm" onclick="window.gadsWhatsapp && gadsWhatsapp()">WhatsApp</a>
+      <a href="/reserva" class="btn btn-primary btn-sm" onclick="window.gadsReserva && gadsReserva()">Reservar hora →</a>
+    </div>
+  </div>
+</header>
+
+<!-- ══════════════════════════════════════════
+     HERO
+     ══════════════════════════════════════════ -->
+<section class="lp-hero">
+  <div class="lp-hero-grid">
+
+    <div class="lp-hero-copy">
+      <div class="eyebrow eyebrow-mark">Psicóloga Perinatal · Atención online</div>
+      <h1>
+        Lo que sientes<br/>
+        en este momento<br/>
+        <em>tiene acompañamiento.</em>
+      </h1>
+      <p class="lede">
+        Psicoterapia online especializada en embarazo, posparto, duelo gestacional y la transición a la maternidad. Atención online para personas en Chile.
+      </p>
+
+      <div class="lp-hero-ctas">
+        <a href="/reserva" class="btn btn-primary btn-lg" onclick="window.gadsReserva && gadsReserva()">
+          Reservar primera sesión <span class="arrow">→</span>
+        </a>
+        <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20quisiera%20consultar%20por%20una%20sesi%C3%B3n." class="btn btn-ghost btn-lg" onclick="window.gadsWhatsapp && gadsWhatsapp()">
+          Consultar por WhatsApp
+        </a>
+      </div>
+
+      <!-- CTA secundaria: llamada orientativa -->
+      <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20¿podríamos%20hacer%20una%20llamada%20corta%20para%20consultar?" class="lp-hero-call" data-cta="llamada-15min" onclick="window.gadsWhatsapp && gadsWhatsapp()">
+        <span class="lp-hero-call-dot" aria-hidden="true"></span>
+        <span><strong>¿No sabes si es para ti?</strong> Escríbeme y lo conversamos sin compromiso.</span>
+      </a>
+
+      <dl class="lp-hero-meta">
+        <div><dt>Modalidad</dt><dd>Atención online para personas en Chile</dd></div>
+        <div><dt>Primera sesión</dt><dd>50 min · Evaluación clínica cuidada</dd></div>
+        <div><dt>Reembolso</dt><dd>Aplica con isapres y seguros de salud</dd></div>
+      </dl>
+    </div>
+
+    <figure class="lp-hero-visual" aria-label="Francisca Bustos, psicóloga perinatal">
+      <picture>
+        <source type="image/webp"
+          srcset="assets/images/francisca/francisca-hero-web-1.webp 1448w"
+          sizes="(max-width:640px) 90vw, (max-width:900px) 55vw, 480px" />
+        <img src="assets/images/francisca/francisca-hero-web-1.webp"
+          srcset="assets/images/francisca/francisca-hero-web-1.webp 1448w"
+          sizes="(max-width:640px) 90vw, (max-width:900px) 55vw, 480px"
+          alt="Francisca Bustos, psicóloga perinatal"
+          width="1448" height="1086" loading="eager" fetchpriority="high" />
+      </picture>
+      <div class="lp-hero-visual-caption">
+        <strong>Francisca Bustos, Ps.</strong>
+        Psicóloga clínica · Especialista en salud mental perinatal
+      </div>
+    </figure>
+
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     TRUST STRIP
+     ══════════════════════════════════════════ -->
+<section class="trust" style="background: var(--paper); border-block: 1px solid var(--line);">
+  <div class="container">
+    <ul class="trust-list">
+      <li>
+        <span class="trust-num">6+</span>
+        <span class="trust-label">años acompañando mujeres en etapa perinatal</span>
+      </li>
+      <li>
+        <span class="trust-num">UZ</span>
+        <span class="trust-label">Experto Universitario en Salud Mental Reproductiva y Perinatal · Univ. Zaragoza</span>
+      </li>
+      <li>
+        <span class="trust-num">MSal</span>
+        <span class="trust-label">Registro Superintendencia de Salud · 598177</span>
+      </li>
+      <li>
+        <span class="trust-num">Col·Ps</span>
+        <span class="trust-label">Colegio de Psicólogos de Chile · Reg. 12.847</span>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     SERVICIOS (qué situaciones acompaña)
+     ══════════════════════════════════════════ -->
+<section class="section" style="background: var(--bg);">
+  <div class="container">
+    <div class="eyebrow eyebrow-mark">Áreas de atención</div>
+    <h2 class="mt-3" style="max-width:26ch; text-wrap:balance;">
+      Acompañamiento especializado para cada etapa perinatal
+    </h2>
+    <p class="lede mt-3" style="max-width:58ch; color:var(--ink-2);">
+      Cada vivencia es distinta. La atención se adapta a lo que estás atravesando hoy.
+    </p>
+    <div class="lp-services-grid">
+      <div class="lp-service-card">
+        <div class="lp-service-icon">🤰</div>
+        <h3>Embarazo</h3>
+        <p>Ansiedad, miedo al parto, cambios emocionales y duelo por el embarazo que imaginaste.</p>
+      </div>
+      <div class="lp-service-card">
+        <div class="lp-service-icon">🌿</div>
+        <h3>Postparto</h3>
+        <p>Baby blues, depresión postparto, agotamiento, dificultad para conectar con tu hijo o hija.</p>
+      </div>
+      <div class="lp-service-card">
+        <div class="lp-service-icon">🕊️</div>
+        <h3>Duelo gestacional</h3>
+        <p>Pérdida de embarazo, muerte perinatal, embarazo ectópico. Espacio especializado de acompañamiento.</p>
+      </div>
+      <div class="lp-service-card">
+        <div class="lp-service-icon">🤱</div>
+        <h3>Lactancia y crianza</h3>
+        <p>Dificultades emocionales durante la lactancia, agotamiento y la identidad materna en el primer año.</p>
+      </div>
+      <div class="lp-service-card">
+        <div class="lp-service-icon">💛</div>
+        <h3>Ansiedad perinatal</h3>
+        <p>Pensamientos intrusivos, hipervigilancia, miedo constante al bienestar del bebé.</p>
+      </div>
+      <div class="lp-service-card">
+        <div class="lp-service-icon">🌸</div>
+        <h3>Matrescence</h3>
+        <p>Transformación de la identidad en la transición a la maternidad. Quién eras y quién eres ahora.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     CTA INTERMEDIO
+     ══════════════════════════════════════════ -->
+<section class="lp-cta-inline" style="background: var(--bg-2);">
+  <div class="lp-cta-inline-inner">
+    <div class="eyebrow eyebrow-mark">Primera sesión</div>
+    <h2 class="mt-3">
+      La primera sesión es una <em>evaluación clínica cuidada</em>, no una consulta genérica.
+    </h2>
+    <p class="lede">
+      50 minutos para entender qué estás viviendo, qué necesitas, y si el acompañamiento psicológico es el paso adecuado para ti ahora.
+    </p>
+    <div class="lp-cta-inline-actions">
+      <a href="/reserva" class="btn btn-primary btn-lg" onclick="window.gadsReserva && gadsReserva()">Reservar primera sesión →</a>
+      <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20quisiera%20consultar%20antes%20de%20agendar." class="btn btn-ghost btn-lg" onclick="window.gadsWhatsapp && gadsWhatsapp()">Preguntar antes de reservar</a>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     SOBRE FRANCISCA
+     ══════════════════════════════════════════ -->
+<section class="lp-about">
+  <div class="lp-about-grid">
+    <div class="lp-about-portrait" aria-label="Retrato de Francisca Bustos">
+      <picture>
+        <source type="image/webp"
+          srcset="assets/images/francisca/francisca-sobre-mi-web-4.webp 1122w"
+          sizes="(max-width:900px) 90vw, 400px" />
+        <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp"
+          srcset="assets/images/francisca/francisca-sobre-mi-web-4.webp 1122w"
+          sizes="(max-width:900px) 90vw, 400px"
+          alt="Francisca Bustos en consulta de psicología perinatal"
+          width="1122" height="1402" loading="lazy" />
+      </picture>
+    </div>
+    <div>
+      <div class="eyebrow eyebrow-mark">Sobre Francisca</div>
+      <h2 class="mt-3">
+        Psicóloga clínica<br/>
+        <em>especializada en salud mental perinatal</em>
+      </h2>
+      <p class="lede mt-4" style="color:var(--ink-2);">
+        Mi trabajo está orientado a la salud mental de la mujer durante el período perinatal —desde el embarazo hasta los primeros años de crianza, incluyendo pérdidas y duelo gestacional.
+      </p>
+      <p class="mt-3" style="color:var(--ink-2); font-size:15.5px; line-height:1.65;">
+        Trabajo desde un enfoque basado en evidencia, con formación especializada en psicología perinatal. Atiendo de manera online para personas en Chile.
+      </p>
+      <div class="lp-creds">
+        <span class="lp-cred">Psicóloga clínica · Registro Colegio de Psicólogos de Chile Nº 12.847</span>
+        <span class="lp-cred">Experto Universitario en Salud Mental Reproductiva y Perinatal · Universidad de Zaragoza</span>
+        <span class="lp-cred">Registro Superintendencia de Salud Nº 598177</span>
+        <span class="lp-cred">6+ años de experiencia en psicología perinatal</span>
+        <span class="lp-cred">Reembolsable con isapres y seguros complementarios de salud</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     FAQ
+     ══════════════════════════════════════════ -->
+<section class="lp-faq">
+  <div class="lp-faq-grid">
+    <div>
+      <div class="eyebrow eyebrow-mark">Preguntas frecuentes</div>
+      <h2 class="mt-3">
+        Antes de<br/>
+        <em>dar el primer paso</em>
+      </h2>
+      <p class="mt-4" style="color:var(--ink-2); font-size:15.5px; line-height:1.65; max-width:36ch;">
+        Si tienes más dudas, escríbeme directamente por WhatsApp o revisa la <a href="/faq" style="color:var(--accent-deep);">sección de preguntas completa</a>.
+      </p>
+      <div style="margin-top:32px;">
+        <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20tengo%20una%20consulta%20antes%20de%20agendar." class="btn btn-ghost" onclick="window.gadsWhatsapp && gadsWhatsapp()">Consultar por WhatsApp</a>
+      </div>
+    </div>
+    <div class="lp-faq-list">
+      <details class="lp-faq-item">
+        <summary>¿Cómo sé si necesito psicóloga perinatal?</summary>
+        <div class="lp-faq-body">
+          <p>Si estás atravesando el embarazo, postparto, una pérdida gestacional o la crianza y sientes que algo no está bien emocionalmente —ya sea tristeza persistente, ansiedad, desconexión o agotamiento que no cede— una evaluación clínica puede ayudarte a entender qué está pasando.</p>
+          <p>No necesitas llegar en crisis. Consultar antes es siempre mejor que esperar.</p>
+        </div>
+      </details>
+      <details class="lp-faq-item">
+        <summary>¿La atención es online?</summary>
+        <div class="lp-faq-body">
+          <p>La atención se realiza online para personas en Chile. Las sesiones se desarrollan por videollamada, con la misma profundidad y continuidad de proceso.</p>
+        </div>
+      </details>
+      <details class="lp-faq-item">
+        <summary>¿Puedo pedir reembolso a mi isapre?</summary>
+        <div class="lp-faq-body">
+          <p>Sí. La atención es reembolsable con la mayoría de las isapres y seguros complementarios de salud. Se entrega boleta de honorarios profesionales. El monto de reembolso depende del plan de cada paciente.</p>
+        </div>
+      </details>
+      <details class="lp-faq-item">
+        <summary>¿Cuánto dura la primera sesión?</summary>
+        <div class="lp-faq-body">
+          <p>La primera sesión es una evaluación clínica inicial de 50 minutos. En ella conversamos sobre lo que estás viviendo, tu historia y qué necesitas. Al final tendrás claridad sobre si continuar con proceso terapéutico y en qué dirección.</p>
+        </div>
+      </details>
+      <details class="lp-faq-item">
+        <summary>¿Atiende duelo gestacional o pérdidas?</summary>
+        <div class="lp-faq-body">
+          <p>Sí, el duelo gestacional y perinatal es una de mis áreas de especialización. Acompaño a mujeres que han vivido pérdidas de embarazo, muertes perinatales, embarazos ectópicos y otras situaciones de pérdida en el contexto reproductivo y perinatal.</p>
+        </div>
+      </details>
+      <details class="lp-faq-item">
+        <summary>¿Cómo agendo la primera sesión?</summary>
+        <div class="lp-faq-body">
+          <p>Puedes agendar directamente usando el botón "Reservar primera sesión" en esta página. El proceso toma menos de 3 minutos y recibirás confirmación por correo electrónico.</p>
+          <p>También puedes escribirme por WhatsApp si prefieres consultar antes de reservar.</p>
+        </div>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     FINAL CTA
+     ══════════════════════════════════════════ -->
+<section class="lp-final">
+  <div class="lp-final-inner">
+    <div class="eyebrow eyebrow-mark">Primer paso</div>
+    <h2 class="mt-3">
+      Reserva tu<br/>
+      <em>primera sesión</em><br/>
+      hoy.
+    </h2>
+    <p class="lede">
+      50 minutos de evaluación clínica cuidada. Atención online para personas en Chile. Sin listas de espera largas.
+    </p>
+    <div class="lp-final-actions">
+      <a href="/reserva" class="btn btn-primary btn-xl" onclick="window.gadsReserva && gadsReserva()">
+        Reservar primera sesión →
+      </a>
+      <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20quisiera%20agendar%20una%20sesi%C3%B3n." class="btn btn-ghost btn-xl" onclick="window.gadsWhatsapp && gadsWhatsapp()">
+        Escribir por WhatsApp
+      </a>
+    </div>
+    <div class="lp-final-trust">
+      <span>Atención basada en evidencia</span>
+      <span>Registro Superint. de Salud</span>
+      <span>Reembolsable con isapres</span>
+      <span>Atención online</span>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════
+     FOOTER MÍNIMO
+     ══════════════════════════════════════════ -->
+<footer class="lp-footer-min">
+  <p>© 2026 Francisca Bustos · Psicóloga Clínica Perinatal · Atención online para personas en Chile · <a href="https://franciscabustos.cl/privacidad">Política de privacidad</a></p>
+  <p style="margin-top:8px; font-size:12px;">
+    Registro Colegio de Psicólogos de Chile Nº 12.847 · Superintendencia de Salud Nº 598177
+  </p>
+</footer>
+
+<!-- WhatsApp flotante -->
+<a class="lp-wa-float" href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20quisiera%20consultar%20por%20una%20sesi%C3%B3n." onclick="window.gadsWhatsapp && gadsWhatsapp()" aria-label="Contactar por WhatsApp">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+  WhatsApp
+</a>
+
+<!-- Crisis note (obligatoria en páginas de salud mental) -->
+<div style="background:var(--bg-2); border-top:1px solid var(--line); padding:16px clamp(20px,4vw,48px); text-align:center; font-size:13px; color:var(--ink-2);">
+  Si estás en crisis o con pensamientos de hacerte daño, llama al <a href="tel:*4141" style="color:var(--ink); font-weight:500;">*4141</a> (Salud Responde, MINSAL) o acude al servicio de urgencia más cercano.
+</div>
+
+</body>
+</html>
