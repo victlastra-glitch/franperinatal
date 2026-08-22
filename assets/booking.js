@@ -6,6 +6,11 @@
 (function () {
   const MONTHS = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
   const DAYS_FULL = ["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+  // Same-origin booking boundary. The Worker keeps the upstream private.
+  const BOOKING_API = Object.freeze({
+    availability: '/api/availability',
+    createFlowPayment: '/api/create-flow-payment',
+  });
 
   const state = {
     step: 1,
@@ -18,23 +23,6 @@
     confirmation: null,
   };
 
-  // ----------------------------------------------------------------------
-  // PRODUCTION_WEB_APP_URL_TO_SET_BEFORE_DEPLOY
-  // ----------------------------------------------------------------------
-  // Reemplaza la cadena entre comillas por la URL del Web App productivo
-  // de Apps Script (https://script.google.com/macros/s/<PROD_DEPLOY_ID>/exec)
-  // ANTES del primer deploy productivo. La URL debe coincidir con la
-  // Script Property WEB_APP_URL del backend productivo.
-  //
-  // Bloqueo: mientras quede el sentinel "https://script.google.com/macros/s/AKfycbyfioG2bsGkvX9UMcnph2U-pDZQu24-OtUSw3cX_tL4Oz-GVMbYMEhUjhOwhNyTV44k/exec"
-  // las llamadas fallarán de forma visible — esto es intencional para
-  // impedir que un deploy accidental llame a un endpoint inexistente o
-  // a un endpoint legacy/sandbox.
-  // ----------------------------------------------------------------------
-  const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbyfioG2bsGkvX9UMcnph2U-pDZQu24-OtUSw3cX_tL4Oz-GVMbYMEhUjhOwhNyTV44k/exec';
-  if (WEBAPP_URL.includes('<') || WEBAPP_URL.includes('PRODUCTION_WEB_APP_URL')) {
-    console.warn('[booking.js] WEBAPP_URL placeholder not replaced — production deploy is BLOCKED.');
-  }
   const BOOKING_CALENDAR_CONFIG = Object.freeze({
     timeZone: "America/Santiago",
     leadMinutes: 120,
@@ -60,10 +48,10 @@
 
   async function fetchBookedSlots() {
     try {
-      const resp = await fetch(WEBAPP_URL, { method: 'GET', cache: 'no-store' });
+      const resp = await fetch(BOOKING_API.availability, { method: 'GET', cache: 'no-store' });
       if (resp.ok) {
         const data = await resp.json();
-        bookedSlots = Array.isArray(data) ? data : [];
+        bookedSlots = data && data.ok && Array.isArray(data.slots) ? data.slots : [];
       }
     } catch (_) {}
     slotsLoaded = true;
@@ -510,7 +498,6 @@
     ].map(s => (s || '').trim()).filter(s => s.length > 0);
 
     const payload = {
-      action:      'create_flow_payment',
       serviceType: serviceType,
       modality:    state.modality && state.modality.label ? state.modality.label : '',
       date:        fechaISO,
@@ -524,10 +511,9 @@
     };
 
     try {
-      const resp = await fetch(WEBAPP_URL, {
+      const resp = await fetch(BOOKING_API.createFlowPayment, {
         method: 'POST',
-        mode: 'cors',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
       const result = await resp.json().catch(() => ({}));

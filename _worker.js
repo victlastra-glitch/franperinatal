@@ -1,17 +1,19 @@
 /**
  * _worker.js — Francisca Bustos · Cloudflare Pages Worker
  * ============================================================
- * Web 04.9 PRODUCTION cutover:
- *   - Hardcoded fallback URL removed. APPS_SCRIPT_WEB_APP_URL is REQUIRED.
- *   - /api/payment-status proxy added (no PII, no Apps Script URL leak).
+ * NONPROD recovery route boundary:
+ *   - Browser booking traffic is same-origin only.
+ *   - APPS_SCRIPT_WEB_APP_URL is REQUIRED and never returned to a client.
+ *   - Booking/payment routes fail closed unless APP_ENV is exactly nonprod.
  *   - /backend/* explicitly returns 404 (defense in depth — should also
  *     be excluded at deploy artifact level via wrangler/build).
  *   - /pago-resultado POST → 303 GET preserved (Flow urlReturn).
  *   - Missing APPS_SCRIPT_WEB_APP_URL returns 503 (NOT 200) so monitoring
  *     can detect misconfiguration immediately.
  *
- * Required Cloudflare Pages environment variables (Production):
- *   APPS_SCRIPT_WEB_APP_URL = https://script.google.com/macros/s/<PROD_DEPLOY_ID>/exec
+ * Required Cloudflare Pages Preview environment variables:
+ *   APP_ENV = nonprod
+ *   APPS_SCRIPT_WEB_APP_URL = set privately to the dedicated NONPROD Web App
  *
  * This worker supersedes functions/api/flow-confirmation.js. When _worker.js
  * is present, Cloudflare Pages ignores the functions/ directory entirely.
@@ -29,23 +31,128 @@ function jsonResp(obj, status) {
   });
 }
 
+function nonprodUpstream(env) {
+  if (!env || env.APP_ENV !== 'nonprod') {
+    return { error: 'environment_not_configured', status: 503 };
+  }
+  const target = env.APPS_SCRIPT_WEB_APP_URL;
+  if (!target) return { error: 'upstream_not_configured', status: 503 };
+  try {
+    const url = new URL(target);
+    if (url.protocol !== 'https:' || url.hostname !== 'script.google.com') {
+      return { error: 'upstream_rejected', status: 503 };
+    }
+  } catch (_) {
+    return { error: 'upstream_rejected', status: 503 };
+  }
+  return { target: target };
+}
+
+function safeAvailability(data) {
+  const slots = Array.isArray(data) ? data : (data && Array.isArray(data.slots) ? data.slots : null);
+  if (!slots) return null;
+  return slots.filter((slot) => slot && typeof slot.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(slot.date)
+    && typeof slot.time === 'string' && /^\d{2}:\d{2}$/.test(slot.time))
+    .map((slot) => ({ date: slot.date, time: slot.time }));
+}
+
+async function readJsonResponse(upstream) {
+  let text;
+  try { text = await upstream.text(); } catch (_) { return null; }
+  try { return JSON.parse(text); } catch (_) { return null; }
+}
+
+// --- /api/availability ---------------------------------------------------
+async function handleAvailability(request, env) {
+  if (request.method !== 'GET') return textBad('method_not_allowed', 405);
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+
+  const date = new URL(request.url).searchParams.get('date');
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  const query = '?action=availability' + (date ? '&date=' + encodeURIComponent(date) : '');
+  let upstream;
+  try {
+    upstream = await fetch(upstreamConfig.target + query, { method: 'GET', redirect: 'follow', cf: { cacheTtl: 0, cacheEverything: false } });
+  } catch (_) {
+    console.error('[availability] upstream unavailable');
+    return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502);
+  }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  const slots = safeAvailability(await readJsonResponse(upstream));
+  if (!slots) return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
+  return jsonResp({ ok: true, slots: slots }, 200);
+}
+
+const CREATE_FIELDS = new Set(['serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'patientRut', 'reason', 'message']);
+
+function validCreatePayload(value) {
+  if (!value || Array.isArray(value) || typeof value !== 'object') return null;
+  const keys = Object.keys(value);
+  if (keys.some((key) => !CREATE_FIELDS.has(key))) return null;
+  const payload = {};
+  for (const key of CREATE_FIELDS) {
+    const field = value[key] == null ? '' : String(value[key]).trim();
+    if (field.length > 500) return null;
+    payload[key] = field;
+  }
+  if (!/^(initial|followup)$/.test(payload.serviceType) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)
+      || !/^\d{2}:\d{2}$/.test(payload.time) || !payload.name || payload.name.length > 80
+      || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) return null;
+  return payload;
+}
+
+// --- /api/create-flow-payment -------------------------------------------
+async function handleCreateFlowPayment(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+
+  let candidate;
+  try { candidate = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  const payload = validCreatePayload(candidate);
+  if (!payload) return jsonResp({ ok: false, code: 'bad_request' }, 400);
+
+  let upstream;
+  try {
+    upstream = await fetch(upstreamConfig.target + '?action=create_flow_payment', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'create_flow_payment', ...payload }),
+      redirect: 'follow',
+    });
+  } catch (_) {
+    console.error('[create-flow-payment] upstream unavailable');
+    return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502);
+  }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  const data = await readJsonResponse(upstream);
+  if (!data || typeof data !== 'object') return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
+  if (!data.ok) return jsonResp({ ok: false, code: typeof data.code === 'string' ? data.code : 'payment_rejected' }, 200);
+  // A checkout redirect is a required payment-provider handoff, not an Apps
+  // Script upstream URL. It is restricted to Flow Sandbox in this environment.
+  if (typeof data.paymentUrl !== 'string') return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
+  try {
+    const checkout = new URL(data.paymentUrl);
+    if (checkout.protocol !== 'https:' || checkout.hostname !== 'sandbox.flow.cl') throw new Error('rejected');
+  } catch (_) {
+    return jsonResp({ ok: false, code: 'checkout_rejected' }, 502);
+  }
+  return jsonResp({ ok: true, paymentUrl: data.paymentUrl }, 200);
+}
+
 // --- /api/flow-confirmation ----------------------------------------------
 // Flow.cl webhook target. Forwards POST application/x-www-form-urlencoded
 // to Apps Script, follows the 302 redirect internally, returns 200 OK plain
 // text to Flow. Idempotency is enforced server-side (LockService + flags).
 async function handleFlowConfirmation(request, env) {
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return textBad(upstreamConfig.error, upstreamConfig.status);
   if (request.method === 'GET') {
     return new Response('flow-confirmation proxy alive\n', { status: 200, headers: RESP_HEADERS_TEXT });
   }
   if (request.method !== 'POST') {
     return textBad('method_not_allowed', 405);
-  }
-
-  const target = env.APPS_SCRIPT_WEB_APP_URL;
-  if (!target) {
-    console.error('[flow-confirmation] APPS_SCRIPT_WEB_APP_URL not configured');
-    // Web 04.9: 503 (not 200) so Cloudflare monitoring + Flow retries surface the gap.
-    return textBad('upstream_not_configured', 503);
   }
 
   let body;
@@ -57,7 +164,7 @@ async function handleFlowConfirmation(request, env) {
 
   let upstream;
   try {
-    upstream = await fetch(target + '?action=flow_confirmation', {
+    upstream = await fetch(upstreamConfig.target + '?action=flow_confirmation', {
       method: 'POST',
       headers: { 'content-type': incomingCT },
       body: body,
@@ -85,21 +192,18 @@ async function handlePaymentStatus(request, env) {
     return textBad('method_not_allowed', 405);
   }
 
-  const target = env.APPS_SCRIPT_WEB_APP_URL;
-  if (!target) {
-    console.error('[payment-status] APPS_SCRIPT_WEB_APP_URL not configured');
-    return jsonResp({ ok: false, code: 'UPSTREAM_NOT_CONFIGURED' }, 503);
-  }
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
 
   const incomingUrl = new URL(request.url);
   const st = incomingUrl.searchParams.get('st');
-  if (!st) {
+  if (!st || !/^[A-Za-z0-9._~-]{20,300}$/.test(st)) {
     return jsonResp({ ok: false, code: 'MISSING_STATUS_TOKEN' }, 400);
   }
 
   let upstream;
   try {
-    upstream = await fetch(target + '?action=payment_status&st=' + encodeURIComponent(st), {
+    upstream = await fetch(upstreamConfig.target + '?action=payment_status&st=' + encodeURIComponent(st), {
       method: 'GET',
       redirect: 'follow',
       cf: { cacheTtl: 0, cacheEverything: false }
@@ -129,8 +233,6 @@ async function handlePaymentStatus(request, env) {
   const safeBody = data && data.ok ? {
     ok: true,
     status: data.status || '',
-    commerceOrder: data.commerceOrder || '',
-    reservationId: data.reservationId || '',
     amount: Number.isFinite(Number(data.amount)) ? Number(data.amount) : null,
     currency: data.currency === 'CLP' ? 'CLP' : '',
     serviceType: data.serviceType || '',
@@ -139,7 +241,6 @@ async function handlePaymentStatus(request, env) {
   } : {
     ok: false,
     code: data && data.code ? data.code : '',
-    error: data && data.error ? data.error : '',
     backendVersion: data && data.backendVersion ? data.backendVersion : ''
   };
 
@@ -178,6 +279,14 @@ export default {
 
     if (url.pathname === '/api/flow-confirmation') {
       return handleFlowConfirmation(request, env);
+    }
+
+    if (url.pathname === '/api/availability') {
+      return handleAvailability(request, env);
+    }
+
+    if (url.pathname === '/api/create-flow-payment') {
+      return handleCreateFlowPayment(request, env);
     }
 
     if (url.pathname === '/api/payment-status') {

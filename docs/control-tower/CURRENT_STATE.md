@@ -24,16 +24,18 @@ backend correlation is therefore **LIKELY**, not VERIFIED.
 ## Current routing
 
 ```text
-Browser booking asset (currently direct Apps Script URL)
-  -> active Apps Script version 6 (direct availability and booking start)
+Recovery branch browser booking asset (same-origin only)
+  -> /api/availability and /api/create-flow-payment
+  -> Worker Preview binding (not yet configured)
+  -> dedicated NONPROD Apps Script Web App
 
 Cloudflare Worker /api/flow-confirmation and /api/payment-status
   -> env.APPS_SCRIPT_WEB_APP_URL (runtime value not disclosed)
 ```
 
-Preview is **NOT ISOLATED**. The direct browser route and the Worker binding
-must both be replaced with a dedicated NONPROD path before booking, payment,
-Calendar, email, or webhook QA.
+Production remains unchanged. Preview is **NOT ISOLATED** until its binding is
+proven Preview-only, but the recovery source no longer embeds an executable
+Apps Script URL.
 
 ## Current mission
 
@@ -52,42 +54,54 @@ every external operation must prove its NONPROD scope before it runs.
   matched to the NONPROD project. Redacted deployment fingerprint:
   `01869b5b4dc8`.
 - The NONPROD datastore and the `Francisca Sandbox Test` Calendar were
-  provisioned directly in Workspace. Their actual IDs remain private and have
-  not yet been independently read by this session.
-- No NONPROD Web App deployment, email configuration, Cloudflare Preview
-  configuration, or browser/Worker refactor exists yet.
+  provisioned directly in Workspace. Approved private identifiers were stored
+  only in ignored local state (mode 600) and match fingerprints
+  `390f55363168` and `6c0535f4450c`, respectively.
+- A sanitized derivative was pushed only to the standalone NONPROD Apps Script
+  project. It reads environment values only from Script Properties, validates
+  NONPROD fingerprints/namespace/Flow host before external effects, and has no
+  production identifiers, recipient literals, or source export in Git.
+- A distinct NONPROD Web App deployment was created. Its redacted fingerprint
+  is `d9722d8abf60`. Its anonymous HTTP accessibility is **not verified**:
+  an unauthenticated availability request returned 403 before Apps Script code
+  executed, so its fail-closed runtime response was not observable.
+- `assets/booking.js` now calls same-origin `/api/availability` and
+  `/api/create-flow-payment`. `_worker.js` owns those routes plus confirmation
+  and status, rejects `APP_ENV !== nonprod`, validates bounded input, and does
+  not expose an Apps Script upstream.
+- No Script Properties, email configuration, Cloudflare Preview configuration,
+  Preview deployment, or transactional E2E has been performed.
 
 `GCP_BOOTSTRAP_REQUIREMENT = NOT_REQUIRED` for this Workspace provisioning
 path. This is not a claim that GCP will never be needed for a separate feature.
 
 ## Open blockers
 
-1. Preview scope of `APPS_SCRIPT_WEB_APP_URL` cannot be proven with the
-   available read-only CLI metadata.
-2. The browser still carries a direct Apps Script URL; it must be refactored to
-   relative `/api` routes in a reviewed NONPROD change.
-3. The actual datastore and Calendar IDs/metadata must be read through an
-   authorized Workspace surface and verified before Script Properties can be
-   set; this session cannot access the Shared Drive or Calendar metadata.
-4. Dedicated NONPROD Web App, test-mail allowlist, and Cloudflare Preview
-   configuration do not exist yet.
-5. The exported source has configuration and PII-handling surfaces that require
-   sanitization before any source is copied into Git.
+1. The currently authorized tooling has no Script Properties write operation;
+   completing the private owner-controlled UI checklist is required before the
+   backend can run. The retired Execution API/GCP bootstrap is prohibited.
+2. The Web App returned 403 to an unauthenticated no-side-effect check. Its
+   sharing/access setting requires owner review in the Apps Script UI before
+   Flow callbacks or external Preview traffic can be tested.
+3. Preview scope of `APPS_SCRIPT_WEB_APP_URL` cannot be proven with the
+   available CLI metadata. Do not change project-wide or Production settings.
+4. Confirmation/status remain deliberately disabled in the derivative pending
+   a reviewed signature/state-transition implementation and isolated E2E.
 
 ## Hard prohibitions
 
 - Do not operate on `main` or `/Users/vic/Documents/Claude`.
-- Do not push/deploy Apps Script, create versions, alter Script Properties, or
-  execute booking, payment, Calendar, email, or Flow actions.
+- Do not modify Candidate A, its version 6, or any production Script Property.
+- Do not use the retired Execution API/GCP bootstrap to set NONPROD properties.
 - Do not change Cloudflare bindings, variables, secrets, deployments, domains,
   or production configuration.
-- Do not create NONPROD resources before the explicit creation gate.
 - Do not commit Apps Script source, credentials, recipient data, reservations,
   payment data, or exported runtime configuration.
 
 ## Stop conditions
 
 Stop with one of: `HUMAN_GATE_REQUIRED`, `BLOCKED_BY_MISSING_CREDENTIAL`,
-`PRODUCTION_MUTATION_REQUIRED`, or `DECISION_REQUIRED` before any operation
-that can mutate an external resource. Complete the current documentation-only
-mission with `MISSION_COMPLETE`.
+`PRODUCTION_MUTATION_REQUIRED`, or `DECISION_REQUIRED` before an unscoped or
+production-affecting external operation. The next gate is private Apps Script
+UI configuration, followed by proof that Cloudflare configuration is Preview
+only.
