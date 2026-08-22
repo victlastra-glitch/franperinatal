@@ -48,14 +48,17 @@ every external operation must prove its NONPROD scope before it runs.
 - A standalone NONPROD Apps Script project was created under the approved
   institutional identity. Redacted project fingerprint: `53d963e98306`.
 - A temporary `MYSELF`-only API-executable deployment was created solely to
-  provision isolated Google resources. Redacted deployment fingerprint:
+  provision isolated Google resources, then removed after its fingerprint was
+  matched to the NONPROD project. Redacted deployment fingerprint:
   `01869b5b4dc8`.
-- No NONPROD datastore, Calendar, Web App deployment, email configuration,
-  Cloudflare Preview configuration, or browser/Worker refactor exists yet.
-- Provisioning is blocked before datastore/Calendar creation because remote
-  execution requires a dedicated standard Google Cloud project with the Apps
-  Script API enabled and shared authorization. Its isolation cannot be inferred
-  or created safely from the available tooling.
+- The NONPROD datastore and the `Francisca Sandbox Test` Calendar were
+  provisioned directly in Workspace. Their actual IDs remain private and have
+  not yet been independently read by this session.
+- No NONPROD Web App deployment, email configuration, Cloudflare Preview
+  configuration, or browser/Worker refactor exists yet.
+
+`GCP_BOOTSTRAP_REQUIREMENT = NOT_REQUIRED` for this Workspace provisioning
+path. This is not a claim that GCP will never be needed for a separate feature.
 
 ## Open blockers
 
@@ -63,10 +66,11 @@ every external operation must prove its NONPROD scope before it runs.
    available read-only CLI metadata.
 2. The browser still carries a direct Apps Script URL; it must be refactored to
    relative `/api` routes in a reviewed NONPROD change.
-3. A dedicated standard Google Cloud project is required for the new NONPROD
-   Apps Script Execution API; no project linkage has been proven safe yet.
-4. Dedicated NONPROD datastore, Calendar, Web App, test-mail allowlist, and
-   Cloudflare Preview configuration do not exist yet.
+3. The actual datastore and Calendar IDs/metadata must be read through an
+   authorized Workspace surface and verified before Script Properties can be
+   set; this session cannot access the Shared Drive or Calendar metadata.
+4. Dedicated NONPROD Web App, test-mail allowlist, and Cloudflare Preview
+   configuration do not exist yet.
 5. The exported source has configuration and PII-handling surfaces that require
    sanitization before any source is copied into Git.
 

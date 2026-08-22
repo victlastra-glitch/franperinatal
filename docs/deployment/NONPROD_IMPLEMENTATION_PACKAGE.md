@@ -37,7 +37,7 @@ this repository.
 | Worker | Preview-only API behavior | `APP_ENV=nonprod` | code-review gate |
 | Apps Script | Separate project and Web App deployment | `fran-booking-nonprod-20260821` | owner creation gate |
 | Datastore | Separate Sheet/store and tabs | `fran-booking-nonprod-20260821-*` | data isolation gate |
-| Calendar | Separate calendar | `fran-booking-nonprod-20260821` | calendar gate |
+| Calendar | Existing isolated secondary calendar | `Francisca Sandbox Test` | calendar metadata gate |
 | Flow | Sandbox merchant/configuration | `NONPROD` namespace only | payment-owner gate |
 | Email | Test mailbox allowlist | `*@example.test` or approved controlled domain | privacy gate |
 
@@ -89,8 +89,8 @@ reject non-allowlisted recipients.
   URL. Never reuse production order sequences or webhooks.
 - Use one datastore with a distinct ID and tab namespace; it must contain only
   synthetic records.
-- Use one distinct Calendar and assert the configured calendar ID before event
-  creation/cancellation.
+- Use only the existing `Francisca Sandbox Test` secondary calendar and assert
+  its configured calendar ID before event creation/cancellation.
 - Use only synthetic names/contact details and no clinical information,
   production payment data, or identity numbers.
 - Prefix reservation ID, commerce order, status token, and idempotency key with
@@ -128,22 +128,22 @@ Capture only redacted request IDs, HTTP statuses, route names, and state labels.
 
 1. Approve this package, naming decision, and test-mail ownership.
 2. Create Flow SANDBOX configuration and record private fingerprints.
-3. Create a separate standalone Apps Script bootstrap under the NONPROD owner;
-   it must be `MYSELF`-only and must not be a booking Web App.
-4. Attach a dedicated standard Google Cloud project to that NONPROD script,
-   enable the Apps Script API, and grant only the required owner authorization.
-   Do not reuse or infer a production Cloud project.
-5. Create the separate datastore and Calendar through the authorized NONPROD
-   bootstrap; record private IDs and redacted fingerprints.
-6. Replace the bootstrap with a reviewed redacted derivative of the canonical
-   source; do not retain bootstrap entry points in the Web App.
-7. Set NONPROD Script Properties through the approved owner session.
-8. Create a distinct Apps Script Web App deployment and record its private
+3. Discover and verify the pre-provisioned Shared Drive datastore and the
+   `Francisca Sandbox Test` Calendar through an authorized Workspace surface;
+   record private IDs and redacted fingerprints.
+4. Create a reviewed redacted derivative of the canonical source in the
+   existing NONPROD Apps Script project.
+5. Set NONPROD Script Properties through the approved owner session.
+6. Create a distinct Apps Script Web App deployment and record its private
    fingerprint.
-9. Implement and review browser-relative routes, Worker guards, and source
+7. Implement and review browser-relative routes, Worker guards, and source
    sanitization.
-10. Set Cloudflare Preview variables/secrets only after code review.
-11. Deploy Preview and run the verification order below.
+8. Set Cloudflare Preview variables/secrets only after code review.
+9. Deploy Preview and run the verification order below.
+
+`GCP_BOOTSTRAP_REQUIREMENT = NOT_REQUIRED` for datastore and Calendar
+provisioning through Workspace. Do not create or attach a Google Cloud project
+solely to satisfy the retired bootstrap path.
 
 ## Verification order — no production mutation
 
