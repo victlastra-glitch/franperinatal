@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { assertNonprodUpstreamCallSites } from './assert-nonprod-worker-structure.mjs';
 
 const workerSource = await readFile(new URL('../_worker.js', import.meta.url), 'utf8');
 const workerModule = await import(`data:text/javascript;base64,${Buffer.from(workerSource).toString('base64')}`);
@@ -59,8 +60,29 @@ try {
     }
   }
   assert.equal(upstreamFetchCalls, 0, 'disabled routes and missing booking config must not fetch upstream');
-  assert.equal((workerSource.match(/nonprodUpstream\(env\)/g) || []).length, 5,
-    'only the four booking/payment handlers may call nonprodUpstream');
+  assertNonprodUpstreamCallSites(workerSource);
+  console.log('SEMANTIC_UPSTREAM_CALL_SITE_TEST=PASS');
+
+  const availabilityCall = workerSource.indexOf(
+    'nonprodUpstream(env)',
+    workerSource.indexOf('async function handleAvailability')
+  );
+  assert.notEqual(availabilityCall, -1, 'synthetic mutation target missing');
+  const withoutAvailabilityCall = workerSource.slice(0, availabilityCall)
+    + workerSource.slice(availabilityCall + 'nonprodUpstream(env)'.length);
+  const unauthorizedHandlerBody = withoutAvailabilityCall.indexOf(
+    '{',
+    withoutAvailabilityCall.indexOf('function handlePagoResultadoPost')
+  ) + 1;
+  const mutantSource = withoutAvailabilityCall.slice(0, unauthorizedHandlerBody)
+    + '\n  nonprodUpstream(env);'
+    + withoutAvailabilityCall.slice(unauthorizedHandlerBody);
+  assert.throws(
+    () => assertNonprodUpstreamCallSites(mutantSource),
+    /handleAvailability|unauthorized handler/,
+    'semantic assertion must reject a same-count lost/gained call-site mutation'
+  );
+  console.log('SEMANTIC_UPSTREAM_MUTANT_TESTS=PASS');
   console.log('DISABLED_ROUTES_UPSTREAM_FETCH_CALLS=0');
   console.log('NONPROD_WORKER_ROUTE_TESTS=PASS');
 } finally {
