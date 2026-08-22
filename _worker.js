@@ -48,6 +48,10 @@ function nonprodUpstream(env) {
   return { target: target };
 }
 
+function disabledNonprodFeature() {
+  return jsonResp({ ok: false, code: 'feature_disabled_nonprod' }, 503);
+}
+
 function safeAvailability(data) {
   const slots = Array.isArray(data) ? data : (data && Array.isArray(data.slots) ? data.slots : null);
   if (!slots) return null;
@@ -283,6 +287,18 @@ export default {
 
     if (url.pathname === '/api/flow-confirmation') {
       return handleFlowConfirmation(request, env);
+    }
+
+    if (url.pathname === '/api/leadmagnet') {
+      if (request.method !== 'POST') return jsonResp({ ok: false, code: 'method_not_allowed' }, 405);
+      return disabledNonprodFeature();
+    }
+
+    if (url.pathname === '/api/manage'
+        || url.pathname === '/api/manage-availability'
+        || url.pathname === '/api/manage-cancel'
+        || url.pathname === '/api/manage-reschedule') {
+      return disabledNonprodFeature();
     }
 
     if (url.pathname === '/api/availability') {

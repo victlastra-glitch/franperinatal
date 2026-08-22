@@ -573,7 +573,12 @@
   'use strict';
 
   /* ─── Config ─── */
-  const WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbxdIwUJKDl0lPARf5noM_lm7MqWGq-B5lyljmOL5jr9lqvEV5eq9ZDHNENs-DSma6JH/exec';
+  const MANAGE_API = Object.freeze({
+    reservation: '/api/manage',
+    availability: '/api/manage-availability',
+    cancel: '/api/manage-cancel',
+    reschedule: '/api/manage-reschedule'
+  });
   const RESERVATION_TIME_ZONE = 'America/Santiago';
   const MIN_BOOKING_LEAD_MINUTES = 120;
   const RESCHEDULE_CONFIG = Object.freeze({
@@ -745,11 +750,11 @@
   }
 
   /* ─── Cargar reserva ─── */
-  // Usamos POST text/plain para evitar fallos del GET cross-origin con redirect.
+  // La reserva se consulta por el Worker same-origin.
   async function loadReservation() {
     showView('view-loading');
     try {
-      var resp = await fetch(WEBAPP_URL, {
+      var resp = await fetch(MANAGE_API.reservation, {
         method: 'POST',
         credentials: 'omit',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -825,7 +830,7 @@
     hideAlert('cancel-alert');
     setLoading('btn-cancel-confirm', true);
     try {
-      var resp = await fetch(WEBAPP_URL, {
+      var resp = await fetch(MANAGE_API.cancel, {
         method: 'POST',
         credentials: 'omit',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
@@ -864,7 +869,7 @@
     document.getElementById('reschedule-back-only').style.display = 'block';
 
     try {
-      var resp = await fetch(WEBAPP_URL, { method: 'GET', cache: 'no-store', credentials: 'omit' });
+      var resp = await fetch(MANAGE_API.availability, { method: 'GET', cache: 'no-store', credentials: 'omit' });
       if (resp.ok) {
         var data = await resp.json();
         bookedSlots = Array.isArray(data) ? data : [];
@@ -1022,7 +1027,7 @@
     setLoading('btn-reschedule-confirm', true);
     try {
       var payload = { action: 'reschedule_confirm', token: token, fecha: selDate, hora: selTime };
-      var resp = await fetch(WEBAPP_URL, {
+      var resp = await fetch(MANAGE_API.reschedule, {
         method: 'POST',
         credentials: 'omit',
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },

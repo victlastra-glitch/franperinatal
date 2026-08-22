@@ -45,10 +45,8 @@
   if (panel) panel.querySelectorAll("a").forEach(a => a.addEventListener("click", closePanel));
   window.addEventListener("resize", () => { if (window.innerWidth > 960) closePanel(); });
 
-  // ---------- Leadmag form — Apps Script separado (NO Google Forms, NO script de agenda) ----------
-  // IMPORTANTE: reemplazar con la URL del deployment de AppsScript_leadmagnet.gs
-  // Pasos: script.google.com > "FB Lead Magnet" > Implementar > App web > copiar URL aquí
-  const LEADMAG_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzEJjo0_QCW624mzbIGXYwKJBbRlUqiON8pNnHW5Jqb5xF6Lp2uNTnM-AfkUFyXcpKb/exec';
+  // ---------- Leadmag form — mismo origen; el Worker controla cualquier upstream ----------
+  const LEADMAG_API_URL = '/api/leadmagnet';
 
   // Destino del PDF ya creado en guia/
   const LEADMAG_PDF_URL  = 'guia/10-senales.pdf';
@@ -79,11 +77,10 @@
 
       let envioCorrecto = false;
 
-      // Enviar al Apps Script de lead magnet (separado del de agenda)
+      // El Worker decide si esta función está disponible en el ambiente actual.
       try {
-        const resp = await fetch(LEADMAG_WEBAPP_URL, {
+        const resp = await fetch(LEADMAG_API_URL, {
           method:  'POST',
-          mode:    'cors',
           headers: { 'Content-Type': 'text/plain;charset=utf-8' },
           body:    JSON.stringify({ action: 'leadmag', email }),
         });
