@@ -128,15 +128,22 @@ Capture only redacted request IDs, HTTP statuses, route names, and state labels.
 
 1. Approve this package, naming decision, and test-mail ownership.
 2. Create Flow SANDBOX configuration and record private fingerprints.
-3. Create separate datastore and Calendar; record private IDs.
-4. Create a separate Apps Script project from a reviewed redacted derivative.
-5. Set NONPROD Script Properties through the approved owner session.
-6. Create a distinct Apps Script Web App deployment and record its private
+3. Create a separate standalone Apps Script bootstrap under the NONPROD owner;
+   it must be `MYSELF`-only and must not be a booking Web App.
+4. Attach a dedicated standard Google Cloud project to that NONPROD script,
+   enable the Apps Script API, and grant only the required owner authorization.
+   Do not reuse or infer a production Cloud project.
+5. Create the separate datastore and Calendar through the authorized NONPROD
+   bootstrap; record private IDs and redacted fingerprints.
+6. Replace the bootstrap with a reviewed redacted derivative of the canonical
+   source; do not retain bootstrap entry points in the Web App.
+7. Set NONPROD Script Properties through the approved owner session.
+8. Create a distinct Apps Script Web App deployment and record its private
    fingerprint.
-7. Implement and review browser-relative routes, Worker guards, and source
+9. Implement and review browser-relative routes, Worker guards, and source
    sanitization.
-8. Set Cloudflare Preview variables/secrets only after code review.
-9. Deploy Preview and run the verification order below.
+10. Set Cloudflare Preview variables/secrets only after code review.
+11. Deploy Preview and run the verification order below.
 
 ## Verification order — no production mutation
 

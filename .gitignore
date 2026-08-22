@@ -2,6 +2,7 @@
 
 # Local Cloudflare state and local environment values
 .wrangler/
+.nonprod-private/
 .env
 .env.*
 !.env.example
