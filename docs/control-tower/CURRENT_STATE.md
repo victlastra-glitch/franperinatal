@@ -72,6 +72,25 @@ every external operation must prove its NONPROD scope before it runs.
 - No Script Properties, email configuration, Cloudflare Preview configuration,
   Preview deployment, or transactional E2E has been performed.
 
+## Pre-UI hardening checkpoint
+
+- The NONPROD derivative now has a deterministic named-header datastore
+  contract, a guarded schema bootstrap function (not executed), a namespace
+  idempotency key, and a fail-closed payment state machine.
+- Flow confirmation never trusts callback content alone: it requires a bounded
+  token, signed Sandbox `payment/getStatus` verification, a matching stored
+  order/token, and a lock before state transition or effects.
+- Calendar and email effects are claim-before-send/create and test-recipient
+  allowlisted. The status endpoint is read-only and returns only public state
+  fields.
+- A no-network local Apps Script harness passed configuration, malformed input,
+  slot conflict, retry, duplicate confirmation, state/PII, and side-effect
+  assertions. No Script Property, datastore, Calendar, mail, or Flow action
+  was executed by that test.
+- The hardened derivative was pushed to the existing NONPROD Apps Script
+  project and its existing Web App deployment was updated. Script Properties,
+  sharing/access, Cloudflare, and all production resources remain unchanged.
+
 `GCP_BOOTSTRAP_REQUIREMENT = NOT_REQUIRED` for this Workspace provisioning
 path. This is not a claim that GCP will never be needed for a separate feature.
 

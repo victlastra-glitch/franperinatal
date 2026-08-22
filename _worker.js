@@ -84,7 +84,7 @@ async function handleAvailability(request, env) {
   return jsonResp({ ok: true, slots: slots }, 200);
 }
 
-const CREATE_FIELDS = new Set(['serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'patientRut', 'reason', 'message']);
+const CREATE_FIELDS = new Set(['idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'patientRut', 'reason', 'message']);
 
 function validCreatePayload(value) {
   if (!value || Array.isArray(value) || typeof value !== 'object') return null;
@@ -96,7 +96,8 @@ function validCreatePayload(value) {
     if (field.length > 500) return null;
     payload[key] = field;
   }
-  if (!/^(initial|followup)$/.test(payload.serviceType) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)
+  if (!/^fran-nonprod-20260821-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.idempotencyKey)
+      || !/^(initial|followup)$/.test(payload.serviceType) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)
       || !/^\d{2}:\d{2}$/.test(payload.time) || !payload.name || payload.name.length > 80
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) return null;
   return payload;
@@ -138,7 +139,10 @@ async function handleCreateFlowPayment(request, env) {
   } catch (_) {
     return jsonResp({ ok: false, code: 'checkout_rejected' }, 502);
   }
-  return jsonResp({ ok: true, paymentUrl: data.paymentUrl }, 200);
+  if (typeof data.publicStatusToken !== 'string' || !/^fran-nonprod-20260821-st-[0-9a-f]{32}$/i.test(data.publicStatusToken)) {
+    return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
+  }
+  return jsonResp({ ok: true, paymentUrl: data.paymentUrl, publicStatusToken: data.publicStatusToken }, 200);
 }
 
 // --- /api/flow-confirmation ----------------------------------------------

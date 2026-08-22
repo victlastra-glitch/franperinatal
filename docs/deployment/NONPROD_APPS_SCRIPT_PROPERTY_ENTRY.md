@@ -45,6 +45,32 @@ The deployed derivative must continue to return `CONFIGURATION_INCOMPLETE`
 without side effects until every required property is present and valid. Do not
 execute a booking, payment, Calendar, or email test at this gate.
 
+## Pre-UI lifecycle contract
+
+The NONPROD derivative is deliberately fail-closed and uses the following
+state model: `booking_started` → `payment_pending` →
+`payment_confirmed`/`payment_rejected`/`payment_failed`; only a confirmed
+payment can later be cancelled. Backward transitions are rejected.
+
+- The browser creates one opaque namespace-prefixed idempotency key per submit
+  attempt and retains it only for network retry. It is not derived from PII.
+- A repeated key returns the original Sandbox checkout handoff and cannot
+  create a second datastore row or Flow order.
+- A Flow confirmation accepts only a bounded callback token, then queries
+  signed `payment/getStatus` on `sandbox.flow.cl`; callback content alone is
+  never accepted as proof of payment.
+- Calendar and test-email effects are claimed before execution and marked
+  afterward under the Apps Script lock. A failure may omit an effect, but a
+  retry cannot duplicate it.
+- Status polling reads an opaque, expiring status-token hash only and returns
+  a defined public allowlist. It never writes state or returns booking/contact
+  data.
+
+The `reservations_nonprod` schema is an exact, named-header contract. A
+guarded, idempotent bootstrap function exists but was not executed. It may run
+only after complete NONPROD properties are present and only against the
+fingerprinted NONPROD store.
+
 ## Evidence to return
 
 Return only: project fingerprint match, property-name set match, Web App access

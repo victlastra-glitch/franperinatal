@@ -21,6 +21,7 @@
     form: {},
     reservationId: null,
     confirmation: null,
+    idempotencyKey: null,
   };
 
   const BOOKING_CALENDAR_CONFIG = Object.freeze({
@@ -398,6 +399,9 @@
       motivo_principal: fd.get("motivo_principal") || "",
       reason:           fd.get("reason") || "",
     };
+    // A changed form is a new booking attempt. Retries from step 6 retain the
+    // same opaque key and cannot derive an identity from patient data.
+    state.idempotencyKey = null;
 
     const nameVal  = (state.form.name  || "").trim();
     const emailVal = (state.form.email || "").trim();
@@ -458,7 +462,7 @@
       } else if (a === "confirm") {
         await confirmReservation(btn);
       } else if (a === "restart") {
-        Object.assign(state, { step: 1, service: null, modality: null, date: null, time: null, form: {}, reservationId: null, confirmation: null });
+        Object.assign(state, { step: 1, service: null, modality: null, date: null, time: null, form: {}, reservationId: null, confirmation: null, idempotencyKey: null });
         document.querySelectorAll('input[name="service"], input[name="modality"]').forEach(i => i.checked = false);
         document.getElementById("bk-form").reset();
         go(1);
@@ -467,6 +471,15 @@
   });
 
   // ------- v18 Flow integration: crea orden Flow + redirige a checkout -------
+  function bookingIdempotencyKey() {
+    if (state.idempotencyKey) return state.idempotencyKey;
+    if (!window.crypto || typeof window.crypto.randomUUID !== 'function') {
+      throw new Error('No pudimos preparar esta reserva de forma segura. Recarga la página e inténtalo nuevamente.');
+    }
+    state.idempotencyKey = 'fran-nonprod-20260821-' + window.crypto.randomUUID();
+    return state.idempotencyKey;
+  }
+
   async function confirmReservation(btn) {
     const statusEl = document.getElementById("bk-confirm-status");
 
@@ -498,6 +511,7 @@
     ].map(s => (s || '').trim()).filter(s => s.length > 0);
 
     const payload = {
+      idempotencyKey: bookingIdempotencyKey(),
       serviceType: serviceType,
       modality:    state.modality && state.modality.label ? state.modality.label : '',
       date:        fechaISO,
@@ -518,7 +532,7 @@
       });
       const result = await resp.json().catch(() => ({}));
 
-      if (!resp.ok || !result.ok || !result.paymentUrl) {
+      if (!resp.ok || !result.ok || !result.paymentUrl || !result.publicStatusToken) {
         const code = result.code || '';
         let msg;
         if (code === 'SLOT_TAKEN')         msg = 'Ese horario ya fue reservado. Elige otro para continuar.';
@@ -554,12 +568,8 @@
       }
 
       // Guardar publicStatusToken para la página de retorno
-      state.reservationId    = result.reservationId || state.reservationId;
-      state.commerceOrder    = result.commerceOrder;
       state.publicStatusTok  = result.publicStatusToken;
       try {
-        sessionStorage.setItem('fb_last_commerce_order', result.commerceOrder || '');
-        sessionStorage.setItem('fb_last_reservation_id', result.reservationId || '');
         sessionStorage.setItem('fb_last_status_token', result.publicStatusToken || '');
       } catch (_) {}
 
