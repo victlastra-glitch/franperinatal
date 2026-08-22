@@ -2,30 +2,32 @@
 
 ## Result
 
-**Active Apps Script project identified: NO.**
+**Active Apps Script project identified: YES — Candidate A.**
 
-**Active Apps Script deployment identified: NO.**
+**Active Apps Script deployment identified: YES — version 6.**
 
-**Canonical backend source identified: NO.**
+**Canonical backend source identified: YES for the direct booking route.**
 
-The local environment has neither `clasp` nor `gcloud`, no local clasp project
-metadata, and no authenticated Google tooling configuration available for a
-safe read-only enumeration. Local Google Apps Script filenames and comments are
-evidence candidates only; none establishes the live project, deployment, or
-version that the current Web App URL resolves to.
+The executable assignment in the recovery booking asset was compared with the
+production-served booking asset, ignoring illustrative comments. The values
+matched exactly and the matching deployment was found under Candidate A at
+version 6. The source was cloned read-only to a temporary directory and was not
+copied into `backend/apps-script/` or committed.
 
-No Apps Script source was exported and no candidate was copied into
-`backend/apps-script/`.
+`PRODUCTION_BACKEND_MATCH = VERIFIED` for direct booking. The Worker uses a
+separate runtime secret, so Worker-to-active-backend correlation is **LIKELY**
+until an authorized metadata/fingerprint check can verify it without exposing a
+value.
 
 ## Local tooling and metadata inventory
 
 | Check | Result |
 | --- | --- |
-| `clasp` executable/version | Not installed or not available on `PATH` |
+| `clasp` executable/version | Available; authorized read-only identity verified |
 | `gcloud` executable/version | Not installed or not available on `PATH` |
 | `clasp.json` / `.clasp.json` in the Francisca project scope | Not found |
-| Local script/deployment ID metadata | Not found |
-| Auth configuration inspected | Presence/absence only; no token files were read or printed |
+| Local script/deployment ID metadata | Not required; deployment list queried read-only |
+| Auth configuration inspected | Identity command only; no token files were read or printed |
 
 ## Structural comparison of historical candidates
 
@@ -45,22 +47,16 @@ Flow, Calendar, email, and idempotency). They are not proof of deployed source.
 | `leadmagnet` Apps Script candidate | Lead-magnet functions rather than reservation lifecycle | UNRELATED | Different business function |
 | `DEPLOY_v19.bat` and sandbox deployment artefacts | Deployment helper/test artefacts | SANDBOX | Sandbox marker and not executable source of truth |
 
-No candidate is classified `MATCHES_ACTIVE`, because matching requires a
-read-only export of the active project/version plus a deployment URL/version
-correlation.
+Candidate A is classified `MATCHES_ACTIVE` for the direct booking route: exact
+production-asset deployment match plus read-only export of version 6. All other
+historical labels remain structural evidence only and are not deployment proof.
 
 ## Safe procedure to identify the active source
 
-1. Use an owner-authorized, read-only Google Apps Script identity.
-2. Enumerate only Francisca candidate projects and their web-app deployments.
-3. Match the deployment URL fingerprint to the two current routing paths
-   (the values must remain redacted in records).
-4. Record project ID, deployment ID, version number, and modification timestamp
-   in a private access log; do not commit credential data.
-5. Export the matching source to a temporary non-production directory.
-6. Scan it for secrets and PII; compare structural fingerprints.
-7. Only then prepare a sanitized canonical source under `backend/apps-script/`
-   for review. Do not commit it until its provenance is confirmed.
+1. Preserve the redacted provenance record and source sanitization report.
+2. Verify the separate Worker runtime binding by metadata/fingerprint only.
+3. Create no source copy until a NONPROD source-import review is approved.
+4. Use the NONPROD implementation package before executing any booking flow.
 
 ## Security constraints retained
 

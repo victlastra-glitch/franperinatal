@@ -6,6 +6,14 @@ This is a read-only trace of the recovery preview. No booking, payment, webhook,
 calendar, email, or Apps Script mutation was performed. Upstream URLs and all
 credential values are intentionally omitted.
 
+## Provenance update
+
+The direct booking Web App URL is now verified against the production-served
+asset: it maps exactly to Candidate A, deployed version 6. This establishes
+direct booking backend provenance only. The Worker obtains its upstream from
+`env.APPS_SCRIPT_WEB_APP_URL`; that runtime secret remains **LIKELY** correlated
+until an authorized name/fingerprint-only environment check is available.
+
 ## Routing chain
 
 | Browser entrypoint | Cloudflare route | Worker / client code | Variable or baked value | Upstream type | Downstream operation | Evidence |
@@ -63,7 +71,9 @@ therefore sufficient to reach an active upstream from preview. Separately, the
 baked browser URL creates an independent production-coupling path.
 
 **Current status: NOT ISOLATED.** Preview must not be used for booking, payment,
-or webhook QA until both paths are replaced or separately configured.
+or webhook QA until both paths are replaced or separately configured. Verified
+direct provenance does not authorize use of that production backend from
+Preview.
 
 ## Required verification to close this finding
 

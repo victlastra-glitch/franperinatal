@@ -22,14 +22,16 @@ El artefacto público tiene precedencia sobre cualquier snapshot local o Git.
 - Todo export local de Apps Script y artefactos legacy/sandbox.
 - El ZIP histórico de GitHub y sus screenshots.
 
-## Límite material
+## Actualización de procedencia backend
 
-Pages no tiene integración Git y la fuente de Apps Script activa no se puede
-deducir desde el secreto de entorno ni desde exports históricos. La réplica
-del frontend es verificable; la recuperación completa del backend requiere la
-identificación humana del Apps Script/deployment activo.
+La procedencia del backend de reservas directo fue verificada posteriormente:
+el asset live de booking coincide de forma exacta con un deployment de Candidate
+A, versión 6, exportado sólo lectura a un directorio temporal. No se incorporó
+fuente Apps Script al repositorio. La correlación del secret runtime del Worker
+permanece separada y sólo es LIKELY.
 
 ## Próximo gate
 
-Crear un Preview desde esta rama sin secretos ni backend, comparar la web
-estática y luego completar el inventario/protocolo de recuperación backend.
+Aplicar el paquete de aislamiento NONPROD únicamente después de aprobación
+humana; no crear Preview con backend, secretos o recursos externos antes de
+esa puerta.
