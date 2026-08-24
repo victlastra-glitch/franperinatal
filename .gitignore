@@ -28,3 +28,5 @@ backend/**/*.js
 backend/**/*.bat
 backend/**/*.html
 !backend/README.md
+!backend/appsscript/booking/Code.js
+!backend/appsscript/booking/Lifecycle.js
