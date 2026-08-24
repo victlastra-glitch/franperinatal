@@ -1,105 +1,30 @@
-# Source baseline y canonicalización
+# Source baseline y delta de BUILD & REVIEW
 
-## Baseline aprobado
+## Identidad
 
-- Rama base: `recovery/production-source-20260821`
-- Base HEAD: `5c46deb4998fe21fec751838344dd1269da0300a`
-- Snapshot source file count: `2`
-- Snapshot files: `Code.js`, `appsscript.json`
-- Source fingerprint: `dac94ac07c5163dabc7128fc320f5781e53608231ec8c998dd6793ab0910a4c8`
-- Function count informado por el snapshot: `44`
-- Security scan del snapshot aprobado: secretos `0`, valores PII `0`, resource IDs privados literales `0`
+- Rama de trabajo: feat/nonprod-booking-lifecycle-20260823.
+- HEAD inicial esperado: 55d63bf61fdc03550f4f5effe01a813f0f783791.
+- Fuente local sanitizada: backend/appsscript/booking/.
+- No se versionan .clasp.json, IDs, deployment IDs, URLs privadas, Script Properties, recipients reales, reservas ni datos clínicos.
 
-El fingerprint es una referencia de procedencia del snapshot antes de la
-implementación. Los archivos Git nuevos contienen la derivación local y no
-pretenden ser una copia del estado remoto posterior.
+## Schema
 
-## Canonicalización Git
+RESERVATION_HEADERS mantiene 57 columnas y no usa status ni flow_status como truth. Incluye booking/payment/refund/schedule separados, Calendar event id/etag/updated/hash/link key, Meet fields, capabilities y outbox/reconciliation fields. La sync token de Calendar pertenece a un estado de reconciliación global (syncState adapter), no a una reserva individual.
 
-La fuente sanitizada se conserva en:
+No se ejecutó bootstrapNonprodSchema_() ni se modificó un datastore.
 
-- `backend/appsscript/booking/Code.js`
-- `backend/appsscript/booking/appsscript.json`
-- `backend/appsscript/booking/Lifecycle.js`
+## Delta implementado
 
-`Lifecycle.js` contiene únicamente primitives locales sin efectos externos.
-El manifest no contiene identificadores privados. `.clasp.json`, Script IDs,
-deployment IDs, URLs, properties, recipients y credenciales no se versionan.
+| Área | Archivos | Funciones principales |
+|---|---|---|
+| Lazy config | Code.js | readConfig_, readCapabilityConfig_, requireCapabilitySecret_, readRefundConfig_ |
+| Atomicidad | Lifecycle.js, Code.js | withLifecycleLock_, patientRescheduleTransaction_, patientCancelTransaction_ |
+| Calendar | CalendarGateway.js, Code.js | createCalendarGateway_, availability_, applyConfirmedSideEffects_ |
+| Reconciliation | Reconciliation.js | reconcileCalendarChange_, reconcileCalendarSync_ |
+| Refund | RefundGateway.js, Code.js | createFlowRefundGateway_, refundCreateOnce_, refundCallbackOnce_ |
+| Notifications | Lifecycle.js, Code.js | makeLifecycleNotification_, enqueueLifecycleNotification_ |
+| Public boundary | _worker.js, manage.html, assets/booking.js | management proxies, allowlists, date/time contract |
 
-El artefacto público se arma mediante
-`scripts/build-nonprod-preview-artifact.sh`, cuya lista de copia no incluye
-`backend/`; `scripts/validate-nonprod-boundary.sh` rechaza además la presencia
-de `backend` en el artefacto construido.
+## Seguridad y side effects
 
-## Schema observado antes de Phase A
-
-El snapshot tenía `20` columnas:
-
-```text
-idempotency_key
-booking_date
-booking_time
-reservation_id
-service_type
-modality
-patient_email
-payment_url
-status
-flow_token
-commerce_order
-status_token_hash
-status_token_expires_at
-calendar_event_id
-calendar_effect_state
-patient_email_state
-internal_email_state
-created_at
-updated_at
-flow_status
-```
-
-## Clasificación de funciones
-
-| Clasificación | Funciones |
-|---|---|
-| KEEP | `doGet`, `doPost`, `readConfig_`, `flowRequest_`, `flowConfirmation_`, `paymentStatus_`, `reserveOnce_`, `sendOnce_` |
-| EXTEND | `RESERVATION_HEADERS`, `assertSchema_`, `availability_`, `applyConfirmedSideEffects_`, `updateRecord_`, `validStatusToken_` |
-| REFACTOR | `transition_` hacia `transitionBooking_`/`transitionPayment_`; `status` y `flow_status` hacia dominios explícitos; Calendar/email claim fields hacia schedule/outbox fields |
-| ADD | `Lifecycle.js`: validators, capability primitives, one-reschedule invariant, operation IDs y outbox primitives |
-| FUTURE, no Phase A | FreeBusy, ETag/syncToken reconciliation, Meet, public management routes, cancel/reschedule handlers y Flow refund |
-
-## Legacy disposition
-
-`status` y `flow_status` se eliminan del target schema. No son lifecycle truth
-ni se usa una migración automática: el schema NONPROD aún no fue bootstrappeado.
-La respuesta pública de payment status se deriva localmente desde
-`booking_status` + `payment_status` para compatibilidad; no se persiste como
-fuente primaria. No se ejecutó ninguna migración.
-
-## Schema target después del hardening
-
-El schema local target tiene `57` headers. Los dos campos agregados para
-alinear revocación con almacenamiento son:
-
-```text
-reschedule_capability_revoked_at
-cancel_capability_revoked_at
-```
-
-`capabilityFields_()` y `capabilityFromRecord_()` preservan hash, expiración,
-versión y `revoked_at` para ambos tipos. La propiedad requerida para HMAC es
-`CAPABILITY_TOKEN_SECRET`; sólo se versiona su nombre y no su valor.
-
-La elegibilidad de self-reschedule requiere la tupla exacta
-`confirmed + paid + scheduled + count=0 + RESCHEDULE vigente/no revocada`.
-Los cuatro helpers de transición mutan y retornan el record suministrado
-después de una escritura real; el mismo estado es un no-op sin escritura.
-
-Este cambio es únicamente de source y pruebas locales. No se ejecutó
-`bootstrapNonprodSchema_()` ni se modificó el datastore.
-
-## Commit técnico
-
-El commit de implementación Phase A es `5afb27d` (`feat: establish nonprod
-booking lifecycle foundation`). No existe autorización para merge, deploy o
-mutación remota en este documento.
+Todos los adapters reciben dependencias inyectables. Los tests usan stubs synthetic/no-network. No hubo llamadas a Calendar, Flow, MailApp/GmailApp, Apps Script remoto, Cloudflare, Preview ni producción.

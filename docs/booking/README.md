@@ -1,102 +1,59 @@
-# Booking lifecycle — Phase A
+# Booking lifecycle — BUILD & REVIEW local bundle
 
-Phase A establece la canonicalización Git del backend Apps Script NONPROD y
-los contratos locales de estado, schema, capabilities, outbox e idempotencia.
-No ejecuta bootstrap de schema ni habilita Calendar, Meet, Flow refund, email,
-Preview, producción o endpoints públicos de gestión.
+Este directorio describe la implementación local sanitizada de la macro-fase BUILD & REVIEW. No es autorización para bootstrap, Script Properties, deploy, Preview, Calendar, Flow, email, Cloudflare, producción ni datos reales.
 
-## Phase A hardening patch
+## Estado
 
-La revisión pre-runtime identificó cuatro gaps de foundation y todos quedan
-resueltos localmente:
+BUILD_AND_REVIEW_LOCAL_IMPLEMENTATION = PASS queda condicionado a los gates locales de testing-contract.md.
 
-- `canPatientReschedule_` exige exactamente `booking_status=confirmed`,
-  `payment_status=paid`, `schedule_status=scheduled`,
-  `patient_reschedule_count=0` y una capability RESCHEDULE válida, vigente y
-  no revocada. No depende de un predicate genérico de estado activo.
-- `CAPABILITY_TOKEN_SECRET` es una propiedad Script Property requerida por el
-  contrato futuro. La creación y verificación fallan cerrado ante ausencia,
-  blank o secreto débil; el nombre de la propiedad es la única referencia
-  versionada, sin valor.
-- La revocación es persistible: el schema tiene campos explícitos
-  `reschedule_capability_revoked_at` y `cancel_capability_revoked_at`, y el
-  round-trip conserva hash, expiración, versión y revocación.
-- Los helpers `transitionBooking_`, `transitionPayment_`,
-  `transitionRefund_` y `transitionSchedule_` actualizan el record en memoria,
-  retornan ese mismo record, persisten una vez por cambio real y no escriben en
-  un no-op idempotente.
+READY_FOR_FINAL_CLAUDE_BUILD_REVIEW = YES.
 
-El schema target queda en `57` headers. No se ejecutó `bootstrapNonprodSchema_`.
+READY_FOR_NONPROD_ACTIVATION = NO: Meet persistence, Advanced Calendar activation, exact NONPROD runtime linkage, schema bootstrap, Flow Sandbox, email/outbox delivery y E2E requieren la revisión independiente y el gate operativo siguiente.
 
-## Índice BK-001..BK-015
+## Arquitectura local
 
-| Requisito | Fundación de esta fase | Gate posterior |
+- Code.js: entrypoints Apps Script, configuración base/lazy, schema, payment existente, disponibilidad ocupada, side effects idempotentes y management.
+- Lifecycle.js: estados separados, capabilities opacas, LockService transaction boundaries, outbox y CTA matrix.
+- CalendarGateway.js: FreeBusy, evento enlazado, mismo-evento update, delete, ETag/hash, syncToken/410, linkage privado y Meet primitives.
+- Reconciliation.js: sync incremental, clinician move/cancel y loop protection por ETag/hash/operation.
+- RefundGateway.js: Flow 3.0.1 Sandbox adapter, deterministic order, status/callback/cancel y retry sin segundo create.
+- _worker.js: same-origin availability, payment, management y refund callback proxies; upstream privado, APP_ENV nonprod y response allowlists.
+
+## Reglas
+
+Booking, payment, schedule y refund son dominios independientes. Cancelar libera agenda antes de que termine refund. La política permanece BUSINESS_POLICY_TBD; no hay ventana 24/48h hardcodeada.
+
+RESCHEDULE y CANCEL son capabilities distintas, opacas, HMAC-at-rest, expirables y revocables. RESCHEDULE se consume como máximo una vez. El límite de autorización es la transacción bajo LockService, que recarga el record autoritativo dentro del lock.
+
+Calendar es la fuente de busy/free; datastore es la fuente de lifecycle. La disponibilidad pública conserva el shape { ok, slots: [{ date, time }] } y representa slots ocupados para compatibilidad con el browser existente. Cada slot se bloquea por la unión deduplicada de FreeBusy y reservas activas; una falla Calendar no devuelve disponibilidad.
+
+El extendedProperties.private sólo contiene source=fran_booking, un link_key opaco y schema=fran_booking:v1. No contiene nombre, email, RUT, teléfono, motivo, diagnóstico ni texto clínico.
+
+## BK traceability
+
+| BK | Implementación local | Estado |
 |---|---|---|
-| BK-001 | estados de agenda separados de booking/payment | Calendar FreeBusy |
-| BK-002 | `calendar_event_id` en schema | creación idempotente verificada |
-| BK-003 | `calendar_change_source` y reconciliación en contrato | Calendar Sandbox |
-| BK-004 | `refund_status` independiente | cancelación/refund Sandbox |
-| BK-005 | campos Meet en schema | evento Calendar Sandbox |
-| BK-006 | capacidades RESCHEDULE/CANCEL y outbox | email lifecycle |
-| BK-007 | contador `patient_reschedule_count` y helper one-shot | endpoint autenticado |
-| BK-008 | revocación/versionado de capability | endpoint + email |
-| BK-009 | operación clinician separada | reconciliación Calendar |
-| BK-010 | transición booking/schedule separada de refund | cancelación Sandbox |
-| BK-011 | dominio refund independiente e idempotente | Flow refund |
-| BK-012 | token opaco, expirable, revocable, hash-at-rest | endpoint público |
-| BK-013 | Calendar y Datastore separados por contrato | integración Sandbox |
-| BK-014 | outbox claim/retry/manual-review primitives | workers/reconciliación |
-| BK-015 | privacy scan, metadata opaca y fixtures sintéticos | QA Sandbox |
+| BK-001 | CalendarGateway.js, computeOccupiedSlots_, availability_ | PASS local / Sandbox pendiente |
+| BK-002 | createLinkedBookingEvent, calendar_link_key, idempotent lookup | PASS local / Sandbox pendiente |
+| BK-003 | Reconciliation.js, clinician move, outbox | PASS local / Calendar E2E pendiente |
+| BK-004 | clinician cancel + separate refund policy boundary | PASS local / policy+Sandbox pendiente |
+| BK-005 | same-event update + Meet fields | PASS foundation / persistence pendiente |
+| BK-006 | makeLifecycleNotification_, initial CTA matrix | PASS local / delivery pendiente |
+| BK-007 | patientRescheduleTransaction_, count x1 | PASS local / E2E pendiente |
+| BK-008 | revocation + CANCEL-only follow-up | PASS local / E2E pendiente |
+| BK-009 | clinician operation does not touch patient quota | PASS local |
+| BK-010 | patientCancelTransaction_, idempotency and schedule release | PASS local / E2E pendiente |
+| BK-011 | RefundGateway.js, separate refund state | PASS local / Flow Sandbox pendiente |
+| BK-012 | independent opaque capabilities and lazy secret | PASS local |
+| BK-013 | gateway/datastore boundary | PASS local / integration pendiente |
+| BK-014 | reconciliation states, outbox, manual review | PASS local / retry runtime pendiente |
+| BK-015 | linkage/Worker/artifact privacy tests | PASS local |
 
-## División de source of truth
+## Propiedades nuevas
 
-- El Brain de Google Drive conserva los requisitos de producto y decisiones
-  ratificadas BK-001..BK-015.
-- Este repositorio conserva el source técnico sanitizado, el schema nominal,
-  los estados, interfaces locales y pruebas reproducibles.
-- Apps Script remoto, Script Properties, Sheets, Calendar, Flow y los aliases
-  de Preview siguen siendo estado operativo externo. Esta fase no los modifica.
+Sólo nombres, nunca valores versionados:
 
-Documentos técnicos relacionados:
+- CAPABILITY_TOKEN_SECRET — lazy, requerido únicamente para issue/verify.
+- FLOW_REFUND_CALLBACK_URL — lazy, requerido únicamente por refund callback.
 
-- [source-baseline.md](source-baseline.md)
-- [state-model.md](state-model.md)
-- [testing-contract.md](testing-contract.md)
-- [backend/appsscript/booking/Code.js](../../backend/appsscript/booking/Code.js)
-- [backend/appsscript/booking/Lifecycle.js](../../backend/appsscript/booking/Lifecycle.js)
-- [backend/appsscript/booking/test/phase-a.test.mjs](../../backend/appsscript/booking/test/phase-a.test.mjs)
-
-## Fases
-
-1. Phase A: source, schema y contratos locales — este cambio.
-2. Phase B: Calendar FreeBusy, metadata privada, ETag, update/delete y
-   reconciliación en Sandbox.
-3. Phase C: Meet, cancel/reschedule autenticado y lifecycle de notificaciones.
-4. Phase D: Flow refund y reconciliación de pagos.
-5. Phase E: UAT NONPROD y release gate humano.
-
-## Seguridad y no-touch
-
-El source Git está sanitizado: no incluye `.clasp.json`, IDs, deployment IDs,
-URLs de Web App, credenciales, recipients reales, reservas ni datos clínicos.
-El build público de Preview usa una lista explícita de archivos y no incluye
-`backend/`. No se ejecutó `bootstrapNonprodSchema_`.
-
-Producción, Candidate A, Apps Script remoto, Calendar, Flow, email, Cloudflare
-y Preview permanecen fuera del alcance y sin mutaciones.
-
-## Traceability delta
-
-Phase A afecta BK-001..BK-015 en calidad de foundation y no declara readiness
-de integración. El delta sanitizado para el Brain es:
-
-| Requisito | Delta de hardening local | Estado posterior |
-|---|---|---|
-| BK-007 | Elegibilidad RESCHEDULE exacta y one-shot con count `0` | foundation endurecida |
-| BK-008 | Versión y revocación round-trip persistible | foundation endurecida |
-| BK-010 | Transiciones separadas con record sincronizado | foundation endurecida |
-| BK-012 | HMAC fail-closed, dominio explícito y hash-at-rest | foundation endurecida |
-| BK-014 | Persistencia conceptual de revocación sin datastore remoto | foundation endurecida |
-
-El commit de implementación original es `5afb27d`; este parche sigue separado
-de cualquier despliegue, bootstrap o mutación remota.
+Calendar Advanced Service queda declarado en appsscript.json, pero no ha sido activado ni invocado en este repositorio.

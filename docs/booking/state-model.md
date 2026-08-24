@@ -1,107 +1,31 @@
-# State model — Phase A
+# State model — booking lifecycle local
 
-Los cuatro dominios son independientes. Un cambio en uno no implica un cambio
-automático en los otros; los adaptadores futuros deben coordinar operaciones
-con `last_operation_id` y reconciliación explícita.
+## Dominios separados
 
-## BOOKING_STATUS
+booking_status, payment_status, schedule_status y refund_status no se infieren entre sí. Un booking cancelado puede seguir paid mientras refund está pendiente o en manual_review.
 
-Valores canónicos:
+## Patient RESCHEDULE
 
-```text
-initiated
-payment_pending
-confirmed
-cancellation_requested
-cancelled
-reconciliation_required
-manual_review
-```
+LockService -> fresh load -> confirmed/paid/scheduled/count=0 -> reconstruct capability -> verify -> FreeBusy + datastore target recheck -> same-event Calendar update -> current start/end -> count=1 -> persistent revoke -> CANCEL-only notification.
 
-Transiciones permitidas:
+El record entregado antes del lock nunca autoriza. Un segundo intento con el token antiguo o count 1 falla cerrado.
 
-```text
-initiated -> payment_pending | cancellation_requested | manual_review
-payment_pending -> confirmed | cancellation_requested | reconciliation_required | manual_review
-confirmed -> cancellation_requested | reconciliation_required | manual_review
-cancellation_requested -> cancelled | reconciliation_required | manual_review
-reconciliation_required -> manual_review
-```
+## Patient CANCEL
 
-`cancelled` y `manual_review` son terminales en Phase A. Las transiciones
-desconocidas, hacia atrás o no listadas fallan cerrado.
+LockService -> fresh load -> already cancelled replay o verify CANCEL -> idempotent Calendar cancel -> booking/schedule cancelled -> capacity free -> policy evaluator -> refund requested/manual_review -> notification.
 
-## PAYMENT_STATUS
+Refund no bloquea la liberación de agenda. Repetir la acción devuelve replay y no repite Calendar, refund ni notificación destructiva.
 
-```text
-not_started -> pending | failed | unknown
-pending -> paid | rejected | failed | unknown
-unknown -> pending | paid | rejected | failed
-```
+## Clinician reconciliation
 
-`paid`, `rejected` y `failed` no mutan hacia atrás. Payment permanece separado
-de booking: un booking cancelado puede conservar `paid` mientras refund sigue
-su propio lifecycle.
+Un cambio del mismo event id con ETag/hash nuevo actualiza current_start_at/current_end_at, marca calendar_change_source=clinician y conserva patient_reschedule_count. Delete/cancel marca booking/schedule cancelled y encola el flujo de refund según BUSINESS_POLICY_TBD.
 
-## REFUND_STATUS
-
-```text
-not_required -> refund_requested | manual_review
-refund_requested -> refund_pending | refund_failed | manual_review
-refund_pending -> refunded | refund_failed | manual_review
-refund_failed -> refund_requested | refund_pending | manual_review
-```
-
-Refund es idempotente y separado de la cancelación. La capacidad del slot no
-debe depender de `refunded`.
-
-## SCHEDULE_STATUS
-
-```text
-hold -> sync_pending | cancelled | reconciliation_required | manual_review
-sync_pending -> scheduled | cancelled | reconciliation_required | manual_review
-scheduled -> sync_pending | cancelled | reconciliation_required | manual_review
-reconciliation_required -> sync_pending | manual_review
-```
-
-Calendar es la futura verdad busy/free; Datastore conserva el estado de
-booking, schedule, pago, refund y capabilities. Phase A sólo prepara los
-campos y validators; no llama Calendar.
+El mismo ETag/hash es no-op. syncToken se guarda mediante syncState; HTTP 410 borra la confianza del token y ejecuta full sync antes de persistir el nuevo nextSyncToken.
 
 ## Capabilities
 
-`RESCHEDULE` y `CANCEL` son tipos distintos. Cada capability tiene token opaco
-de al menos 256 bits, hash HMAC-at-rest, expiración, versión y revocación. El
-token no contiene reservation ID ni PII. El HMAC usa el dominio explícito
-`booking-capability:v1:<TYPE>:<TOKEN>` y requiere el secreto fuerte de la
-propiedad `CAPABILITY_TOKEN_SECRET`; no existe fallback a secreto vacío.
-RESCHEDULE y CANCEL no comparten dominio HMAC. La verificación responde de
-forma uniforme ante tipo, versión, formato, expiración, secreto o revocación
-inválidos.
+RESCHEDULE y CANCEL tienen tokens distintos de alta entropía, hash HMAC con dominio separado, expiración, versión y revoked_at. El raw token nunca se guarda en el record ni aparece en logs. CAPABILITY_TOKEN_SECRET no es parte de la configuración base.
 
-`patient_reschedule_count` parte en `0`. El helper de reschedule requiere
-exactamente `booking_status=confirmed`, `payment_status=paid`,
-`schedule_status=scheduled`, count `0` y capability RESCHEDULE válida,
-vigente y no revocada. Un claim exitoso devuelve count `1` y una capability
-revocada; un segundo claim falla.
+## Refund
 
-La revocación se persiste conceptualmente en
-`reschedule_capability_revoked_at` y `cancel_capability_revoked_at`. El
-round-trip desde campos de reservation conserva hash, expiración, versión y
-revocación.
-
-Los helpers `transitionBooking_`, `transitionPayment_`, `transitionRefund_` y
-`transitionSchedule_` validan, persisten una vez si el estado cambia, mutan el
-record suministrado y retornan ese record. Un mismo estado es idempotente y no
-genera una segunda escritura; no requieren reread oculto.
-
-## Operaciones y outbox
-
-`makeOperationId_` produce IDs opacos con tipo explícito entre:
-`patient_reschedule`, `patient_cancel`, `clinician_reconcile_move`,
-`clinician_reconcile_cancel`, `refund_create` y `notification`.
-`applyOperationOnce_` hace replay seguro.
-
-Cada notification outbox tiene key lógico estable, versión, `pending`/`claimed`/
-`sent`/`failed`, contador de intentos, timestamps y resultado. Un error de
-email no revierte booking, payment, refund ni schedule.
+Refund es un estado propio: not_required -> refund_requested -> refund_pending -> refunded/refund_failed/manual_review. Timeout deja una orden determinista y fuerza status-only; no crea una segunda orden. La decisión comercial se delega a policyEvaluator y no se hardcodea.

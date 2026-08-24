@@ -1,79 +1,37 @@
-# Testing contract — Phase A
+# Testing contract — BUILD & REVIEW
 
-## Harness
+## Tests locales no-network
 
-El harness es local y no-network:
-
-- `backend/appsscript/booking/test/phase-a.test.mjs`
-- carga `Code.js` y `Lifecycle.js` en un VM aislado;
-- stubbea `PropertiesService`, `SpreadsheetApp`, `CalendarApp`, `MailApp`,
-  `GmailApp`, `LockService`, `UrlFetchApp`, `Utilities`, `Session` y
-  `ContentService`;
-- no lee `.env`, no usa Apps Script, no contacta Calendar, Flow, Sheets ni
-  email, y no escribe datos de reserva.
-
-## Invariant-to-test mapping
-
-| Área | Invariantes cubiertos |
-|---|---|
-| State | transiciones válidas, backwards/illegal fail-closed, independencia de dominios, booking cancelado con refund pendiente |
-| Schema | 57 headers exactos, sin duplicados, campos lifecycle presentes, ausencia de `status`/`flow_status` como columnas |
-| Capabilities | entropy, hash-at-rest, tipo, expiración, revocación, versión, malformed, comparación y no PII |
-| Reschedule | tuple `confirmed + paid + scheduled + count 0`, estados/payment/schedule no elegibles, claim consume a 1, capability stale/revocada/expirada rechazan |
-| HMAC | secreto faltante/blank/débil rechaza, secreto correcto valida, secreto incorrecto rechaza, dominios RESCHEDULE/CANCEL separados |
-| Revocation persistence | map/reconstruct conserva hash, expiración, versión y `revoked_at`; activo valida y revocado rechaza |
-| Transitions | secuencias en el mismo record, record actualizado, una escritura por cambio, no-op sin escritura e invalid backwards rechazado |
-| Outbox | key estable, claim determinista, retry de fallo, no duplicación tras sent, log sin detalles clínicos |
-| Idempotency | `operation_id` repetido devuelve replay sin ejecutar dos veces |
-| Privacy | token/capability/operation opacos; no nombres, RUT, teléfono, email clínico o texto clínico en metadata |
-
-## Comando y resultado esperado
-
-```text
 node backend/appsscript/booking/test/phase-a.test.mjs
 NO_NETWORK_TESTS=PASS count=108
-```
 
-También se ejecuta `node --check` sobre ambos archivos Apps Script.
+node backend/appsscript/booking/test/lifecycle.test.mjs
+ADVERSARIAL_LIFECYCLE_TESTS=PASS count=25
 
-## Gates futuros
+El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y RefundGateway.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
 
-Antes de Phase B deben existir tests Sandbox independientes para:
+## Matriz cubierta
 
-- FreeBusy contra eventos busy creados fuera del booking;
-- un único evento por booking y metadata privada opaca;
-- move/delete con ETag y `syncToken`, incluyendo 410 y reconciliación;
-- Meet en el mismo evento;
-- cancel/reschedule one-shot con datos sintéticos;
-- Flow refund create/getStatus y callbacks idempotentes;
-- outbox real con retry/manual review sin rollback de la operación primaria.
+1. FreeBusy manual, overlap parcial, back-to-back y all-day.
+2. Unión Calendar + datastore sin doble ocupación.
+3. Calendar failure sin fallback de disponibilidad.
+4. Evento idempotente, retry, update mismo evento, ETag y Meet preservation.
+5. syncToken expirado/410 y full-sync reset.
+6. Clinician move/cancel, quota intacta, stale event y loop protection.
+7. Patient reschedule x1, lock/fresh reload y segundo intento rechazado.
+8. Patient cancel idempotente y agenda libre independiente de refund.
+9. Refund order determinista, duplicate callback y timeout status-only.
+10. Outbox/CTA inicial y CANCEL-only post-reschedule.
+11. Linkage privado sin PII y Worker management response sin PII.
 
-Ninguno de esos gates se ejecuta en Phase A.
+## Worker y artefacto
 
-## Privacidad y artefacto
+node scripts/assert-nonprod-worker-structure.mjs _worker.js
+node scripts/test-nonprod-worker-routes.mjs
+node scripts/test-nonprod-payment-status-privacy.mjs
 
-El scan de source debe reportar exactamente:
+Los handlers permitidos para upstream son availability, payment create, flow confirmation, payment status, manage lookup/cancel/reschedule y refund confirmation. /backend/* sigue bloqueado y el artefacto público excluye backend/.
 
-```text
-EMBEDDED_SECRET_FINDINGS=0
-PII_VALUE_FINDINGS=0
-PRIVATE_RESOURCE_ID_VALUE_FINDINGS=0
-```
+## Gates no ejecutables
 
-Los nombres estructurales de campos no cuentan como valores PII. Los fixtures
-son sintéticos y no contienen recipients reales ni información clínica.
-
-## Trazabilidad
-
-Phase A afecta BK-001..BK-015 como foundation. El hardening añade cobertura
-sanitizada para BK-007, BK-008, BK-010, BK-012 y BK-014: elegibilidad exacta,
-HMAC fail-closed con dominio explícito, revocación persistible y helpers de
-transición sincronizados. Las funciones principales son
-`transitionBooking_`, `transitionPayment_`, `transitionRefund_`,
-`transitionSchedule_`, `createCapability_`, `verifyCapability_`,
-`claimPatientReschedule_`, `createNotificationOutbox_`,
-`claimNotificationOutbox_`, `completeNotificationOutbox_`,
-`makeOperationId_` y `applyOperationOnce_`.
-
-El SHA del commit de implementación es `5afb27d`; no se interpreta como
-autorización de runtime o despliegue.
+No se declara PASS para Calendar real, Meet persistence, Flow Sandbox, email, schema bootstrap, Preview, Web App runtime, Browser E2E ni producción. Esos son requisitos del NONPROD ACTIVATION & E2E posterior a la revisión Claude.

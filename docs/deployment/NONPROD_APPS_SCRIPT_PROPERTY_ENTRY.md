@@ -40,10 +40,18 @@ project.
 | `PATIENT_EMAIL_RECIPIENT_ALLOWLIST` | that same approved test-only mailbox only |
 | `FLOW_RETURN_URL` | defer until a Preview URL is known; then Preview route only |
 | `FLOW_CONFIRMATION_URL` | defer until a Preview URL is known; then Preview route only |
+| `CAPABILITY_TOKEN_SECRET` | lazy-scoped, unique NONPROD-only strong secret; required only for RESCHEDULE/CANCEL issue or verify |
+| `FLOW_REFUND_CALLBACK_URL` | lazy-scoped Preview route only; required only for refund callback |
 
 The deployed derivative must continue to return `CONFIGURATION_INCOMPLETE`
 without side effects until every required property is present and valid. Do not
 execute a booking, payment, Calendar, or email test at this gate.
+
+The base configuration intentionally does not require `CAPABILITY_TOKEN_SECRET`
+or `FLOW_REFUND_CALLBACK_URL`. Their absence must not break availability,
+payment create, payment confirmation or payment status. Capability operations
+fail closed with `CAPABILITY_SECRET_INVALID`; refund operations fail closed with
+their own refund-configuration code.
 
 ## Pre-UI lifecycle contract
 

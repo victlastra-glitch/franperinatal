@@ -78,6 +78,8 @@ manager. Do not put values in source, Git, logs, commands, or screenshots.
 | `PATIENT_EMAIL_RECIPIENT_ALLOWLIST` | test-only allowlist; fail closed otherwise |
 | `IDEMPOTENCY_NAMESPACE` | `fran-nonprod-20260821` or approved immutable equivalent |
 | `STATUS_TOKEN_SECRET` | unique NONPROD-only secret |
+| `CAPABILITY_TOKEN_SECRET` | unique strong NONPROD-only secret, lazy for management capabilities |
+| `FLOW_REFUND_CALLBACK_URL` | Preview-only callback route, lazy for refund lifecycle |
 
 Before every write, Calendar call, email, Flow request, or webhook acceptance,
 Apps Script must assert `APP_ENV === 'nonprod'`, validate the namespace, and
