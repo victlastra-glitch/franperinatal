@@ -10,12 +10,14 @@ const NONPROD = Object.freeze({
   backendVersion: 'nonprod-hardened-20260822', statusTokenTtlMs: 7200000,
 });
 
-const PROPERTY_KEYS = Object.freeze([
+const BASE_PROPERTY_KEYS = Object.freeze([
   'APP_ENV', 'FLOW_API_KEY', 'FLOW_SECRET_KEY', 'FLOW_BASE_URL', 'FLOW_RETURN_URL',
   'FLOW_CONFIRMATION_URL', 'BOOKING_STORE_ID', 'CALENDAR_ID', 'INTERNAL_NOTIFICATION_EMAIL',
   'PATIENT_EMAIL_RECIPIENT_ALLOWLIST', 'IDEMPOTENCY_NAMESPACE', 'STATUS_TOKEN_SECRET',
-  'CAPABILITY_TOKEN_SECRET',
 ]);
+const CAPABILITY_PROPERTY_KEYS = Object.freeze(['CAPABILITY_TOKEN_SECRET']);
+const REFUND_PROPERTY_KEYS = Object.freeze(['FLOW_REFUND_CALLBACK_URL']);
+const PROPERTY_KEYS = Object.freeze(BASE_PROPERTY_KEYS.concat(CAPABILITY_PROPERTY_KEYS));
 var LIFECYCLE = Object.freeze({
   BOOKING_STATUS: Object.freeze({
     INITIATED: 'initiated', PAYMENT_PENDING: 'payment_pending', CONFIRMED: 'confirmed',
@@ -40,6 +42,12 @@ var LIFECYCLE = Object.freeze({
     CLINICIAN_RECONCILE_MOVE: 'clinician_reconcile_move',
     CLINICIAN_RECONCILE_CANCEL: 'clinician_reconcile_cancel', REFUND_CREATE: 'refund_create',
     NOTIFICATION: 'notification',
+  }),
+  NOTIFICATION_TYPE: Object.freeze({
+    BOOKING_CONFIRMED: 'BOOKING_CONFIRMED', PATIENT_RESCHEDULED: 'PATIENT_RESCHEDULED',
+    CLINICIAN_RESCHEDULED: 'CLINICIAN_RESCHEDULED', PATIENT_CANCELLED: 'PATIENT_CANCELLED',
+    CLINICIAN_CANCELLED: 'CLINICIAN_CANCELLED', REFUND_REQUESTED: 'REFUND_REQUESTED',
+    REFUND_COMPLETED: 'REFUND_COMPLETED', REFUND_FAILED_MANUAL_REVIEW: 'REFUND_FAILED_MANUAL_REVIEW',
   }),
 });
 var RESERVATION_HEADERS = Object.freeze([
@@ -74,6 +82,8 @@ function doGet(e) {
     const action = getAction_(e);
     if (action === 'availability') return json_({ ok: true, slots: availability_(e) });
     if (action === 'payment_status') return json_(paymentStatus_(e));
+    if (action === 'manage_lookup') return json_(manageLookup_(e));
+    if (action === 'manage_availability') return json_({ ok: true, slots: availability_(e) });
     return json_({ ok: false, code: 'NOT_FOUND' });
   } catch (error) { return json_({ ok: false, code: safeCode_(error) }); }
 }
@@ -83,6 +93,10 @@ function doPost(e) {
     const action = getAction_(e);
     if (action === 'create_flow_payment') return json_(createFlowPayment_(e));
     if (action === 'flow_confirmation') return json_(flowConfirmation_(e));
+    if (action === 'manage_lookup') return json_(manageLookup_(e));
+    if (action === 'patient_reschedule') return json_(patientReschedule_(e));
+    if (action === 'patient_cancel') return json_(patientCancel_(e));
+    if (action === 'refund_confirmation') return json_(refundConfirmation_(e));
     return json_({ ok: false, code: 'NOT_FOUND' });
   } catch (error) { return json_({ ok: false, code: safeCode_(error) }); }
 }
@@ -94,7 +108,7 @@ function json_(payload) { return ContentService.createTextOutput(JSON.stringify(
 
 function readConfig_() {
   const properties = PropertiesService.getScriptProperties().getProperties();
-  PROPERTY_KEYS.forEach(function(key) { if (!String(properties[key] || '').trim()) fail_('CONFIGURATION_INCOMPLETE'); });
+  BASE_PROPERTY_KEYS.forEach(function(key) { if (!String(properties[key] || '').trim()) fail_('CONFIGURATION_INCOMPLETE'); });
   if (properties.APP_ENV !== NONPROD.appEnv) fail_('CONFIGURATION_INCOMPLETE');
   if (properties.FLOW_BASE_URL !== NONPROD.flowBaseUrl || getHttpsHost_(properties.FLOW_BASE_URL) !== NONPROD.flowHost) fail_('CONFIGURATION_INCOMPLETE');
   if (fingerprint_(properties.BOOKING_STORE_ID) !== NONPROD.bookingStoreFingerprint) fail_('CONFIGURATION_INCOMPLETE');
@@ -109,8 +123,31 @@ function readConfig_() {
     flowBaseUrl: properties.FLOW_BASE_URL, flowReturnUrl: properties.FLOW_RETURN_URL,
     flowConfirmationUrl: properties.FLOW_CONFIRMATION_URL, bookingStoreId: properties.BOOKING_STORE_ID,
     calendarId: properties.CALENDAR_ID, internalNotificationEmail: internal, patientAllowlist: allowlist,
-    idempotencyNamespace: properties.IDEMPOTENCY_NAMESPACE, statusTokenSecret: properties.STATUS_TOKEN_SECRET,
-    capabilityTokenSecret: properties.CAPABILITY_TOKEN_SECRET };
+    idempotencyNamespace: properties.IDEMPOTENCY_NAMESPACE, statusTokenSecret: properties.STATUS_TOKEN_SECRET };
+}
+
+// Capability configuration is deliberately lazy-scoped. Availability, payment
+// creation, payment confirmation and payment status do not need this secret.
+function requireCapabilitySecret_() {
+  const properties = PropertiesService.getScriptProperties().getProperties();
+  return assertCapabilitySecret_(properties.CAPABILITY_TOKEN_SECRET);
+}
+
+function readCapabilityConfig_() {
+  const config = readConfig_();
+  config.capabilityTokenSecret = requireCapabilitySecret_();
+  return config;
+}
+
+function readRefundConfig_() {
+  const config = readConfig_();
+  const properties = PropertiesService.getScriptProperties().getProperties();
+  REFUND_PROPERTY_KEYS.forEach(function(key) {
+    if (!String(properties[key] || '').trim()) fail_('REFUND_CONFIGURATION_INCOMPLETE');
+  });
+  assertPreviewRoute_(properties.FLOW_REFUND_CALLBACK_URL, '/api/refund-confirmation');
+  config.refundCallbackUrl = properties.FLOW_REFUND_CALLBACK_URL;
+  return config;
 }
 
 function assertPreviewRoute_(value, requiredPath) {
@@ -128,7 +165,8 @@ function assertResources_(config) {
   if (spreadsheet.getId() !== config.bookingStoreId || !spreadsheet.getSheetByName(NONPROD.sheetName)) fail_('CONFIGURATION_INCOMPLETE');
   const calendar = CalendarApp.getCalendarById(config.calendarId);
   if (!calendar || calendar.getId() !== config.calendarId) fail_('CONFIGURATION_INCOMPLETE');
-  return { spreadsheet: spreadsheet, sheet: spreadsheet.getSheetByName(NONPROD.sheetName), calendar: calendar };
+  return { spreadsheet: spreadsheet, sheet: spreadsheet.getSheetByName(NONPROD.sheetName), calendar: calendar,
+    calendarGateway: createCalendarGateway_({ calendarId: config.calendarId }) };
 }
 
 // Guarded and idempotent. It is intentionally not invoked during this mission.
@@ -152,14 +190,18 @@ function assertSchema_(sheet) {
 }
 
 function availability_(e) {
-  const resources = assertResources_(readConfig_()); const schema = assertSchema_(resources.sheet);
+  const config = readConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet);
   const requestedDate = String((e.parameter || {}).date || ''); if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) fail_('REQUEST_REJECTED');
-  return reservationRecords_(resources.sheet, schema).filter(function(record) {
-    return ACTIVE_SLOT_STATES.indexOf(record.booking_status) !== -1
-      && (!requestedDate || String(record.current_start_at).slice(0, 10) === requestedDate);
-  }).map(function(record) {
-    return { date: String(record.current_start_at).slice(0, 10), time: String(record.current_start_at).slice(11, 16) };
+  const bounds = availabilityBounds_(requestedDate);
+  let busyIntervals;
+  try { busyIntervals = resources.calendarGateway.freeBusy(bounds.start, bounds.end); }
+  catch (_) { fail_('CALENDAR_UNAVAILABLE'); }
+  const occupied = computeOccupiedSlots_({
+    workingSlots: workingSlots_(bounds.start, bounds.end, requestedDate),
+    busyIntervals: busyIntervals,
+    reservations: reservationRecords_(resources.sheet, schema),
   });
+  return occupied.map(function(slot) { return { date: slot.date, time: slot.time }; });
 }
 
 function createFlowPayment_(e) {
@@ -289,28 +331,57 @@ function applyConfirmedSideEffects_(resources, schema, config, record) {
   if (!record || record.booking_status !== LIFECYCLE.BOOKING_STATUS.CONFIRMED || record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) fail_('INVALID_STATE_TRANSITION');
   const current = findBy_(resources.sheet, schema, 'idempotency_key', record.idempotency_key);
   if (current.schedule_status === LIFECYCLE.SCHEDULE_STATUS.HOLD || current.schedule_status === LIFECYCLE.SCHEDULE_STATUS.SYNC_PENDING) {
-    updateRecord_(resources.sheet, schema, current.rowNumber, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.SYNC_PENDING }); const bounds = bookingBounds_(current.current_start_at);
-    const event = resources.calendar.createEvent('NONPROD confirmed booking', bounds.start, bounds.end);
-    updateRecord_(resources.sheet, schema, current.rowNumber, { calendar_event_id: event.getId(), schedule_status: LIFECYCLE.SCHEDULE_STATUS.SCHEDULED });
+    updateRecord_(resources.sheet, schema, current.rowNumber, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.SYNC_PENDING });
+    try {
+      const event = resources.calendarGateway.createLinkedBookingEvent(current);
+      const fields = calendarEventFields_(event);
+      fields.schedule_status = LIFECYCLE.SCHEDULE_STATUS.SCHEDULED;
+      updateRecord_(resources.sheet, schema, current.rowNumber, fields);
+    } catch (_) {
+      updateRecord_(resources.sheet, schema, current.rowNumber, {
+        schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
+        reconciliation_state: 'calendar_create_retry',
+      });
+    }
   }
   const refreshed = findBy_(resources.sheet, schema, 'idempotency_key', record.idempotency_key);
-  sendOnce_(resources.sheet, schema, config, refreshed, 'notification_patient_state', refreshed.patient_email, 'NONPROD booking confirmed');
-  sendOnce_(resources.sheet, schema, config, refreshed, 'notification_internal_state', config.internalNotificationEmail, 'NONPROD booking confirmed');
-}
-function bookingBounds_(startAt) { const start = new Date(String(startAt)); if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED'); return { start: start, end: new Date(start.getTime() + 3600000) }; }
-function startAt_(date, time) { if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) fail_('REQUEST_REJECTED'); const start = new Date(date + 'T' + time + ':00-04:00'); if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED'); return start.toISOString(); }
-function sendOnce_(sheet, schema, config, record, stateField, recipient, subject) {
-  assertTestRecipient_(recipient, config.patientAllowlist);
-  if (record[stateField] !== '') return;
-  const claim = {}; claim[stateField] = 'claimed'; claim.notification_outbox_key = makeNotificationLogicalKey_(record, stateField);
-  claim.notification_version = '1'; claim.notification_attempt_count = String(Number(record.notification_attempt_count || 0) + 1);
-  claim.notification_last_attempt_at = new Date().toISOString(); updateRecord_(sheet, schema, record.rowNumber, claim);
-  MailApp.sendEmail({ to: recipient, subject: subject, body: 'NONPROD confirmed booking.' });
-  const sent = {}; sent[stateField] = 'sent'; sent.notification_last_result = 'sent';
-  if (stateField === 'notification_patient_state') sent.last_patient_notification_at = new Date().toISOString();
-  updateRecord_(sheet, schema, record.rowNumber, sent);
+  const capabilityIssue = ensureManagementCapabilities_(resources.sheet, schema, refreshed);
+  const afterCapabilities = findBy_(resources.sheet, schema, 'idempotency_key', record.idempotency_key);
+  enqueueLifecycleNotification_(resources.sheet, schema, afterCapabilities, LIFECYCLE.NOTIFICATION_TYPE.BOOKING_CONFIRMED,
+    capabilityIssue && capabilityIssue.tokens);
 }
 
+function ensureManagementCapabilities_(sheet, schema, record) {
+  if (!record || record.booking_status !== LIFECYCLE.BOOKING_STATUS.CONFIRMED) return null;
+  if (record.reschedule_capability_hash && record.cancel_capability_hash) return null;
+  try {
+    const secret = requireCapabilitySecret_(); const now = Date.now();
+    const reschedule = createCapability_(LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, { secret: secret, now: now });
+    const cancel = createCapability_(LIFECYCLE.CAPABILITY_TYPE.CANCEL, { secret: secret, now: now });
+    updateRecord_(sheet, schema, record.rowNumber, Object.assign({}, capabilityFields_(reschedule), capabilityFields_(cancel)));
+    return { tokens: { RESCHEDULE: reschedule.token, CANCEL: cancel.token } };
+  } catch (_) {
+    updateRecord_(sheet, schema, record.rowNumber, { reconciliation_state: 'capability_configuration_required' });
+    return { tokens: null };
+  }
+}
+function bookingBounds_(startAt) { const start = new Date(String(startAt)); if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED'); return { start: start, end: new Date(start.getTime() + 3600000) }; }
+function startAt_(date, time) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) fail_('REQUEST_REJECTED');
+  const parts = String(date).split('-').map(Number); const clock = String(time).split(':').map(Number);
+  const naiveUtc = Date.UTC(parts[0], parts[1] - 1, parts[2], clock[0], clock[1], 0);
+  if (Number.isNaN(naiveUtc)) fail_('REQUEST_REJECTED');
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+    const local = {}; formatter.formatToParts(new Date(naiveUtc)).forEach(function(part) { if (part.type !== 'literal') local[part.type] = Number(part.value); });
+    const offset = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) - naiveUtc;
+    return new Date(naiveUtc - offset).toISOString();
+  } catch (_) {
+    const fallback = new Date(date + 'T' + time + ':00-04:00');
+    if (Number.isNaN(fallback.getTime())) fail_('REQUEST_REJECTED');
+    return fallback.toISOString();
+  }
+}
 function paymentStatus_(e) {
   const config = readConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const token = String((e && e.parameter && e.parameter.st) || '').trim();
   if (!validStatusToken_(token)) fail_('STATUS_TOKEN_REJECTED'); const record = findBy_(resources.sheet, schema, 'status_token_hash', statusTokenHash_(token, config.statusTokenSecret));
@@ -331,3 +402,115 @@ function reservationRecords_(sheet, schema) { return sheet.getDataRange().getVal
 function findBy_(sheet, schema, field, value) { return reservationRecords_(sheet, schema).find(function(record) { return record[field] === value; }) || null; }
 function recordFromRow_(row, schema, rowNumber) { const record = { rowNumber: rowNumber }; RESERVATION_HEADERS.forEach(function(header) { record[header] = row[schema.columns[header] - 1] == null ? '' : String(row[schema.columns[header] - 1]); }); return record; }
 function updateRecord_(sheet, schema, rowNumber, updates) { Object.keys(updates).forEach(function(field) { if (!Object.prototype.hasOwnProperty.call(schema.columns, field)) fail_('SCHEMA_MISMATCH'); sheet.getRange(rowNumber, schema.columns[field]).setValue(updates[field]); }); sheet.getRange(rowNumber, schema.columns.updated_at).setValue(new Date().toISOString()); }
+
+function calendarEventFields_(event) {
+  return {
+    calendar_event_id: String(event && event.id || ''),
+    calendar_event_etag: String(event && event.etag || ''),
+    calendar_event_updated_at: String(event && event.updated || ''),
+    calendar_sync_hash: String(event && event.syncHash || ''),
+    meet_url: String(event && event.meetUrl || ''),
+    meet_conference_id: String(event && event.meetConferenceId || ''),
+    meet_status: String(event && event.meetStatus || 'not_requested'),
+  };
+}
+
+function sheetReservationStore_(resources, schema) {
+  return {
+    loadByReservationId: function(id) { return findBy_(resources.sheet, schema, 'reservation_id', String(id)); },
+    loadByCalendarEventId: function(id) { return findBy_(resources.sheet, schema, 'calendar_event_id', String(id)); },
+    loadByCapability: function(token, type, secret) {
+      const capability = capabilityHashForToken_(token, type, secret);
+      const field = type === LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE ? 'reschedule_capability_hash' : 'cancel_capability_hash';
+      return findBy_(resources.sheet, schema, field, capability.hash);
+    },
+    update: function(record, updates) {
+      updateRecord_(resources.sheet, schema, record.rowNumber, updates);
+      return findBy_(resources.sheet, schema, 'reservation_id', record.reservation_id);
+    },
+    records: function() { return reservationRecords_(resources.sheet, schema); },
+  };
+}
+
+function capabilityHashForToken_(token, type, secret) {
+  return { hash: hashCapabilityToken_(String(token || ''), secret, type) };
+}
+
+function manageLookup_(e) {
+  const token = managementToken_(e); const config = readCapabilityConfig_();
+  const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const store = sheetReservationStore_(resources, schema);
+  const found = store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, config.capabilityTokenSecret)
+    || store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, config.capabilityTokenSecret);
+  if (!found || !managementTokenValidForRecord_(token, found, config.capabilityTokenSecret)) fail_('CAPABILITY_INVALID');
+  return publicManagementRecord_(found);
+}
+
+function managementToken_(e) {
+  const raw = String((e && e.postData && e.postData.contents) || '');
+  if (raw.length > 2048) fail_('REQUEST_REJECTED');
+  let payload; try { payload = raw ? JSON.parse(raw) : e.parameter || {}; } catch (_) { fail_('REQUEST_REJECTED'); }
+  const token = String(payload.token || '').trim();
+  if (!/^[A-Za-z0-9_-]{64,256}$/.test(token)) fail_('CAPABILITY_INVALID');
+  return token;
+}
+
+function managementTokenValidForRecord_(token, record, secret) {
+  return verifyCapability_(token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.CANCEL), { secret: secret })
+    || verifyCapability_(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE), { secret: secret });
+}
+
+function publicManagementRecord_(record) {
+  return { ok: true, status: publicManagementStatus_(record), date: String(record.current_start_at).slice(0, 10),
+    time: String(record.current_start_at).slice(11, 16), serviceType: record.service_type, modality: record.modality,
+    originalStart: record.original_start_at, currentStart: record.current_start_at, currentEnd: record.current_end_at,
+    meetUrl: record.meet_url || '' };
+}
+
+function publicManagementStatus_(record) {
+  if (record.booking_status === LIFECYCLE.BOOKING_STATUS.CANCELLED) return 'cancelled';
+  if (String(record.patient_reschedule_count) === '1') return 'rescheduled';
+  return 'active';
+}
+
+function patientReschedule_(e) {
+  const token = managementToken_(e); const payload = JSON.parse(String(e.postData.contents));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(payload.fecha || '')) || !/^\d{2}:\d{2}$/.test(String(payload.hora || ''))) fail_('REQUEST_REJECTED');
+  const config = readCapabilityConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet);
+  const store = sheetReservationStore_(resources, schema); const record = store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, config.capabilityTokenSecret);
+  if (!record) fail_('CAPABILITY_INVALID');
+  return patientRescheduleTransaction_({ reservationId: record.reservation_id, token: token, targetStartAt: startAt_(payload.fecha, payload.hora),
+    now: Date.now(), deps: { store: store, calendar: resources.calendarGateway, requireCapabilitySecret_: function() { return config.capabilityTokenSecret; },
+      enqueueNotification: function(updated) { enqueueLifecycleNotification_(resources.sheet, schema, updated, LIFECYCLE.NOTIFICATION_TYPE.PATIENT_RESCHEDULE); } } });
+}
+
+function patientCancel_(e) {
+  const token = managementToken_(e); const config = readCapabilityConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet);
+  const store = sheetReservationStore_(resources, schema); const record = store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, config.capabilityTokenSecret);
+  if (!record) fail_('CAPABILITY_INVALID');
+  return patientCancelTransaction_({ reservationId: record.reservation_id, token: token, now: Date.now(), deps: { store: store, calendar: resources.calendarGateway,
+    requireCapabilitySecret_: function() { return config.capabilityTokenSecret; }, policyEvaluator: refundPolicy_,
+    enqueueNotification: function(updated) { enqueueLifecycleNotification_(resources.sheet, schema, updated, LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED); },
+    enqueueRefund: function(updated) { enqueueLifecycleNotification_(resources.sheet, schema, updated, LIFECYCLE.NOTIFICATION_TYPE.REFUND_REQUESTED); } } });
+}
+
+function refundConfirmation_(e) {
+  const config = readRefundConfig_(); const token = String((e && e.parameter && e.parameter.token) || '').trim();
+  if (!/^[A-Za-z0-9_-]{16,256}$/.test(token)) fail_('REFUND_CALLBACK_INVALID');
+  const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const store = sheetReservationStore_(resources, schema);
+  const record = findBy_(resources.sheet, schema, 'refund_provider_reference', token);
+  if (!record) fail_('REFUND_CALLBACK_INVALID');
+  const gateway = createFlowRefundGateway_({ baseUrl: config.flowBaseUrl, apiKey: config.flowApiKey, secretKey: config.flowSecretKey });
+  return refundCallbackOnce_({ store: store, record: record, gateway: gateway, token: token });
+}
+
+function refundPolicy_() { return { decision: 'BUSINESS_POLICY_TBD', eligible: false }; }
+
+function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTokens) {
+  const notification = makeLifecycleNotification_(type, record, { now: new Date().toISOString() });
+  if (capabilityTokens) notification.capabilityTokens = capabilityTokens;
+  const stateField = notification.ctas.length ? 'notification_patient_state' : 'notification_internal_state';
+  if (record[stateField] === 'sent' || record[stateField] === 'claimed') return notification;
+  updateRecord_(sheet, schema, record.rowNumber, { notification_outbox_key: notification.logicalKey, notification_version: notification.version,
+    [stateField]: 'pending', notification_last_result: notification.eventType });
+  return notification;
+}

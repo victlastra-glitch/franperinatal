@@ -41,6 +41,22 @@ var CAPABILITY_RANDOM_UUID_COUNT = 3;
 var CAPABILITY_SECRET_MIN_LENGTH = 32;
 var CAPABILITY_DOMAIN_VERSION = 'booking-capability:v1';
 
+var LIFECYCLE_NOTIFICATION_TYPE = Object.freeze({
+  BOOKING_CONFIRMED: 'BOOKING_CONFIRMED', PATIENT_RESCHEDULED: 'PATIENT_RESCHEDULED',
+  CLINICIAN_RESCHEDULED: 'CLINICIAN_RESCHEDULED', PATIENT_CANCELLED: 'PATIENT_CANCELLED',
+  CLINICIAN_CANCELLED: 'CLINICIAN_CANCELLED', REFUND_REQUESTED: 'REFUND_REQUESTED',
+  REFUND_COMPLETED: 'REFUND_COMPLETED', REFUND_FAILED_MANUAL_REVIEW: 'REFUND_FAILED_MANUAL_REVIEW',
+});
+
+var LIFECYCLE_NOTIFICATION_CTA = Object.freeze({
+  BOOKING_CONFIRMED: Object.freeze(['RESCHEDULE', 'CANCEL']),
+  PATIENT_RESCHEDULED: Object.freeze(['CANCEL']),
+  CLINICIAN_RESCHEDULED: Object.freeze(['CANCEL']),
+  PATIENT_CANCELLED: Object.freeze([]), CLINICIAN_CANCELLED: Object.freeze([]),
+  REFUND_REQUESTED: Object.freeze([]), REFUND_COMPLETED: Object.freeze([]),
+  REFUND_FAILED_MANUAL_REVIEW: Object.freeze([]),
+});
+
 function capabilityTypeAllowed_(type) {
   return [LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, LIFECYCLE.CAPABILITY_TYPE.CANCEL].indexOf(type) !== -1;
 }
@@ -199,6 +215,130 @@ function claimPatientReschedule_(input) {
     revokedCapability: revokeCapability_(input.storedCapability, input.nowIso || new Date().toISOString()) };
 }
 
+function withLifecycleLock_(deps, operation) {
+  const lock = deps && deps.lock ? deps.lock : (typeof LockService !== 'undefined' && LockService.getScriptLock ? LockService.getScriptLock() : null);
+  if (!lock || !lock.tryLock(10000)) fail_('LOCK_UNAVAILABLE');
+  try { return operation(); } finally { lock.releaseLock(); }
+}
+
+function lifecycleNow_(value) { return Number(value || Date.now()); }
+
+function targetEndAt_(startAt, endAt) {
+  if (endAt) return new Date(String(endAt)).toISOString();
+  const start = new Date(String(startAt)); if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED');
+  return new Date(start.getTime() + 3600000).toISOString();
+}
+
+function lifecycleCapabilitySecret_(deps) {
+  if (deps && typeof deps.requireCapabilitySecret_ === 'function') return deps.requireCapabilitySecret_();
+  if (typeof requireCapabilitySecret_ === 'function') return requireCapabilitySecret_();
+  fail_('CAPABILITY_SECRET_INVALID');
+}
+
+function lifecycleRecordReadyForReschedule_(record) {
+  return record && record.booking_status === LIFECYCLE.BOOKING_STATUS.CONFIRMED
+    && record.payment_status === LIFECYCLE.PAYMENT_STATUS.PAID
+    && record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.SCHEDULED
+    && String(record.patient_reschedule_count) === '0';
+}
+
+function activeReservationOverlaps_(record, targetStartAt, targetEndAt, store) {
+  if (!store || typeof store.records !== 'function') return false;
+  return store.records().some(function(candidate) {
+    if (!candidate || candidate.reservation_id === record.reservation_id || ACTIVE_SLOT_STATES.indexOf(candidate.booking_status) === -1) return false;
+    return intervalOverlap_(targetStartAt, targetEndAt, candidate.current_start_at, candidate.current_end_at);
+  });
+}
+
+function targetSlotAvailable_(record, targetStartAt, targetEndAt, deps) {
+  if (deps && typeof deps.isTargetAvailable === 'function') return deps.isTargetAvailable(record, targetStartAt, targetEndAt);
+  if (!deps || !deps.calendar || typeof deps.calendar.isSlotAvailable !== 'function') fail_('CALENDAR_UNAVAILABLE');
+  if (!deps.calendar.isSlotAvailable(targetStartAt, targetEndAt, record.calendar_event_id)) return false;
+  return !activeReservationOverlaps_(record, targetStartAt, targetEndAt, deps.store);
+}
+
+function persistedRevocationFields_(capability) {
+  return capabilityFields_(capability);
+}
+
+function patientRescheduleTransaction_(input) {
+  const deps = input && input.deps;
+  if (!deps || !deps.store || !input.reservationId || !input.token || !input.targetStartAt) fail_('REQUEST_REJECTED');
+  return withLifecycleLock_(deps, function() {
+    // This is the authoritative read. Never authorize from input.record or a
+    // pre-lock snapshot supplied by a browser or caller.
+    const record = deps.store.loadByReservationId(String(input.reservationId));
+    if (!record || !lifecycleRecordReadyForReschedule_(record)) return { ok: false, code: 'CAPABILITY_INVALID' };
+    const secret = lifecycleCapabilitySecret_(deps);
+    const stored = capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE);
+    const now = lifecycleNow_(input.now);
+    if (!verifyCapability_(input.token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, stored, { secret: secret, now: now })) {
+      return { ok: false, code: 'CAPABILITY_INVALID' };
+    }
+    const targetEnd = targetEndAt_(input.targetStartAt, input.targetEndAt);
+    if (!targetSlotAvailable_(record, input.targetStartAt, targetEnd, deps)) return { ok: false, code: 'SLOT_TAKEN' };
+    const operationId = input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_RESCHEDULE, record.reservation_id + ':' + input.targetStartAt);
+    let event;
+    try {
+      event = deps.calendar.updateSameEvent(record, input.targetStartAt, targetEnd);
+    } catch (_) {
+      deps.store.update(record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
+        reconciliation_state: 'calendar_reschedule_retry', last_operation_id: operationId });
+      return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+    }
+    const revoked = revokeCapability_(stored, new Date(now).toISOString());
+    const updates = { current_start_at: new Date(input.targetStartAt).toISOString(), current_end_at: targetEnd,
+      patient_reschedule_count: '1', calendar_change_source: 'patient', schedule_changed_at: new Date(now).toISOString(),
+      last_operation_id: operationId, reconciliation_state: '', calendar_event_id: event.id, calendar_event_etag: event.etag,
+      calendar_event_updated_at: event.updated, calendar_sync_hash: event.syncHash, meet_url: event.meetUrl,
+      meet_conference_id: event.meetConferenceId, meet_status: event.meetStatus };
+    Object.assign(updates, persistedRevocationFields_(revoked));
+    const updated = deps.store.update(record, updates);
+    if (deps.enqueueNotification) deps.enqueueNotification(updated);
+    return { ok: true, replay: false, status: 'rescheduled', currentStart: updated.current_start_at, currentEnd: updated.current_end_at };
+  });
+}
+
+function patientCancelTransaction_(input) {
+  const deps = input && input.deps;
+  if (!deps || !deps.store || !input.reservationId || !input.token) fail_('REQUEST_REJECTED');
+  return withLifecycleLock_(deps, function() {
+    const record = deps.store.loadByReservationId(String(input.reservationId));
+    if (!record) return { ok: false, code: 'CAPABILITY_INVALID' };
+    if (record.booking_status === LIFECYCLE.BOOKING_STATUS.CANCELLED) return { ok: true, replay: true, status: 'cancelled' };
+    if (![LIFECYCLE.BOOKING_STATUS.CONFIRMED, LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING].includes(record.booking_status)) {
+      return { ok: false, code: 'CAPABILITY_INVALID' };
+    }
+    const secret = lifecycleCapabilitySecret_(deps);
+    const stored = capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.CANCEL);
+    const now = lifecycleNow_(input.now); if (!verifyCapability_(input.token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, stored, { secret: secret, now: now })) {
+      return { ok: false, code: 'CAPABILITY_INVALID' };
+    }
+    if (deps.calendar && typeof deps.calendar.cancelLinkedEvent === 'function') {
+      try { deps.calendar.cancelLinkedEvent(record); }
+      catch (_) {
+        deps.store.update(record, { booking_status: LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED,
+          schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED, reconciliation_state: 'calendar_cancel_retry' });
+        return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+      }
+    }
+    assertTransition_('booking_status', record.booking_status, LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED);
+    assertTransition_('booking_status', LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED, LIFECYCLE.BOOKING_STATUS.CANCELLED);
+    assertTransition_('schedule_status', record.schedule_status, LIFECYCLE.SCHEDULE_STATUS.CANCELLED);
+    const revoked = revokeCapability_(stored, new Date(now).toISOString());
+    const policy = deps.policyEvaluator ? deps.policyEvaluator(record) : { decision: 'BUSINESS_POLICY_TBD', eligible: false };
+    const updates = { booking_status: LIFECYCLE.BOOKING_STATUS.CANCELLED, schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
+      cancellation_source: 'patient', cancelled_at: new Date(now).toISOString(), last_operation_id: input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_CANCEL, record.reservation_id),
+      reconciliation_state: '', cancel_capability_revoked_at: revoked.revokedAt, refund_last_error_code: policy.eligible ? '' : 'BUSINESS_POLICY_TBD' };
+    if (policy.eligible) updates.refund_status = LIFECYCLE.REFUND_STATUS.REQUESTED;
+    else updates.refund_status = LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW;
+    const updated = deps.store.update(record, updates);
+    if (deps.enqueueNotification) deps.enqueueNotification(updated);
+    if (policy.eligible && deps.enqueueRefund) deps.enqueueRefund(updated);
+    return { ok: true, replay: false, status: 'cancelled', refund: policy.eligible ? 'requested' : 'BUSINESS_POLICY_TBD' };
+  });
+}
+
 function makeOperationId_(type, entropy) {
   const allowed = Object.keys(LIFECYCLE.OPERATION_TYPE).map(function(key) { return LIFECYCLE.OPERATION_TYPE[key]; });
   if (allowed.indexOf(type) === -1) fail_('OPERATION_TYPE_INVALID');
@@ -234,6 +374,28 @@ function createNotificationOutbox_(logicalKey, version, now) {
     lastAttemptAt: null, lastResult: null, claimedAt: null };
 }
 
+function lifecycleCtas_(eventType, record) {
+  const allowed = LIFECYCLE_NOTIFICATION_CTA[eventType] || [];
+  if (!record || record.booking_status !== LIFECYCLE.BOOKING_STATUS.CONFIRMED) return allowed.filter(function(cta) { return cta !== 'RESCHEDULE' && cta !== 'CANCEL'; });
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.PATIENT_RESCHEDULED || eventType === LIFECYCLE_NOTIFICATION_TYPE.CLINICIAN_RESCHEDULED) return ['CANCEL'];
+  if (eventType !== LIFECYCLE_NOTIFICATION_TYPE.BOOKING_CONFIRMED) return [];
+  return allowed.filter(function(cta) {
+    if (cta === 'RESCHEDULE') return String(record.patient_reschedule_count) === '0' && Boolean(record.reschedule_capability_hash && !record.reschedule_capability_revoked_at);
+    if (cta === 'CANCEL') return Boolean(record.cancel_capability_hash && !record.cancel_capability_revoked_at);
+    return false;
+  });
+}
+
+function makeLifecycleNotification_(eventType, record, options) {
+  if (!LIFECYCLE_NOTIFICATION_TYPE[eventType]) fail_('NOTIFICATION_TYPE_INVALID');
+  if (!record || !record.reservation_id || !record.notification_version) fail_('NOTIFICATION_RECORD_INVALID');
+  const key = 'lifecycle_' + String(record.reservation_id) + '_' + eventType + '_' + String(record.notification_version);
+  const meet = record.meet_url ? { meetUrl: String(record.meet_url), meetStatus: String(record.meet_status || '') } : null;
+  return { eventType: eventType, logicalKey: key, version: String(record.notification_version), ctas: lifecycleCtas_(eventType, record),
+    meet: meet, createdAt: String(options && options.now || new Date().toISOString()),
+    status: record.booking_status, scheduleStatus: record.schedule_status };
+}
+
 function claimNotificationOutbox_(entry, now) {
   if (!entry || !entry.key || entry.state === 'sent') return { ok: false, code: 'NOTIFICATION_ALREADY_SENT' };
   if (entry.state === 'claimed') return { ok: false, code: 'NOTIFICATION_CLAIMED' };
@@ -258,7 +420,8 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   TRANSITIONS: LIFECYCLE_TRANSITIONS,
   CAPABILITY_RANDOM_UUID_COUNT: CAPABILITY_RANDOM_UUID_COUNT,
   CAPABILITY_SECRET_MIN_LENGTH: CAPABILITY_SECRET_MIN_LENGTH,
-  PROPERTY_KEYS: PROPERTY_KEYS, readConfig_: readConfig_,
+  PROPERTY_KEYS: PROPERTY_KEYS, BASE_PROPERTY_KEYS: BASE_PROPERTY_KEYS, CAPABILITY_PROPERTY_KEYS: CAPABILITY_PROPERTY_KEYS,
+  REFUND_PROPERTY_KEYS: REFUND_PROPERTY_KEYS, readConfig_: readConfig_, readCapabilityConfig_: readCapabilityConfig_, requireCapabilitySecret_: requireCapabilitySecret_,
   transitionAllowed_: transitionAllowed_, assertTransition_: assertTransition_,
   randomOpaqueCapabilityToken_: randomOpaqueCapabilityToken_, hashCapabilityToken_: hashCapabilityToken_,
   constantTimeEqual_: constantTimeEqual_, createCapability_: createCapability_,
@@ -270,6 +433,9 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   makeCalendarLinkKey_: makeCalendarLinkKey_,
   makeNotificationLogicalKey_: makeNotificationLogicalKey_, createNotificationOutbox_: createNotificationOutbox_,
   claimNotificationOutbox_: claimNotificationOutbox_, completeNotificationOutbox_: completeNotificationOutbox_,
+  makeLifecycleNotification_: makeLifecycleNotification_, lifecycleCtas_: lifecycleCtas_,
+  patientRescheduleTransaction_: patientRescheduleTransaction_, patientCancelTransaction_: patientCancelTransaction_,
+  withLifecycleLock_: withLifecycleLock_,
   notificationLogSafe_: notificationLogSafe_, transitionBooking_: transitionBooking_,
   transitionPayment_: transitionPayment_, transitionRefund_: transitionRefund_, transitionSchedule_: transitionSchedule_,
   validIdempotencyKey_: validIdempotencyKey_, makeOpaqueId_: makeOpaqueId_,
