@@ -40,7 +40,7 @@ if rg -q 'WEBAPP_URL' "$artifact_root/assets/booking.js" "$artifact_root/assets/
   fail 'browser contains Apps Script upstream material'
 fi
 
-for route in /api/availability /api/create-flow-payment /api/flow-confirmation /api/payment-status; do
+for route in /api/availability /api/create-flow-payment /api/flow-confirmation /api/payment-status /api/refund-confirmation; do
   rg -Fq "$route" "$artifact_root/_worker.js" || fail "Worker route missing: $route"
 done
 for route in /api/leadmagnet /api/manage /api/manage-availability /api/manage-cancel /api/manage-reschedule; do

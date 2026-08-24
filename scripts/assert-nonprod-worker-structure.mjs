@@ -6,7 +6,11 @@ export const EXPECTED_UPSTREAM_HANDLERS = [
   'handleAvailability',
   'handleCreateFlowPayment',
   'handleFlowConfirmation',
-  'handlePaymentStatus'
+  'handlePaymentStatus',
+  'handleManageLookup',
+  'handleManageCancel',
+  'handleManageReschedule',
+  'handleRefundConfirmation'
 ];
 
 function maskNonCode(source) {

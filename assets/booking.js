@@ -52,7 +52,9 @@
       const resp = await fetch(BOOKING_API.availability, { method: 'GET', cache: 'no-store' });
       if (resp.ok) {
         const data = await resp.json();
-        bookedSlots = data && data.ok && Array.isArray(data.slots) ? data.slots : [];
+        bookedSlots = data && data.ok && Array.isArray(data.slots)
+          ? data.slots.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; })
+          : [];
       }
     } catch (_) {}
     slotsLoaded = true;
@@ -277,8 +279,8 @@
 
     // Bloqueo real basado en Calendar (bookedSlots viene del doGet)
     const takenHours = bookedSlots
-      .filter(b => b.fecha === iso)
-      .map(b => normalizeSlotHour(b.hora));
+      .filter(b => (b.date || b.fecha) === iso)
+      .map(b => normalizeSlotHour(b.time || b.hora));
     const remaining = SLOTS_WEEKDAY.filter((hour) => !takenHours.includes(hour) && !isSlotTooSoon(d, hour));
     if (remaining.length === 0) return "none";
     if (remaining.length === 1) return "few";
@@ -340,8 +342,8 @@
 
     const iso = dateKeyFromDate(state.date);
     const takenHours = bookedSlots
-      .filter(b => b.fecha === iso)
-      .map(b => normalizeSlotHour(b.hora));
+      .filter(b => (b.date || b.fecha) === iso)
+      .map(b => normalizeSlotHour(b.time || b.hora));
 
     // Si todos los slots están ocupados o pasaron, no quedan horarios visibles.
     const renderable = SLOTS_WEEKDAY.filter(s => !takenHours.includes(s) && !isSlotTooSoon(state.date, s));

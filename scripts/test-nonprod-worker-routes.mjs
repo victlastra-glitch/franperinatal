@@ -12,17 +12,8 @@ globalThis.fetch = async () => {
 };
 
 try {
-  const configuredEnv = {
-    APP_ENV: 'nonprod',
-    APPS_SCRIPT_WEB_APP_URL: 'https://invalid.example/unused-nonprod-endpoint'
-  };
-  const disabledRoutes = [
-    ['/api/leadmagnet', 'POST'],
-    ['/api/manage', 'POST'],
-    ['/api/manage-availability', 'GET'],
-    ['/api/manage-cancel', 'POST'],
-    ['/api/manage-reschedule', 'POST']
-  ];
+  const configuredEnv = { APP_ENV: 'nonprod', APPS_SCRIPT_WEB_APP_URL: 'https://invalid.example/unused-nonprod-endpoint' };
+  const disabledRoutes = [['/api/leadmagnet', 'POST']];
 
   for (const [path, method] of disabledRoutes) {
     const response = await workerModule.default.fetch(
@@ -38,7 +29,12 @@ try {
     ['/api/flow-confirmation', 'POST', 'text'],
     ['/api/payment-status', 'GET', 'json']
   ];
-  for (const [path, method, bodyType] of bookingRoutes) {
+  const managementRoutes = [
+    ['/api/manage', 'POST', 'json'], ['/api/manage-availability', 'GET', 'json'],
+    ['/api/manage-cancel', 'POST', 'json'], ['/api/manage-reschedule', 'POST', 'json'],
+    ['/api/refund-confirmation', 'POST', 'text']
+  ];
+  for (const [path, method, bodyType] of [...bookingRoutes, ...managementRoutes]) {
     const missingEnvResponse = await workerModule.default.fetch(
       new Request(`https://preview.example${path}`, { method }), {}, {}
     );
@@ -63,6 +59,25 @@ try {
   assertNonprodUpstreamCallSites(workerSource);
   console.log('SEMANTIC_UPSTREAM_CALL_SITE_TEST=PASS');
 
+  // Management responses are allowlisted even when the synthetic upstream
+  // attempts to return patient/contact/clinical fields.
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    ok: true, status: 'active', date: '2026-08-24', time: '10:00', serviceType: 'initial', modality: 'Online',
+    nombre: 'synthetic-person', email: 'synthetic@example.test', patientRut: '11.111.111-1', reason: 'clinical text'
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const managementResponse = await workerModule.default.fetch(
+    new Request('https://preview.example/api/manage', { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'manage', token: 'a'.repeat(64) }) }),
+    { APP_ENV: 'nonprod', APPS_SCRIPT_WEB_APP_URL: 'https://script.google.com/macros/s/synthetic/exec' }, {}
+  );
+  const managementBody = await managementResponse.json();
+  assert.equal(managementBody.ok, true);
+  assert.equal(Object.hasOwn(managementBody, 'nombre'), false, 'management response excludes patient name');
+  assert.equal(Object.hasOwn(managementBody, 'email'), false, 'management response excludes email');
+  assert.equal(Object.hasOwn(managementBody, 'patientRut'), false, 'management response excludes RUT');
+  assert.equal(Object.hasOwn(managementBody, 'reason'), false, 'management response excludes clinical text');
+  console.log('MANAGEMENT_RESPONSE_NO_PII_TEST=PASS');
+
   const availabilityCall = workerSource.indexOf(
     'nonprodUpstream(env)',
     workerSource.indexOf('async function handleAvailability')
@@ -83,7 +98,7 @@ try {
     'semantic assertion must reject a same-count lost/gained call-site mutation'
   );
   console.log('SEMANTIC_UPSTREAM_MUTANT_TESTS=PASS');
-  console.log('DISABLED_ROUTES_UPSTREAM_FETCH_CALLS=0');
+  console.log('FAIL_CLOSED_ROUTE_UPSTREAM_FETCH_CALLS=0');
   console.log('NONPROD_WORKER_ROUTE_TESTS=PASS');
 } finally {
   globalThis.fetch = previousFetch;

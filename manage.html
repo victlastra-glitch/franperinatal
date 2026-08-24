@@ -802,10 +802,10 @@
     // ("18:00", "18:00 h", "1899-12-30T22:42:45.000Z", etc.)
     var _horaDisplay = normalizeHourValue(reserva.hora) || '—';
 
-    document.getElementById('det-nombre').textContent    = reserva.nombre    || '—';
-    document.getElementById('det-fecha').textContent     = reserva.fecha     ? formatFechaLarga(reserva.fecha) : '—';
-    document.getElementById('det-hora').textContent      = _horaDisplay;
-    document.getElementById('det-servicio').textContent  = reserva.servicio  || '—';
+    document.getElementById('det-nombre').textContent    = reserva.nombre    || 'Tu reserva';
+    document.getElementById('det-fecha').textContent     = (reserva.fecha || reserva.date) ? formatFechaLarga(reserva.fecha || reserva.date) : '—';
+    document.getElementById('det-hora').textContent      = normalizeHourValue(reserva.hora || reserva.time) || '—';
+    document.getElementById('det-servicio').textContent  = reserva.servicio  || reserva.serviceType || '—';
     document.getElementById('det-modalidad').textContent = reserva.modalidad || '—';
     document.getElementById('det-estado').innerHTML      = statusBadge(reserva.status);
     document.getElementById('det-actions').style.display = (reserva.status === 'active') ? 'flex' : 'none';
@@ -872,7 +872,7 @@
       var resp = await fetch(MANAGE_API.availability, { method: 'GET', cache: 'no-store', credentials: 'omit' });
       if (resp.ok) {
         var data = await resp.json();
-        bookedSlots = Array.isArray(data) ? data : [];
+        bookedSlots = Array.isArray(data) ? data.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; }) : [];
       }
     } catch (_) { bookedSlots = []; }
 
@@ -974,8 +974,8 @@
     if (!selDate) return;
 
     var bookedHours = bookedSlots
-      .filter(function(s){ return s.fecha === selDate; })
-      .map(function(s){ return normalizeHourValue(s.hora); });
+      .filter(function(s){ return (s.date || s.fecha) === selDate; })
+      .map(function(s){ return normalizeHourValue(s.time || s.hora); });
 
     var reservaFechaISO = extractISODate(reserva.fecha);
     var reservaHoraNorm = normalizeHourValue(reserva.hora);

@@ -7,6 +7,8 @@
  *   - Booking/payment routes fail closed unless APP_ENV is exactly nonprod.
  *   - /backend/* explicitly returns 404 (defense in depth — should also
  *     be excluded at deploy artifact level via wrangler/build).
+ *   - Management routes are same-origin proxies with server-side capability
+ *     validation; their responses contain no patient/clinical PII.
  *   - /pago-resultado POST → 303 GET preserved (Flow urlReturn).
  *   - Missing APPS_SCRIPT_WEB_APP_URL returns 503 (NOT 200) so monitoring
  *     can detect misconfiguration immediately.
@@ -258,6 +260,87 @@ async function handlePaymentStatus(request, env) {
   });
 }
 
+function safeManagementResponse(data) {
+  if (!data || typeof data !== 'object') return { ok: false, code: 'upstream_bad_response' };
+  if (!data.ok) return { ok: false, code: typeof data.code === 'string' ? data.code : 'management_rejected' };
+  return { ok: true, status: typeof data.status === 'string' ? data.status : '',
+    date: typeof data.date === 'string' ? data.date : '', time: typeof data.time === 'string' ? data.time : '',
+    serviceType: typeof data.serviceType === 'string' ? data.serviceType : '', modality: typeof data.modality === 'string' ? data.modality : '',
+    originalStart: typeof data.originalStart === 'string' ? data.originalStart : '', currentStart: typeof data.currentStart === 'string' ? data.currentStart : '',
+    currentEnd: typeof data.currentEnd === 'string' ? data.currentEnd : '', meetUrl: typeof data.meetUrl === 'string' ? data.meetUrl : '' };
+}
+
+async function handleManageLookup(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+  let payload;
+  try { payload = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  if (!payload || payload.action !== 'manage' || typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{64,256}$/.test(payload.token)) {
+    return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  }
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=manage_lookup', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'manage_lookup', token: payload.token }), redirect: 'follow' }); }
+  catch (_) { return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502); }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  return jsonResp(safeManagementResponse(await readJsonResponse(upstream)), 200);
+}
+
+async function handleManageCancel(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+  let payload;
+  try { payload = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  if (!payload || payload.action !== 'cancel_confirm' || typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{64,256}$/.test(payload.token)) {
+    return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  }
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=patient_cancel', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'patient_cancel', token: payload.token }), redirect: 'follow' }); }
+  catch (_) { return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502); }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  const data = await readJsonResponse(upstream);
+  return data && data.ok ? jsonResp({ ok: true, status: 'cancelled', refund: data.refund === 'requested' ? 'requested' : 'BUSINESS_POLICY_TBD' }, 200)
+    : jsonResp({ ok: false, code: data && data.code ? data.code : 'management_rejected' }, 200);
+}
+
+async function handleManageReschedule(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+  let payload;
+  try { payload = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  if (!payload || payload.action !== 'reschedule_confirm' || typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{64,256}$/.test(payload.token)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(String(payload.fecha || '')) || !/^\d{2}:\d{2}$/.test(String(payload.hora || ''))) {
+    return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  }
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=patient_reschedule', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'patient_reschedule', token: payload.token, fecha: payload.fecha, hora: payload.hora }), redirect: 'follow' }); }
+  catch (_) { return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502); }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  const data = await readJsonResponse(upstream);
+  return data && data.ok ? jsonResp({ ok: true, status: 'rescheduled', currentStart: data.currentStart || '' }, 200)
+    : jsonResp({ ok: false, code: data && data.code ? data.code : 'management_rejected' }, 200);
+}
+
+async function handleRefundConfirmation(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = nonprodUpstream(env);
+  if (upstreamConfig.error) return textBad(upstreamConfig.error, upstreamConfig.status);
+  let body;
+  try { body = await request.text(); } catch (_) { return textBad('bad_request', 400); }
+  if (!body || body.length > 4096) return textBad('bad_request', 400);
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=refund_confirmation', { method: 'POST', headers: { 'content-type': request.headers.get('content-type') || 'application/x-www-form-urlencoded' }, body, redirect: 'follow' }); }
+  catch (_) { return textBad('upstream_unreachable', 502); }
+  if (!upstream.ok) return textBad('upstream_error', 502);
+  try { await upstream.text(); } catch (_) { /* drain */ }
+  return textOk();
+}
+
 // --- /pago-resultado POST → 303 GET --------------------------------------
 // Flow's urlReturn sends a POST to the return URL. Static assets only serve
 // GET. We preserve the publicStatusToken (?st=…) and 303-redirect to GET.
@@ -294,12 +377,11 @@ export default {
       return disabledNonprodFeature();
     }
 
-    if (url.pathname === '/api/manage'
-        || url.pathname === '/api/manage-availability'
-        || url.pathname === '/api/manage-cancel'
-        || url.pathname === '/api/manage-reschedule') {
-      return disabledNonprodFeature();
-    }
+    if (url.pathname === '/api/manage') return handleManageLookup(request, env);
+    if (url.pathname === '/api/manage-availability') return handleAvailability(request, env);
+    if (url.pathname === '/api/manage-cancel') return handleManageCancel(request, env);
+    if (url.pathname === '/api/manage-reschedule') return handleManageReschedule(request, env);
+    if (url.pathname === '/api/refund-confirmation') return handleRefundConfirmation(request, env);
 
     if (url.pathname === '/api/availability') {
       return handleAvailability(request, env);
