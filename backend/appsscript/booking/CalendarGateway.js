@@ -127,10 +127,14 @@ function createCalendarGateway_(options) {
       if (String(record.calendar_event_etag || '') !== String(current.etag || '')) {
         calendarConflict_('CALENDAR_ETAG_CONFLICT', 412);
       }
-      const event = current.event;
-      event.start = { dateTime: calendarDateTime_(targetStartAt).toISOString(), timeZone: DEFAULT_BOOKING_TIME_ZONE };
-      event.end = { dateTime: calendarDateTime_(targetEndAt).toISOString(), timeZone: DEFAULT_BOOKING_TIME_ZONE };
-      event.extendedProperties = opaqueCalendarProperties_(record.calendar_link_key);
+      // Never mutate the object returned by GET before the conditional update.
+      // A 412 must leave the locally observed event unchanged for the next
+      // reconciliation attempt and must never appear as a successful move.
+      const event = Object.assign({}, current.event, {
+        start: { dateTime: calendarDateTime_(targetStartAt).toISOString(), timeZone: DEFAULT_BOOKING_TIME_ZONE },
+        end: { dateTime: calendarDateTime_(targetEndAt).toISOString(), timeZone: DEFAULT_BOOKING_TIME_ZONE },
+        extendedProperties: opaqueCalendarProperties_(record.calendar_link_key),
+      });
       // Sending conferenceDataVersion while retaining event.conferenceData
       // preserves Meet on the same event. Sandbox must prove this behavior.
       try {
@@ -150,26 +154,30 @@ function createCalendarGateway_(options) {
       const baseRequest = { showDeleted: true, singleEvents: false, maxResults: 2500 };
       if (syncToken) baseRequest.syncToken = String(syncToken);
       else { baseRequest.timeMin = calendarDateTime_(bounds.start).toISOString(); baseRequest.timeMax = calendarDateTime_(bounds.end).toISOString(); }
-      let fullSyncReset = false; let response; let request = Object.assign({}, baseRequest); const items = [];
-      try { response = api.Events.list(calendarId, request); }
-      catch (error) {
-        if (calendarHttpStatus_(error) !== 410 || !syncToken) throw error;
-        fullSyncReset = true;
-        request = { showDeleted: true, singleEvents: false, maxResults: 2500,
-          timeMin: calendarDateTime_(bounds.start).toISOString(), timeMax: calendarDateTime_(bounds.end).toISOString() };
-        response = api.Events.list(calendarId, request);
+      let fullSyncReset = false;
+      const fullRequest = { showDeleted: true, singleEvents: false, maxResults: 2500,
+        timeMin: calendarDateTime_(bounds.start).toISOString(), timeMax: calendarDateTime_(bounds.end).toISOString() };
+      function readAllPages_(initialRequest, allowReset) {
+        const items = []; let request = Object.assign({}, initialRequest); let response;
+        while (true) {
+          try { response = api.Events.list(calendarId, request); }
+          catch (error) {
+            if (allowReset && syncToken && calendarHttpStatus_(error) === 410) {
+              fullSyncReset = true;
+              return readAllPages_(fullRequest, false);
+            }
+            throw error;
+          }
+          if (Array.isArray(response && response.items)) items.push.apply(items, response.items);
+          if (!response || !response.nextPageToken) break;
+          request = Object.assign({}, initialRequest, { pageToken: String(response.nextPageToken) });
+        }
+        if (!response || !response.nextSyncToken) calendarFail_('CALENDAR_SYNC_CURSOR_MISSING');
+        return { items: items, nextSyncToken: String(response.nextSyncToken) };
       }
-      while (response) {
-        if (Array.isArray(response.items)) items.push.apply(items, response.items);
-        if (!response.nextPageToken) break;
-        request = Object.assign({}, baseRequest, { pageToken: String(response.nextPageToken) });
-        if (fullSyncReset) request = { showDeleted: true, singleEvents: false, maxResults: 2500,
-          timeMin: calendarDateTime_(bounds.start).toISOString(), timeMax: calendarDateTime_(bounds.end).toISOString(),
-          pageToken: String(response.nextPageToken) };
-        response = api.Events.list(calendarId, request);
-      }
-      return { ok: true, fullSyncReset: fullSyncReset, nextSyncToken: String(response && response.nextSyncToken || ''),
-        events: items.map(function(item) { return { event: item, linkage: calendarExtendedProperties_(item), syncHash: calendarSyncHash_(item) }; }) };
+      const pages = readAllPages_(baseRequest, true);
+      return { ok: true, fullSyncReset: fullSyncReset, nextSyncToken: pages.nextSyncToken,
+        events: pages.items.map(function(item) { return { event: item, linkage: calendarExtendedProperties_(item), syncHash: calendarSyncHash_(item) }; }) };
     },
     isSlotAvailable: function(start, end, currentEventId) {
       const busy = this.freeBusy(start, end);

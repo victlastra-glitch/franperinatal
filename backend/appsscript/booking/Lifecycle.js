@@ -25,7 +25,7 @@ var LIFECYCLE_TRANSITIONS = Object.freeze({
     refund_requested: Object.freeze(['refund_pending', 'refund_failed', 'manual_review']),
     refund_pending: Object.freeze(['refunded', 'refund_failed', 'manual_review']),
     refund_failed: Object.freeze(['refund_requested', 'refund_pending', 'manual_review']),
-    refunded: Object.freeze([]), manual_review: Object.freeze([]),
+    refunded: Object.freeze([]), manual_review: Object.freeze(['refund_pending', 'refunded', 'refund_failed']),
   }),
   schedule_status: Object.freeze({
     hold: Object.freeze(['sync_pending', 'cancelled', 'reconciliation_required', 'manual_review']),
@@ -244,6 +244,10 @@ function lifecycleRecordReadyForReschedule_(record) {
 
 function assertCancellationTransition_(record) {
   if (!record) fail_('INVALID_BOOKING_STATUS_TRANSITION');
+  if (record.booking_status === LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED) {
+    assertTransition_('booking_status', record.booking_status, LIFECYCLE.BOOKING_STATUS.CANCELLED);
+    return true;
+  }
   assertTransition_('booking_status', record.booking_status, LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED);
   assertTransition_('booking_status', LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED, LIFECYCLE.BOOKING_STATUS.CANCELLED);
   return true;
@@ -269,6 +273,20 @@ function storeUpdateWithRetry_(store, record, updates) {
 
 function bestEffortReconciliationUpdate_(deps, record, updates) {
   try { return storeUpdateWithRetry_(deps.store, record, updates); } catch (_) { return null; }
+}
+
+function reconciliationFailureSnapshot_(record, updates) {
+  return { reservationId: String(record && record.reservation_id || ''), operationId: String(updates && updates.last_operation_id || ''),
+    state: String(updates && updates.reconciliation_state || 'reconciliation_required'), calendarEventId: String(updates && updates.calendar_event_id || record && record.calendar_event_id || ''),
+    calendarEventEtag: String(updates && updates.calendar_event_etag || record && record.calendar_event_etag || ''),
+    targetStartAt: String(updates && updates.current_start_at || ''), targetEndAt: String(updates && updates.current_end_at || '') };
+}
+
+function persistReconciliationFailure_(deps, record, updates) {
+  const target = deps && deps.reconciliationStore && typeof deps.reconciliationStore.update === 'function'
+    ? deps.reconciliationStore : deps && deps.store;
+  if (!target) return null;
+  try { return storeUpdateWithRetry_(target, record, updates); } catch (_) { return null; }
 }
 
 function isCalendarConcurrencyFailure_(error) {
@@ -316,9 +334,11 @@ function patientRescheduleTransaction_(input) {
     try {
       event = deps.calendar.updateSameEvent(record, input.targetStartAt, targetEnd);
     } catch (error) {
-      bestEffortReconciliationUpdate_(deps, record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
-        reconciliation_state: isCalendarConcurrencyFailure_(error) ? 'calendar_reschedule_conflict' : 'calendar_reschedule_retry', last_operation_id: operationId });
-      return { ok: false, code: isCalendarConcurrencyFailure_(error) ? 'RECONCILIATION_REQUIRED' : 'RECONCILIATION_REQUIRED' };
+      const reconciliationState = isCalendarConcurrencyFailure_(error) ? 'calendar_reschedule_conflict' : 'calendar_reschedule_retry';
+      persistReconciliationFailure_(deps, record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
+        reconciliation_state: reconciliationState, last_operation_id: operationId });
+      return { ok: false, code: 'RECONCILIATION_REQUIRED', reconciliation: reconciliationFailureSnapshot_(record, {
+        reconciliation_state: reconciliationState, last_operation_id: operationId }) };
     }
     const revoked = revokeCapability_(stored, new Date(now).toISOString());
     const updates = { current_start_at: new Date(input.targetStartAt).toISOString(), current_end_at: targetEnd,
@@ -330,17 +350,17 @@ function patientRescheduleTransaction_(input) {
     let updated;
     try { updated = storeUpdateWithRetry_(deps.store, record, updates); }
     catch (_) {
-      bestEffortReconciliationUpdate_(deps, record, Object.assign({}, updates, {
+      persistReconciliationFailure_(deps, record, Object.assign({}, updates, {
         schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
         reconciliation_state: 'calendar_reschedule_store_retry', last_operation_id: operationId,
       }));
-      return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+      return { ok: false, code: 'RECONCILIATION_REQUIRED', reconciliation: reconciliationFailureSnapshot_(record, Object.assign({}, updates, {
+        reconciliation_state: 'calendar_reschedule_store_retry', last_operation_id: operationId })) };
     }
     if (deps.enqueueNotification) {
       try { deps.enqueueNotification(updated); }
       catch (_) {
-        bestEffortReconciliationUpdate_(deps, updated, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
-          reconciliation_state: 'notification_reschedule_retry', last_operation_id: operationId });
+        bestEffortReconciliationUpdate_(deps, updated, { reconciliation_state: 'notification_reschedule_retry', last_operation_id: operationId });
         return { ok: false, code: 'NOTIFICATION_RETRY_REQUIRED' };
       }
     }
@@ -363,12 +383,14 @@ function patientCancelTransaction_(input) {
     const now = lifecycleNow_(input.now); if (!verifyCapability_(input.token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, stored, { secret: secret, now: now })) {
       return { ok: false, code: 'CAPABILITY_INVALID' };
     }
+    const operationId = input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_CANCEL, record.reservation_id);
     if (deps.calendar && typeof deps.calendar.cancelLinkedEvent === 'function') {
       try { deps.calendar.cancelLinkedEvent(record); }
       catch (_) {
-        bestEffortReconciliationUpdate_(deps, record, { booking_status: LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED,
-          schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED, reconciliation_state: 'calendar_cancel_retry' });
-        return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+        persistReconciliationFailure_(deps, record, { booking_status: LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED,
+          schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED, reconciliation_state: 'calendar_cancel_retry', last_operation_id: operationId });
+        return { ok: false, code: 'RECONCILIATION_REQUIRED', reconciliation: reconciliationFailureSnapshot_(record, {
+          reconciliation_state: 'calendar_cancel_retry', last_operation_id: operationId }) };
       }
     }
     assertCancellationTransition_(record);
@@ -376,25 +398,26 @@ function patientCancelTransaction_(input) {
     const revoked = revokeCapability_(stored, new Date(now).toISOString());
     const policy = deps.policyEvaluator ? deps.policyEvaluator(record) : { decision: 'BUSINESS_POLICY_TBD', eligible: false };
     const updates = atomicCancellationTransitionFields_(record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
-      cancellation_source: 'patient', cancelled_at: new Date(now).toISOString(), last_operation_id: input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_CANCEL, record.reservation_id),
+      cancellation_source: 'patient', cancelled_at: new Date(now).toISOString(), last_operation_id: operationId,
       reconciliation_state: '', cancel_capability_revoked_at: revoked.revokedAt, refund_last_error_code: policy.eligible ? '' : 'BUSINESS_POLICY_TBD' });
     if (policy.eligible) updates.refund_status = LIFECYCLE.REFUND_STATUS.REQUESTED;
     else updates.refund_status = LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW;
     let updated;
     try { updated = storeUpdateWithRetry_(deps.store, record, updates); }
     catch (_) {
-      bestEffortReconciliationUpdate_(deps, record, Object.assign({}, updates, {
+      persistReconciliationFailure_(deps, record, Object.assign({}, updates, {
         booking_status: LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED,
         schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
         reconciliation_state: 'calendar_cancel_store_retry',
       }));
-      return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+      return { ok: false, code: 'RECONCILIATION_REQUIRED', reconciliation: reconciliationFailureSnapshot_(record, Object.assign({}, updates, {
+        reconciliation_state: 'calendar_cancel_store_retry' })) };
     }
     try {
       if (deps.enqueueNotification) deps.enqueueNotification(updated);
       if (policy.eligible && deps.enqueueRefund) deps.enqueueRefund(updated);
     } catch (_) {
-      bestEffortReconciliationUpdate_(deps, updated, { reconciliation_state: 'notification_cancel_retry' });
+      bestEffortReconciliationUpdate_(deps, updated, { reconciliation_state: 'notification_cancel_retry', last_operation_id: operationId });
       return { ok: false, code: 'NOTIFICATION_RETRY_REQUIRED' };
     }
     return { ok: true, replay: false, status: 'cancelled', refund: policy.eligible ? 'requested' : 'BUSINESS_POLICY_TBD' };

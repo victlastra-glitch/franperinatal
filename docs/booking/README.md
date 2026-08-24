@@ -63,6 +63,8 @@ Calendar Advanced Service queda declarado en appsscript.json, pero no ha sido ac
 - Provider signatures: `Freebusy.query(resource)`, `Events.get(calendarId,eventId,optionalArgs)`, `Events.list(calendarId,optionalArgs)`, `Events.insert(resource,calendarId,optionalArgs)`, `Events.update(resource,calendarId,eventId,optionalArgs,optionalHeaders)`, `Events.remove(calendarId,eventId,optionalArgs)`.
 - Calendar saga: fresh ETag compare, `If-Match`, HTTP 412 and explicit reconciliation; Calendar/Sheet are not treated as one atomic transaction.
 - Sync: all pages and event processing complete before cursor advance; unresolved outcomes retain the old cursor.
-- CTA retry: no new schema field; one hash-at-rest per CTA is rotated under LockService and no raw bearer is written to outbox/logs.
+- CTA retry: no new schema field; one active hash-at-rest per CTA/type/version is rotated under LockService, replacing the previous hash so the old bearer stops validating. Raw bearers are returned only to the immediate dispatcher and never written to outbox/logs.
+- Partial failure: every cross-provider boundary returns an explicit reconciliation/manual-review code and an operation-bound snapshot; a retry must reconcile the recorded Calendar outcome before another destructive action.
+- Timezone: Chile slot labels use `America/Santiago` timezone-aware conversion across DST transitions; no permanent UTC-04 offset is assumed.
 - Final schema header count: 57; schema fields added: none.
 - Runtime authorization, Meet persistence, Flow Sandbox, email delivery, Preview and E2E remain intentionally unverified.

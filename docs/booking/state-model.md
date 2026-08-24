@@ -28,8 +28,8 @@ RESCHEDULE y CANCEL tienen tokens distintos de alta entropía, hash HMAC con dom
 
 ## Refund
 
-Refund es un estado propio: not_required -> refund_requested -> refund_pending -> refunded/refund_failed/manual_review. Timeout deja una orden determinista sólo como idempotencia interna y fuerza `manual_review`; no afirma `status_only` ni crea una segunda orden sin evidencia provider-side. La decisión comercial se delega a policyEvaluator y no se hardcodea.
+Refund es un estado propio: not_required -> refund_requested -> refund_pending -> refunded/refund_failed/manual_review. Timeout deja una orden determinista sólo como idempotencia interna y fuerza `manual_review` con `REFUND_CREATE_OUTCOME_UNKNOWN`; no afirma `status_only` ni crea una segunda orden sin evidencia provider-side. Un callback con token provider puede resolver manual_review y su replay es seguro. La decisión comercial se delega a policyEvaluator y no se hardcodea.
 
 ## Cancellation atomic transition
 
-Patient y clinician usan `atomicCancellationTransitionFields_`: valida `confirmed -> cancellation_requested -> cancelled` y construye el único write final atómico del datastore, sin bypass directo del state machine. Si Calendar ya fue liberado y la escritura falla, el resultado es `RECONCILIATION_REQUIRED`; no se emiten refund ni notification duplicados.
+Patient y clinician usan `atomicCancellationTransitionFields_`: valida `confirmed -> cancellation_requested -> cancelled` y construye el único write final atómico del datastore, sin bypass directo del state machine. Si Calendar ya fue liberado y la escritura falla, el resultado es `RECONCILIATION_REQUIRED` con operation id/snapshot de reconciliación; no se emiten refund ni notification duplicados.

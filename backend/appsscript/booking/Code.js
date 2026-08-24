@@ -373,10 +373,24 @@ function startAt_(date, time) {
   if (Number.isNaN(naiveUtc)) fail_('REQUEST_REJECTED');
   try {
     const formatter = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Santiago', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
-    const local = {}; formatter.formatToParts(new Date(naiveUtc)).forEach(function(part) { if (part.type !== 'literal') local[part.type] = Number(part.value); });
-    const offset = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) - naiveUtc;
-    return new Date(naiveUtc - offset).toISOString();
-  } catch (_) { fail_('TIMEZONE_UNAVAILABLE'); }
+    let candidate = naiveUtc;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const local = {}; formatter.formatToParts(new Date(candidate)).forEach(function(part) { if (part.type !== 'literal') local[part.type] = Number(part.value); });
+      const localAsUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second);
+      const next = naiveUtc - (localAsUtc - candidate);
+      if (next === candidate) {
+        const verified = {}; formatter.formatToParts(new Date(next)).forEach(function(part) { if (part.type !== 'literal') verified[part.type] = Number(part.value); });
+        if (verified.year !== parts[0] || verified.month !== parts[1] || verified.day !== parts[2]
+          || verified.hour !== clock[0] || verified.minute !== clock[1]) fail_('REQUEST_REJECTED');
+        return new Date(next).toISOString();
+      }
+      candidate = next;
+    }
+    fail_('REQUEST_REJECTED');
+  } catch (error) {
+    if (error && error.code === 'REQUEST_REJECTED') throw error;
+    fail_('TIMEZONE_UNAVAILABLE');
+  }
 }
 function paymentStatus_(e) {
   const config = readConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const token = String((e && e.parameter && e.parameter.st) || '').trim();

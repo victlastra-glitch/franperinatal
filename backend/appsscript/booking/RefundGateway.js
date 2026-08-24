@@ -28,6 +28,10 @@ function refundForm_(params) {
   return Object.keys(params).sort().map(function(key) { return encodeURIComponent(key) + '=' + encodeURIComponent(params[key]); }).join('&');
 }
 
+function validRefundCallbackUrl_(value) {
+  return /^https:\/\/[a-z0-9-]+\.pages\.dev\/api\/refund-confirmation$/i.test(String(value || ''));
+}
+
 function createFlowRefundGateway_(options) {
   options = options || {};
   const baseUrl = String(options.baseUrl || FLOW_REFUND_BASE_URL).replace(/\/$/, '');
@@ -54,7 +58,8 @@ function createFlowRefundGateway_(options) {
       const refundCommerceOrder = deterministicRefundCommerceOrder_(input.reservationId);
       const params = { refundCommerceOrder: refundCommerceOrder, receiverEmail: String(input.receiverEmail || ''), amount: String(input.amount || ''),
         urlCallBack: String(input.urlCallBack || ''), commerceTrxId: String(input.commerceTrxId || ''), flowTrxId: String(input.flowTrxId || '') };
-      if (!params.receiverEmail || !params.amount || !params.urlCallBack || (!params.commerceTrxId && !params.flowTrxId)) refundFail_('REFUND_REQUEST_INVALID');
+      if (!params.receiverEmail || !params.amount || !validRefundCallbackUrl_(params.urlCallBack)
+        || (!params.commerceTrxId && !params.flowTrxId)) refundFail_('REFUND_REQUEST_INVALID');
       const response = request('/refund/create', params, 'post');
       return { ok: true, refundCommerceOrder: refundCommerceOrder, providerReference: String(response.token || response.refundToken || response.flowTrxId || ''), status: String(response.status || 'pending') };
     },
@@ -81,19 +86,26 @@ function refundStatusFromProvider_(status) {
 function refundCreateOnce_(input) {
   if (!input || !input.store || !input.record || !input.gateway) refundFail_('REFUND_REQUEST_INVALID');
   const record = input.record; const existingOrder = String(record.refund_commerce_order || '');
-  if (existingOrder) return { ok: true, replay: true, refundCommerceOrder: existingOrder, status: record.refund_status };
+  if (existingOrder) {
+    if (record.refund_status === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW) {
+      return { ok: false, replay: true, retry: 'manual_review', refundCommerceOrder: existingOrder, code: 'REFUND_CREATE_OUTCOME_UNKNOWN' };
+    }
+    return { ok: true, replay: true, refundCommerceOrder: existingOrder, status: record.refund_status };
+  }
   const order = deterministicRefundCommerceOrder_(record.reservation_id);
   try {
     const response = input.gateway.create(Object.assign({}, input, { reservationId: record.reservation_id }));
-    const updated = input.store.update(record, { refund_commerce_order: order, refund_provider_reference: response.providerReference,
+    const providerReference = String(response && response.providerReference || '');
+    if (!providerReference) refundFail_('REFUND_CREATE_OUTCOME_UNKNOWN');
+    const updated = input.store.update(record, { refund_commerce_order: order, refund_provider_reference: providerReference,
       refund_requested_at: new Date().toISOString(), refund_status: LIFECYCLE.REFUND_STATUS.PENDING, refund_last_error_code: '' });
     return { ok: true, replay: false, refundCommerceOrder: order, status: updated.refund_status };
   } catch (error) {
     const code = String(error && error.code || 'FLOW_REFUND_TIMEOUT');
     const definite = Boolean(error && error.definite);
-    input.store.update(record, { refund_commerce_order: order,
+    try { input.store.update(record, { refund_commerce_order: order,
       refund_status: definite ? LIFECYCLE.REFUND_STATUS.FAILED : LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW,
-      refund_last_error_code: definite ? 'PROVIDER_REFUND_REJECTED' : 'REFUND_CREATE_OUTCOME_UNKNOWN' });
+      refund_last_error_code: definite ? 'PROVIDER_REFUND_REJECTED' : 'REFUND_CREATE_OUTCOME_UNKNOWN' }); } catch (_) { /* caller receives the same non-success outcome */ }
     return { ok: false, retry: 'manual_review', refundCommerceOrder: order,
       code: definite ? 'PROVIDER_REFUND_REJECTED' : 'REFUND_CREATE_OUTCOME_UNKNOWN' };
   }

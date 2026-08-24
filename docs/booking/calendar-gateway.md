@@ -9,7 +9,7 @@ createCalendarGateway_ encapsula Advanced Calendar Service v3:
 - Events.list incremental paginado con nextPageToken, nextSyncToken sólo al completar todas las páginas y recuperación HTTP 410 mediante full sync paginado;
 - conferenceDataVersion=1 para request/preservación de Meet.
 
-`updateSameEvent` recarga el evento y compara su ETag con `calendar_event_etag`. Sólo si coincide envía `If-Match`; un conflicto previo o HTTP 412 no muta el datastore como éxito y devuelve `CALENDAR_ETAG_CONFLICT` para reconciliación. La mutación conserva `conferenceData` y usa el mismo event id.
+`updateSameEvent` recarga el evento y compara su ETag con `calendar_event_etag`. Sólo si coincide envía `If-Match`; un conflicto previo o HTTP 412 no muta el datastore como éxito y devuelve `CALENDAR_ETAG_CONFLICT` para reconciliación. La mutación se hace sobre una copia del recurso, conserva `conferenceData` y usa el mismo event id, de modo que un 412 tampoco contamina el objeto local observado.
 
 La disponibilidad devuelve slots ocupados, porque ese es el contrato vigente del browser: working slots minus Calendar busy minus reservas activas se materializa como la lista de bloqueos. El mismo booking presente en Calendar y datastore se deduplica por clave de slot.
 

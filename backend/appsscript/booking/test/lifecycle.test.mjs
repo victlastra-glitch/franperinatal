@@ -102,7 +102,7 @@ const api = {
       inserted += 1; Object.assign(event, resource); event.conferenceData = { conferenceId: 'meet-opaque-1', entryPoints: [{ entryPointType: 'video', uri: 'https://meet.google.com/opaque' }] }; return event;
     },
     update: (resource, calendarId, eventId, optionalArgs, optionalHeaders) => {
-      assert.equal(resource, event); assert.equal(calendarId, 'synthetic-calendar'); assert.equal(eventId, event.id);
+      assert.notEqual(resource, event); assert.equal(resource.id, event.id); assert.equal(calendarId, 'synthetic-calendar'); assert.equal(eventId, event.id);
       assert.equal(JSON.stringify(optionalArgs), JSON.stringify({ conferenceDataVersion: 1, sendUpdates: 'none' }));
       assert.equal(JSON.stringify(optionalHeaders), JSON.stringify({ 'If-Match': 'etag-1' })); providerContractAssertions += 1;
       updated += 1; Object.assign(event, resource, { etag: 'etag-2', updated: '2026-08-24T14:00:00.000Z' }); return event;
@@ -154,17 +154,18 @@ let updateCount = 0; const txnStore = { loadByReservationId: () => txnRecord, re
 const txnCalendar = { isSlotAvailable: () => true, updateSameEvent: () => ({ id: event.id, etag: 'etag-new', updated: '2026-08-24T15:00:00Z', syncHash: 'new-hash', meetUrl: 'https://meet.google.com/opaque', meetConferenceId: 'meet-opaque-1', meetStatus: 'available' }), cancelLinkedEvent: () => ({ ok: true }) };
 const lock = { held: false, tryLock: () => { if (lock.held) return false; lock.held = true; return true; }, releaseLock: () => { lock.held = false; } };
 const deps = { store: txnStore, calendar: txnCalendar, lock, requireCapabilitySecret_: () => secret, enqueueNotification: () => {} };
-const first = phase.patientRescheduleTransaction_({ reservationId: txnRecord.reservation_id, token: cap.token, targetStartAt: '2026-08-24T15:00:00Z', deps });
+const fixedNow = Date.parse('2026-08-23T12:00:00Z');
+const first = phase.patientRescheduleTransaction_({ reservationId: txnRecord.reservation_id, token: cap.token, targetStartAt: '2026-08-24T15:00:00Z', now: fixedNow, deps });
 check(first.ok && txnRecord.patient_reschedule_count === '1' && updateCount === 1, 'patient reschedule succeeds exactly once inside lock');
-const second = phase.patientRescheduleTransaction_({ reservationId: txnRecord.reservation_id, token: cap.token, targetStartAt: '2026-08-24T16:00:00Z', deps });
+const second = phase.patientRescheduleTransaction_({ reservationId: txnRecord.reservation_id, token: cap.token, targetStartAt: '2026-08-24T16:00:00Z', now: fixedNow, deps });
 check(!second.ok && updateCount === 1, 'concurrent/repeated reschedule cannot authorize from stale pre-lock state');
 let cancelNotifications = 0; let cancelRefunds = 0;
 const cancelDeps = { ...deps, enqueueNotification: () => { cancelNotifications += 1; }, enqueueRefund: () => { cancelRefunds += 1; }, policyEvaluator: () => ({ eligible: false }) };
 const cancelRecord = { ...txnRecord, reservation_id: 'fran-nonprod-20260821-reservation-cancel', booking_status: 'confirmed', schedule_status: 'scheduled', patient_reschedule_count: '0',
   ...phase.capabilityFields_(phase.capabilityForStorage_(cancelCap)) };
 const cancelStore = { loadByReservationId: () => cancelRecord, update: (_record, fields) => Object.assign(cancelRecord, fields) };
-const cancelResult = phase.patientCancelTransaction_({ reservationId: cancelRecord.reservation_id, token: cancelCap.token, deps: { ...cancelDeps, store: cancelStore } });
-const cancelReplay = phase.patientCancelTransaction_({ reservationId: cancelRecord.reservation_id, token: cancelCap.token, deps: { ...cancelDeps, store: cancelStore } });
+const cancelResult = phase.patientCancelTransaction_({ reservationId: cancelRecord.reservation_id, token: cancelCap.token, now: fixedNow, deps: { ...cancelDeps, store: cancelStore } });
+const cancelReplay = phase.patientCancelTransaction_({ reservationId: cancelRecord.reservation_id, token: cancelCap.token, now: fixedNow, deps: { ...cancelDeps, store: cancelStore } });
 check(cancelResult.ok && cancelResult.refund === 'BUSINESS_POLICY_TBD' && cancelReplay.replay === true && cancelRecord.schedule_status === 'cancelled'
   && cancelNotifications === 1 && cancelRefunds === 0, 'patient cancellation is idempotent and capacity release is refund-independent');
 
@@ -222,7 +223,9 @@ check(refundTransportCalls[0].options.method === 'post' && refundTransportCalls[
 check(statusCall.options.method === 'get' && !Object.hasOwn(statusCall.options, 'payload') && !Object.hasOwn(statusCall.options, 'contentType'), 'refund getStatus is GET with no body');
 check(JSON.stringify([...statusCall.parsed.searchParams.keys()].sort()) === JSON.stringify(['apiKey', 's', 'token'])
   && statusCall.parsed.searchParams.get('token') === 'provider-create', 'refund getStatus signs only apiKey, token and s');
-providerContractAssertions += 3;
+assert.throws(() => transportGateway.create({ reservationId: 'fran-nonprod-20260821-reservation-invalid-callback', receiverEmail: 'qa+nonprod@example.test', amount: '1',
+  urlCallBack: 'https://example.invalid/callback', commerceTrxId: 'commerce-opaque' }), /REFUND_REQUEST_INVALID/);
+providerContractAssertions += 4;
 
 // H. Optimistic concurrency: stale datastore ETag and provider 412 are hard stops.
 assert.throws(() => gateway.updateSameEvent({ ...recordTemplate, calendar_event_etag: 'stale-etag' }, '2026-08-24T16:00:00Z', '2026-08-24T17:00:00Z'),
@@ -246,9 +249,9 @@ const raceRecord = { reservation_id: 'fran-nonprod-20260821-reservation-412', bo
   ...phase.capabilityFields_(phase.capabilityForStorage_(raceCapability)) };
 let raceTxnUpdates = 0; let raceTxnCalls = 0; let raceTxnCreates = 0;
 const raceTxnStore = { loadByReservationId: () => raceRecord, records: () => [raceRecord], update: (_record, fields) => { raceTxnUpdates += 1; Object.assign(raceRecord, fields); return raceRecord; } };
-const raceTxnResult = phase.patientRescheduleTransaction_({ reservationId: raceRecord.reservation_id, token: raceCapability.token, targetStartAt: '2026-08-24T16:00:00Z',
+const raceTxnResult = phase.patientRescheduleTransaction_({ reservationId: raceRecord.reservation_id, token: raceCapability.token, targetStartAt: '2026-08-24T16:00:00Z', now: fixedNow,
   deps: { lock, store: raceTxnStore, calendar: { isSlotAvailable: () => true, updateSameEvent: () => { raceTxnCalls += 1; const error = new Error('HTTP 412'); error.status = 412; throw error; }, createLinkedBookingEvent: () => { raceTxnCreates += 1; } }, requireCapabilitySecret_: () => secret } });
-const raceReplay = phase.patientRescheduleTransaction_({ reservationId: raceRecord.reservation_id, token: raceCapability.token, targetStartAt: '2026-08-24T17:00:00Z',
+const raceReplay = phase.patientRescheduleTransaction_({ reservationId: raceRecord.reservation_id, token: raceCapability.token, targetStartAt: '2026-08-24T17:00:00Z', now: fixedNow,
   deps: { lock, store: raceTxnStore, calendar: { isSlotAvailable: () => true, updateSameEvent: () => { raceTxnCalls += 1; }, createLinkedBookingEvent: () => { raceTxnCreates += 1; } }, requireCapabilitySecret_: () => secret } });
 check(!raceTxnResult.ok && raceTxnResult.code === 'RECONCILIATION_REQUIRED' && raceRecord.patient_reschedule_count === '0'
   && !raceRecord.reschedule_capability_revoked_at && raceTxnCalls === 1 && raceTxnCreates === 0 && !raceReplay.ok && raceTxnUpdates >= 1,
@@ -260,23 +263,28 @@ const failureRecord = { reservation_id: 'fran-nonprod-20260821-reservation-store
   calendar_event_id: 'race-event', calendar_event_etag: 'race-etag-1', calendar_link_key: event.extendedProperties.private.link_key,
   ...phase.capabilityFields_(phase.capabilityForStorage_(failureCap)) };
 let failureCalendarCalls = 0; let failureNotifications = 0;
-const failureResult = phase.patientRescheduleTransaction_({ reservationId: failureRecord.reservation_id, token: failureCap.token, targetStartAt: '2026-08-24T16:00:00Z',
+const failureResult = phase.patientRescheduleTransaction_({ reservationId: failureRecord.reservation_id, token: failureCap.token, targetStartAt: '2026-08-24T16:00:00Z', now: fixedNow,
   deps: { lock, store: { loadByReservationId: () => failureRecord, records: () => [failureRecord], update: () => { throw new Error('store unavailable'); } },
     calendar: { isSlotAvailable: () => true, updateSameEvent: () => { failureCalendarCalls += 1; return { id: 'race-event', etag: 'race-etag-2', updated: '2026-08-24T16:00:00Z', syncHash: 'race-hash' }; } },
     requireCapabilitySecret_: () => secret, enqueueNotification: () => { failureNotifications += 1; } } });
 check(!failureResult.ok && failureResult.code === 'RECONCILIATION_REQUIRED' && failureCalendarCalls === 1 && failureRecord.patient_reschedule_count === '0'
-  && !failureRecord.reschedule_capability_revoked_at && failureNotifications === 0, 'reschedule store failure is explicit and does not claim success');
+  && !failureRecord.reschedule_capability_revoked_at && failureNotifications === 0 && failureResult.reconciliation.state === 'calendar_reschedule_store_retry'
+  && failureResult.reconciliation.calendarEventId === 'race-event', 'reschedule store failure is explicit and does not claim success');
 const cancelFailureCap = phase.createCapability_('CANCEL', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
 const cancelFailureRecord = { reservation_id: 'fran-nonprod-20260821-reservation-cancel-store-failure', booking_status: 'confirmed', payment_status: 'paid', schedule_status: 'scheduled', refund_status: 'not_required',
   calendar_event_id: 'race-event', ...phase.capabilityFields_(phase.capabilityForStorage_(cancelFailureCap)) };
 let cancelRemoves = 0; let failureCancelNotifications = 0;
-const cancelFailure = phase.patientCancelTransaction_({ reservationId: cancelFailureRecord.reservation_id, token: cancelFailureCap.token,
+const cancelFailure = phase.patientCancelTransaction_({ reservationId: cancelFailureRecord.reservation_id, token: cancelFailureCap.token, now: fixedNow,
   deps: { lock, store: { loadByReservationId: () => cancelFailureRecord, update: () => { throw new Error('store unavailable'); } },
     calendar: { cancelLinkedEvent: () => { cancelRemoves += 1; return { ok: true, deleted: true }; } }, requireCapabilitySecret_: () => secret,
     policyEvaluator: () => ({ eligible: false }), enqueueNotification: () => { failureCancelNotifications += 1; } } });
 check(!cancelFailure.ok && cancelFailure.code === 'RECONCILIATION_REQUIRED' && cancelRemoves === 1 && cancelFailureRecord.booking_status === 'confirmed' && failureCancelNotifications === 0,
   'cancellation Calendar-success/store-failure is explicit and side-effect safe');
+check(cancelFailure.reconciliation.state === 'calendar_cancel_store_retry' && cancelFailure.reconciliation.operationId,
+  'cancellation recovery returns an operation-bound reconciliation snapshot');
 assert.throws(() => phase.assertCancellationTransition_({ booking_status: 'cancelled' }), /INVALID_BOOKING_STATUS_TRANSITION/);
+check(phase.assertCancellationTransition_({ booking_status: 'confirmed' }) === true
+  && phase.assertCancellationTransition_({ booking_status: 'cancellation_requested' }) === true, 'legal cancellation transition hops are explicit');
 check(true, 'invalid cancellation transition fails closed');
 
 // J. Incremental sync pagination and cursor safety.
@@ -300,6 +308,9 @@ const syncStore = { loadByCalendarEventId: (id) => id === pageOneEvent.id ? clea
 const syncResult = reconciliation.reconcileCalendarSync_({ gateway: { reconcileIncremental: () => ({ ok: true, fullSyncReset: false, nextSyncToken: 'cursor-new', events: [{ event: pageOneEvent }, { event: pageTwoEvent }] }) },
   syncState: cursorState, store: syncStore, bounds: { start: pageOneEvent.start.dateTime, end: pageOneEvent.end.dateTime } });
 check(!syncResult.ok && syncResult.code === 'RECONCILIATION_REQUIRED' && cursorSets === 0, 'unresolved sync event preserves the previous cursor');
+const cursorPersistFailure = reconciliation.reconcileCalendarSync_({ gateway: { reconcileIncremental: () => ({ ok: true, fullSyncReset: false, nextSyncToken: 'cursor-new', events: [] }) },
+  syncState: { get: () => 'cursor-old', set: () => { throw new Error('cursor store unavailable'); } }, store: { update: () => {}, loadByCalendarEventId: () => null }, bounds: { start: pageOneEvent.start.dateTime, end: pageOneEvent.end.dateTime } });
+check(!cursorPersistFailure.ok && cursorPersistFailure.code === 'SYNC_CURSOR_PERSIST_FAILED' && cursorPersistFailure.nextSyncToken === '', 'sync cursor persistence failure is fail-closed');
 
 // K. Linkage lookup is by calendar_link_key, never by reservation_id.
 const lookupRecord = { reservation_id: 'fran-nonprod-20260821-reservation-different', calendar_link_key: pageOneEvent.extendedProperties.private.link_key,
@@ -351,5 +362,5 @@ check(JSON.stringify(confirmedNotification.ctas) === JSON.stringify(['RESCHEDULE
 check(JSON.stringify(rescheduledNotification.ctas) === JSON.stringify(['CANCEL']) && !rescheduledNotification.ctas.includes('RESCHEDULE'), 'post-reschedule notification is CANCEL-only');
 
 check(networkCalls === 0, 'lifecycle adversarial harness made no network calls');
-console.log(`ADVERSARIAL_LIFECYCLE_TESTS=PASS count=46 assertions=${assertions}`);
+console.log(`ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=${assertions}`);
 console.log(`PROVIDER_CONTRACT_TESTS=PASS count=${providerContractAssertions}`);

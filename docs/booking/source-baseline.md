@@ -3,7 +3,8 @@
 ## Identidad
 
 - Rama de trabajo: feat/nonprod-booking-lifecycle-20260823.
-- HEAD de entrada de esta remediación: 77052a87f670f341f290979a1b868989476a6e0f.
+- HEAD esperado por la orden: 77052a87f670f341f290979a1b868989476a6e0f.
+- HEAD observado al inicio: 9d52ba109cba78f91fb7610257761b6a60bfcc6d9; el remoto de la misma rama también apuntaba a ese SHA. No se hizo reset ni reescritura, por lo que el gate de identidad de entrada queda NOT_VERIFIED.
 - Fuente local sanitizada: backend/appsscript/booking/.
 - No se versionan .clasp.json, IDs, deployment IDs, URLs privadas, Script Properties, recipients reales, reservas ni datos clínicos.
 
@@ -30,4 +31,4 @@ No se ejecutó bootstrapNonprodSchema_() ni se modificó un datastore.
 
 Todos los adapters reciben dependencias inyectables. Los tests usan stubs synthetic/no-network. No hubo llamadas a Calendar, Flow, MailApp/GmailApp, Apps Script remoto, Cloudflare, Preview ni producción.
 
-Validación local adicional: Phase A 108 assertions; lifecycle adversarial 46 casos y 48 assertions, incluyendo 21 casos explícitos de remediación/provider-contract; provider-contract tests 12; Worker structure/routes/payment-status privacy, boundary, artifact y documentación en PASS. La autorización/availability real del Advanced Service, Meet persistence, Flow Sandbox, outbox delivery y E2E siguen sin verificarse.
+Validación local adicional: Phase A 108 assertions; lifecycle adversarial 49 casos y 51 assertions, incluyendo los casos explícitos de remediación/provider-contract; provider-contract tests 13; Worker structure/routes/payment-status privacy, boundary, artifact y documentación en PASS. La autorización/availability real del Advanced Service, Meet persistence, Flow Sandbox, outbox delivery y E2E siguen sin verificarse.

@@ -1,6 +1,6 @@
 # Calendar reconciliation
 
-La reconciliación es un proceso incremental bajo LockService con syncState para el nextSyncToken. Cada página conserva los parámetros legales de la consulta; el cursor sólo se persiste después de procesar todas las páginas y todos los eventos. Un error/stale unresolved conserva el cursor anterior; HTTP 410 obliga a full sync paginado.
+La reconciliación es un proceso incremental bajo LockService con syncState para el nextSyncToken. Cada página conserva los parámetros legales de la consulta; el cursor sólo se persiste después de procesar todas las páginas y todos los eventos. Un error/stale unresolved conserva el cursor anterior; un fallo de `syncState.set` devuelve `SYNC_CURSOR_PERSIST_FAILED`; HTTP 410 obliga a full sync paginado.
 
 Un move clinician del mismo evento actualiza datastore y encola CLINICIAN_RESCHEDULED sin escribir Calendar. Un delete/cancel encola CLINICIAN_CANCELLED y refund sólo según policyEvaluator.
 

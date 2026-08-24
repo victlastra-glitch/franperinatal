@@ -63,7 +63,8 @@ function reconcileCalendarSync_(input) {
     });
     if (unresolved) return { ok: false, code: 'RECONCILIATION_REQUIRED', fullSyncReset: result.fullSyncReset, nextSyncToken: '', changed: changed, ignored: ignored, stale: stale };
     if (!result.nextSyncToken) return { ok: false, code: 'SYNC_CURSOR_MISSING', fullSyncReset: result.fullSyncReset, nextSyncToken: '', changed: changed, ignored: ignored, stale: stale };
-    input.syncState.set(result.nextSyncToken);
+    try { input.syncState.set(result.nextSyncToken); }
+    catch (_) { return { ok: false, code: 'SYNC_CURSOR_PERSIST_FAILED', fullSyncReset: result.fullSyncReset, nextSyncToken: '', changed: changed, ignored: ignored, stale: stale }; }
     return { ok: true, fullSyncReset: result.fullSyncReset, nextSyncToken: result.nextSyncToken, changed: changed, ignored: ignored, stale: stale };
   });
 }
