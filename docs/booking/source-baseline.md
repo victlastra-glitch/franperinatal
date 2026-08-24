@@ -23,7 +23,7 @@ No se ejecutó bootstrapNonprodSchema_() ni se modificó un datastore.
 | Calendar | CalendarGateway.js, Code.js | createCalendarGateway_, availability_, applyConfirmedSideEffects_ |
 | Reconciliation | Reconciliation.js | reconcileCalendarChange_, reconcileCalendarSync_ |
 | Refund | RefundGateway.js, Code.js | createFlowRefundGateway_, refundCreateOnce_, refundCallbackOnce_ |
-| Notifications | Lifecycle.js, Code.js | makeLifecycleNotification_, enqueueLifecycleNotification_ |
+| Notifications | Lifecycle.js, Code.js | makeLifecycleNotification_, enqueueLifecycleNotification_, processLifecycleNotificationOutbox_, deliverLifecycleNotification_, installNonprodNotificationRetryTrigger_ |
 | Public boundary | _worker.js, manage.html, assets/booking.js | management proxies, allowlists, date/time contract |
 | Remediación consolidada | CalendarGateway.js, Reconciliation.js, RefundGateway.js, Lifecycle.js, Code.js, manage.html, _worker.js | provider contracts, ETag/412 saga, pagination/cursor safety, refund manual review, durable CTA rotation |
 
@@ -31,4 +31,4 @@ No se ejecutó bootstrapNonprodSchema_() ni se modificó un datastore.
 
 Todos los adapters reciben dependencias inyectables. Los tests usan stubs synthetic/no-network. No hubo llamadas a Calendar, Flow, MailApp/GmailApp, Apps Script remoto, Cloudflare, Preview ni producción.
 
-Validación local adicional: Phase A 108 assertions; lifecycle adversarial 49 casos y 51 assertions, incluyendo los casos explícitos de remediación/provider-contract; provider-contract tests 13; Worker structure/routes/payment-status privacy, boundary, artifact y documentación en PASS. La autorización/availability real del Advanced Service, Meet persistence, Flow Sandbox, outbox delivery y E2E siguen sin verificarse.
+Validación local adicional: Phase A 108 assertions; lifecycle adversarial 49 casos y 51 assertions, incluyendo los casos explícitos de remediación/provider-contract; provider-contract tests 13; outbox/trigger tests 31; Worker structure/routes/payment-status privacy, boundary, artifact y documentación en PASS. La autorización/availability real del Advanced Service, Meet persistence, Flow Sandbox, instalación del trigger de outbox y E2E siguen sin verificarse.

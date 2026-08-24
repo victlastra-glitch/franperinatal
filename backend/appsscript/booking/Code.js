@@ -492,7 +492,7 @@ function patientReschedule_(e) {
   if (!record) fail_('CAPABILITY_INVALID');
   return patientRescheduleTransaction_({ reservationId: record.reservation_id, token: token, targetStartAt: startAt_(payload.fecha, payload.hora),
     now: Date.now(), deps: { store: store, calendar: resources.calendarGateway, requireCapabilitySecret_: function() { return config.capabilityTokenSecret; },
-      enqueueNotification: function(updated) { enqueueLifecycleNotification_(resources.sheet, schema, updated, LIFECYCLE.NOTIFICATION_TYPE.PATIENT_RESCHEDULE); } } });
+      enqueueNotification: function(updated) { enqueueLifecycleNotification_(resources.sheet, schema, updated, LIFECYCLE.NOTIFICATION_TYPE.PATIENT_RESCHEDULED); } } });
 }
 
 function patientCancel_(e) {
@@ -526,3 +526,326 @@ function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTo
     [stateField]: 'pending', notification_last_result: notification.eventType });
   return notification;
 }
+
+function previewOriginFromConfig_(config) {
+  const match = /^https:\/\/([a-z0-9-]+\.pages\.dev)(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(String(config && config.flowReturnUrl || ''));
+  if (!match) fail_('CONFIGURATION_INCOMPLETE');
+  return 'https://' + match[1].toLowerCase();
+}
+
+function managementPageUrl_(origin, token, open) {
+  const base = String(origin || '').replace(/\/$/, '');
+  if (!/^https:\/\/[a-z0-9-]+\.pages\.dev$/i.test(base)) fail_('CONFIGURATION_INCOMPLETE');
+  if (!/^[A-Za-z0-9_-]{64,256}$/.test(String(token || ''))) fail_('CAPABILITY_INVALID');
+  let url = base + '/manage.html?token=' + encodeURIComponent(String(token));
+  if (open === 'reschedule' || open === 'cancel') url += '&open=' + open;
+  return url;
+}
+
+function lifecycleNotificationSubject_(eventType) {
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.BOOKING_CONFIRMED) return 'Confirmación de tu sesión';
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.PATIENT_RESCHEDULED || eventType === LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_RESCHEDULED) {
+    return 'Tu sesión fue reagendada';
+  }
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED || eventType === LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_CANCELLED) {
+    return 'Tu sesión fue cancelada';
+  }
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_REQUESTED) return 'Solicitud de reembolso en curso';
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_COMPLETED) return 'Reembolso completado';
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW) return 'Reembolso en revisión manual';
+  return 'Actualización de tu reserva';
+}
+
+function renderLifecycleNotificationEmail_(input) {
+  if (!input || !input.notification || !input.record || !input.previewOrigin) fail_('NOTIFICATION_RENDER_INVALID');
+  const notification = input.notification;
+  const record = input.record;
+  const tokens = input.capabilityTokens || {};
+  const lines = ['Hola,', '', 'Te escribimos con una actualización operativa de tu reserva.'];
+  lines.push('Servicio: ' + String(record.service_type || ''));
+  lines.push('Modalidad: ' + String(record.modality || ''));
+  lines.push('Fecha y hora: ' + String(record.current_start_at || ''));
+  if (notification.meet && notification.meet.meetUrl) lines.push('Meet: ' + String(notification.meet.meetUrl));
+  if (tokens.RESCHEDULE) {
+    lines.push('Reagendar: ' + managementPageUrl_(input.previewOrigin, tokens.RESCHEDULE, 'reschedule'));
+  }
+  if (tokens.CANCEL) {
+    lines.push('Cancelar: ' + managementPageUrl_(input.previewOrigin, tokens.CANCEL, 'cancel'));
+  }
+  lines.push('', 'Francisca Bustos — Psicología Perinatal');
+  return { subject: lifecycleNotificationSubject_(notification.eventType), body: lines.join('\n') };
+}
+
+// NONPROD-only delivery adapter. Recipient must match allowlist + +nonprod policy.
+// No CC/BCC. Raw capability tokens may appear only in the ephemeral email body.
+function deliverLifecycleNotification_(input) {
+  if (!input || !input.config) fail_('CONFIGURATION_INCOMPLETE');
+  const to = assertTestRecipient_(input.to, input.config.patientAllowlist);
+  const subject = String(input.subject || '');
+  const body = String(input.body || '');
+  if (!subject || !body) fail_('NOTIFICATION_RENDER_INVALID');
+  MailApp.sendEmail({ to: to, subject: subject, body: body, name: 'Francisca Bustos' });
+  return { ok: true };
+}
+
+function notificationOutboxEntryFromRecord_(record, stateField) {
+  return {
+    key: String(record.notification_outbox_key || ''),
+    version: String(record.notification_version || '1'),
+    state: String(record[stateField] || ''),
+    attemptCount: Number(record.notification_attempt_count || 0) || 0,
+    lastAttemptAt: record.notification_last_attempt_at || null,
+    lastResult: record.notification_last_result || null,
+    claimedAt: null,
+  };
+}
+
+function persistNotificationOutboxRecord_(deps, record, fields) {
+  if (deps && deps.store && typeof deps.store.update === 'function') {
+    return deps.store.update(record, fields) || Object.assign(record, fields);
+  }
+  updateRecord_(deps.sheet, deps.schema, record.rowNumber, fields);
+  return Object.assign(record, fields);
+}
+
+function notificationWorkerResultSafe_(result) {
+  return {
+    ok: Boolean(result && result.ok),
+    code: result && result.code ? String(result.code) : '',
+    reservationId: result && result.reservationId ? String(result.reservationId) : '',
+    eventType: result && result.eventType ? String(result.eventType) : '',
+    state: result && result.state ? String(result.state) : '',
+    attemptCount: Number(result && result.attemptCount || 0) || 0,
+  };
+}
+
+function processOneLifecycleNotificationOutbox_(deps) {
+  const record = deps.record;
+  const stateField = deps.stateField;
+  const nowIso = new Date(Number(deps.now || Date.now())).toISOString();
+  const reservationId = String(record.reservation_id || '');
+  const attempts = Number(record.notification_attempt_count || 0) || 0;
+  const eventType = reconstructLifecycleEventType_(record);
+  if (!eventType) {
+    persistNotificationOutboxRecord_(deps, record, {
+      reconciliation_state: 'notification_event_type_invalid',
+      notification_last_result: 'event_type_invalid',
+      notification_last_attempt_at: nowIso,
+    });
+    return { ok: false, code: 'NOTIFICATION_EVENT_TYPE_INVALID', reservationId: reservationId, state: record[stateField], attemptCount: attempts };
+  }
+  if (attempts >= MAX_NOTIFICATION_ATTEMPTS) {
+    persistNotificationOutboxRecord_(deps, record, {
+      reconciliation_state: 'notification_max_attempts',
+      notification_last_result: 'max_attempts',
+      notification_last_attempt_at: nowIso,
+    });
+    return { ok: false, code: 'NOTIFICATION_MAX_ATTEMPTS', reservationId: reservationId, eventType: eventType,
+      state: record[stateField], attemptCount: attempts };
+  }
+
+  const entry = notificationOutboxEntryFromRecord_(record, stateField);
+  const claim = claimNotificationOutbox_(entry, nowIso);
+  if (!claim.ok) {
+    return { ok: false, code: claim.code || 'NOTIFICATION_CLAIM_REJECTED', reservationId: reservationId, eventType: eventType,
+      state: entry.state, attemptCount: entry.attemptCount };
+  }
+  persistNotificationOutboxRecord_(deps, record, {
+    [stateField]: entry.state,
+    notification_attempt_count: String(entry.attemptCount),
+    notification_last_attempt_at: entry.lastAttemptAt,
+    notification_last_result: 'claimed',
+  });
+
+  let capabilityTokens = {};
+  let notification;
+  try {
+    const retry = retryLifecycleNotification_({
+      store: deps.store,
+      reservationId: reservationId,
+      eventType: eventType,
+      now: deps.now || Date.now(),
+      lock: deps.lock,
+      requireCapabilitySecret_: deps.requireCapabilitySecret_ || requireCapabilitySecret_,
+    });
+    if (!retry || !retry.ok) {
+      completeNotificationOutbox_(entry, { ok: false });
+      persistNotificationOutboxRecord_(deps, record, {
+        [stateField]: entry.state,
+        notification_attempt_count: String(entry.attemptCount),
+        notification_last_attempt_at: nowIso,
+        notification_last_result: 'failed',
+      });
+      return { ok: false, code: (retry && retry.code) || 'NOTIFICATION_RETRY_FAILED', reservationId: reservationId,
+        eventType: eventType, state: entry.state, attemptCount: entry.attemptCount };
+    }
+    notification = retry.notification;
+    capabilityTokens = retry.capabilityTokens || {};
+    if (retry.record) Object.assign(record, retry.record);
+  } catch (error) {
+    completeNotificationOutbox_(entry, { ok: false });
+    persistNotificationOutboxRecord_(deps, record, {
+      [stateField]: entry.state,
+      notification_attempt_count: String(entry.attemptCount),
+      notification_last_attempt_at: nowIso,
+      notification_last_result: 'failed',
+    });
+    return { ok: false, code: safeCode_(error), reservationId: reservationId, eventType: eventType,
+      state: entry.state, attemptCount: entry.attemptCount };
+  }
+
+  const previewOrigin = previewOriginFromConfig_(deps.config);
+  const rendered = renderLifecycleNotificationEmail_({
+    notification: notification, record: record, capabilityTokens: capabilityTokens, previewOrigin: previewOrigin,
+  });
+  const deliver = deps.deliver || deliverLifecycleNotification_;
+  let delivered = false;
+  try {
+    const delivery = deliver({
+      config: deps.config,
+      to: record.patient_email,
+      subject: rendered.subject,
+      body: rendered.body,
+    });
+    delivered = Boolean(delivery && delivery.ok);
+  } catch (error) {
+    delivered = false;
+    completeNotificationOutbox_(entry, { ok: false });
+    const failedFields = {
+      [stateField]: entry.state,
+      notification_attempt_count: String(entry.attemptCount),
+      notification_last_attempt_at: nowIso,
+      notification_last_result: 'failed',
+    };
+    if (entry.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) {
+      failedFields.reconciliation_state = 'notification_max_attempts';
+      failedFields.notification_last_result = 'max_attempts';
+    }
+    persistNotificationOutboxRecord_(deps, record, failedFields);
+    return { ok: false, code: safeCode_(error) === 'REQUEST_REJECTED' ? 'NOTIFICATION_DELIVERY_FAILED' : safeCode_(error),
+      reservationId: reservationId, eventType: eventType, state: entry.state, attemptCount: entry.attemptCount };
+  }
+
+  completeNotificationOutbox_(entry, { ok: delivered });
+  if (delivered) {
+    const sentFields = {
+      [stateField]: entry.state,
+      notification_attempt_count: String(entry.attemptCount),
+      notification_last_attempt_at: nowIso,
+      notification_last_result: 'sent',
+    };
+    if (stateField === 'notification_patient_state') sentFields.last_patient_notification_at = nowIso;
+    persistNotificationOutboxRecord_(deps, record, sentFields);
+    return { ok: true, code: 'SENT', reservationId: reservationId, eventType: eventType,
+      state: entry.state, attemptCount: entry.attemptCount };
+  }
+
+  const failedFields = {
+    [stateField]: entry.state,
+    notification_attempt_count: String(entry.attemptCount),
+    notification_last_attempt_at: nowIso,
+    notification_last_result: 'failed',
+  };
+  if (entry.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) {
+    failedFields.reconciliation_state = 'notification_max_attempts';
+    failedFields.notification_last_result = 'max_attempts';
+  }
+  persistNotificationOutboxRecord_(deps, record, failedFields);
+  return { ok: false, code: 'NOTIFICATION_DELIVERY_FAILED', reservationId: reservationId, eventType: eventType,
+    state: entry.state, attemptCount: entry.attemptCount };
+}
+
+// Time-driven NONPROD outbox worker. Source only: do not install/run in this mission.
+function processLifecycleNotificationOutbox_(opt) {
+  const deps = opt || {};
+  const config = deps.config || readCapabilityConfig_();
+  const lock = deps.lock || LockService.getScriptLock();
+  if (!lock || !lock.tryLock(Number(deps.lockTimeoutMs || 10000))) fail_('LOCK_UNAVAILABLE');
+  try {
+    const resources = deps.resources || assertResources_(config);
+    const schema = deps.schema || assertSchema_(resources.sheet);
+    const store = deps.store || sheetReservationStore_(resources, schema);
+    const batch = selectRetryableNotificationWork_(
+      typeof store.records === 'function' ? store.records() : [],
+      deps.batchSize || MAX_NOTIFICATION_OUTBOX_BATCH
+    );
+    const results = [];
+    for (let i = 0; i < batch.length; i += 1) {
+      const item = batch[i];
+      try {
+        results.push(processOneLifecycleNotificationOutbox_({
+          record: item.record,
+          stateField: item.stateField,
+          store: store,
+          sheet: resources && resources.sheet,
+          schema: schema,
+          config: config,
+          lock: lock,
+          now: deps.now,
+          deliver: deps.deliver,
+          requireCapabilitySecret_: deps.requireCapabilitySecret_ || requireCapabilitySecret_,
+        }));
+      } catch (error) {
+        const code = safeCode_(error);
+        if (code === 'CONFIGURATION_INCOMPLETE' || code === 'SCHEMA_MISMATCH' || code === 'SCHEMA_NOT_READY'
+          || code === 'LOCK_UNAVAILABLE' || code === 'CAPABILITY_SECRET_INVALID') {
+          throw error;
+        }
+        results.push({
+          ok: false, code: code, reservationId: String(item.record && item.record.reservation_id || ''),
+          state: String(item.record && item.record[item.stateField] || ''), attemptCount: Number(item.record && item.record.notification_attempt_count || 0) || 0,
+        });
+      }
+    }
+    return { ok: true, processed: results.length, results: results.map(notificationWorkerResultSafe_) };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+var NONPROD_NOTIFICATION_RETRY_HANDLER = 'processLifecycleNotificationOutbox_';
+var NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES = 5;
+
+// IDEMPOTENT installer. Source preparation only — do not execute in this mission.
+function installNonprodNotificationRetryTrigger_() {
+  readConfig_();
+  const handler = NONPROD_NOTIFICATION_RETRY_HANDLER;
+  const existing = ScriptApp.getProjectTriggers().filter(function(trigger) {
+    return trigger.getHandlerFunction() === handler;
+  });
+  if (existing.length) {
+    return { ok: true, created: false, handler: handler, intervalMinutes: NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES };
+  }
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES).create();
+  return { ok: true, created: true, handler: handler, intervalMinutes: NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES };
+}
+
+function removeNonprodNotificationRetryTrigger_() {
+  const handler = NONPROD_NOTIFICATION_RETRY_HANDLER;
+  const triggers = ScriptApp.getProjectTriggers();
+  let removed = 0;
+  triggers.forEach(function(trigger) {
+    if (trigger.getHandlerFunction() === handler) {
+      ScriptApp.deleteTrigger(trigger);
+      removed += 1;
+    }
+  });
+  return { ok: true, handler: handler, removed: removed };
+}
+
+var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
+  processLifecycleNotificationOutbox_: processLifecycleNotificationOutbox_,
+  processOneLifecycleNotificationOutbox_: processOneLifecycleNotificationOutbox_,
+  deliverLifecycleNotification_: deliverLifecycleNotification_,
+  renderLifecycleNotificationEmail_: renderLifecycleNotificationEmail_,
+  previewOriginFromConfig_: previewOriginFromConfig_,
+  managementPageUrl_: managementPageUrl_,
+  installNonprodNotificationRetryTrigger_: installNonprodNotificationRetryTrigger_,
+  removeNonprodNotificationRetryTrigger_: removeNonprodNotificationRetryTrigger_,
+  notificationWorkerResultSafe_: notificationWorkerResultSafe_,
+  NONPROD_NOTIFICATION_RETRY_HANDLER: NONPROD_NOTIFICATION_RETRY_HANDLER,
+  NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES: NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES,
+  assertTestRecipient_: assertTestRecipient_,
+  isTestRecipient_: isTestRecipient_,
+  enqueueLifecycleNotification_: enqueueLifecycleNotification_,
+});

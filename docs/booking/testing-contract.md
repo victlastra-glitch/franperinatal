@@ -9,7 +9,10 @@ node backend/appsscript/booking/test/lifecycle.test.mjs
 ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=51
 PROVIDER_CONTRACT_TESTS=PASS count=13
 
-El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y RefundGateway.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
+node backend/appsscript/booking/test/notification-outbox-worker.test.mjs
+OUTBOX_TRIGGER_TESTS=PASS assertions=31
+
+El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y RefundGateway.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, ScriptApp, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
 
 ## Matriz cubierta
 
@@ -27,6 +30,7 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 12. Flow refund verb/signature fidelity, ambiguous create manual review y callback replay.
 13. Durable CTA retry por rotación de capability y contrato frontend `code`.
 14. Linkage privado sin PII y Worker management response sin PII.
+15. Outbox worker: batch acotado, allowlist, CTA matrix, rotación, max attempts, lock, installer/removal idempotente sin crear triggers reales.
 
 ## Worker y artefacto
 
@@ -38,6 +42,6 @@ Los handlers permitidos para upstream son availability, payment create, flow con
 
 ## Gates no ejecutables
 
-No se declara PASS para Calendar real, Meet persistence, Flow Sandbox, email, schema bootstrap, Preview, Web App runtime, Browser E2E ni producción. Esos son requisitos del NONPROD ACTIVATION & E2E posterior a la revisión Claude.
+No se declara PASS para Calendar real, Meet persistence, Flow Sandbox, email runtime, schema bootstrap, Preview, Web App runtime, Browser E2E, instalación real del trigger de outbox ni producción. Esos son requisitos del NONPROD ACTIVATION & E2E posterior.
 
-La suite de provider contract usa fakes que rechazan `Events.update(calendarId, eventId, resource)`, `Events.delete` y `refund/getStatus` por POST. El schema final conserva 57 headers y no agregó campos: el outbox no almacena bearers; cada retry rota la capability hash-at-rest bajo lock y retorna el bearer sólo al dispatcher. La persistencia de cursor también falla cerrado si `syncState.set` no completa.
+La suite de provider contract usa fakes que rechazan `Events.update(calendarId, eventId, resource)`, `Events.delete` y `refund/getStatus` por POST. El schema final conserva 57 headers y no agregó campos: el outbox no almacena bearers; cada retry rota la capability hash-at-rest bajo lock y retorna el bearer sólo al dispatcher. La persistencia de cursor también falla cerrado si `syncState.set` no completa. El installer `installNonprodNotificationRetryTrigger_` queda en source only (`everyMinutes(5)` → `processLifecycleNotificationOutbox_`) y no se ejecutó.

@@ -57,6 +57,9 @@ var LIFECYCLE_NOTIFICATION_CTA = Object.freeze({
   REFUND_FAILED_MANUAL_REVIEW: Object.freeze([]),
 });
 
+var MAX_NOTIFICATION_ATTEMPTS = 5;
+var MAX_NOTIFICATION_OUTBOX_BATCH = 10;
+
 function capabilityTypeAllowed_(type) {
   return [LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, LIFECYCLE.CAPABILITY_TYPE.CANCEL].indexOf(type) !== -1;
 }
@@ -481,6 +484,44 @@ function makeLifecycleNotification_(eventType, record, options) {
     status: record.booking_status, scheduleStatus: record.schedule_status };
 }
 
+// Reconstruct only from the persisted lifecycle outbox key contract.
+// Format: lifecycle_<reservation_id>_<KNOWN_EVENT_TYPE>_<notification_version>
+// Unknown or mismatched keys never authorize a send.
+function reconstructLifecycleEventType_(record) {
+  const key = String(record && record.notification_outbox_key || '');
+  const reservationId = String(record && record.reservation_id || '');
+  const version = String(record && record.notification_version || '');
+  if (!key || !reservationId || !version) return null;
+  const prefix = 'lifecycle_' + reservationId + '_';
+  const suffix = '_' + version;
+  if (key.indexOf(prefix) !== 0 || key.length <= prefix.length + suffix.length) return null;
+  if (key.slice(key.length - suffix.length) !== suffix) return null;
+  const eventType = key.slice(prefix.length, key.length - suffix.length);
+  if (!LIFECYCLE_NOTIFICATION_TYPE[eventType]) return null;
+  return eventType;
+}
+
+function notificationRetryStateField_(record) {
+  const patient = String(record && record.notification_patient_state || '');
+  const internal = String(record && record.notification_internal_state || '');
+  if (patient === 'pending' || patient === 'failed') return 'notification_patient_state';
+  if (internal === 'pending' || internal === 'failed') return 'notification_internal_state';
+  return null;
+}
+
+function selectRetryableNotificationWork_(records, limit) {
+  const max = Math.max(1, Number(limit) || MAX_NOTIFICATION_OUTBOX_BATCH);
+  const selected = [];
+  const list = Array.isArray(records) ? records : [];
+  for (let i = 0; i < list.length && selected.length < max; i += 1) {
+    const record = list[i];
+    const stateField = notificationRetryStateField_(record);
+    if (!stateField) continue;
+    selected.push({ record: record, stateField: stateField });
+  }
+  return selected;
+}
+
 // A retry never reconstructs a bearer from a hash. It rotates the one stored
 // capability for each CTA under the lifecycle lock and returns the fresh raw
 // value only to the caller that immediately renders/sends the notification.
@@ -547,7 +588,11 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   retryLifecycleNotification_: retryLifecycleNotification_, assertCancellationTransition_: assertCancellationTransition_, atomicCancellationTransitionFields_: atomicCancellationTransitionFields_,
   patientRescheduleTransaction_: patientRescheduleTransaction_, patientCancelTransaction_: patientCancelTransaction_,
   withLifecycleLock_: withLifecycleLock_,
-  notificationLogSafe_: notificationLogSafe_, transitionBooking_: transitionBooking_,
+  notificationLogSafe_: notificationLogSafe_, reconstructLifecycleEventType_: reconstructLifecycleEventType_,
+  notificationRetryStateField_: notificationRetryStateField_, selectRetryableNotificationWork_: selectRetryableNotificationWork_,
+  MAX_NOTIFICATION_ATTEMPTS: MAX_NOTIFICATION_ATTEMPTS, MAX_NOTIFICATION_OUTBOX_BATCH: MAX_NOTIFICATION_OUTBOX_BATCH,
+  LIFECYCLE_NOTIFICATION_TYPE: LIFECYCLE_NOTIFICATION_TYPE,
+  transitionBooking_: transitionBooking_,
   transitionPayment_: transitionPayment_, transitionRefund_: transitionRefund_, transitionSchedule_: transitionSchedule_,
   validIdempotencyKey_: validIdempotencyKey_, makeOpaqueId_: makeOpaqueId_,
   startAt_: startAt_,
