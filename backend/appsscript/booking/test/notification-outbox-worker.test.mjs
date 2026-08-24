@@ -319,7 +319,36 @@ check(installed.intervalMinutes === 5 && projectTriggers[0].minutes === 5, 'trig
 const installedAgain = worker.installNonprodNotificationRetryTrigger_();
 check(installedAgain.ok && !installedAgain.created && projectTriggers.length === 1, 'installer does not create duplicate trigger');
 
+projectTriggers.push({
+  handler: worker.NONPROD_NOTIFICATION_RETRY_HANDLER,
+  minutes: 5,
+  getHandlerFunction: () => worker.NONPROD_NOTIFICATION_RETRY_HANDLER,
+});
+const deduplicated = worker.installNonprodNotificationRetryTrigger_();
+check(deduplicated.ok && !deduplicated.created
+  && projectTriggers.filter((trigger) => trigger.getHandlerFunction() === worker.NONPROD_NOTIFICATION_RETRY_HANDLER).length === 1,
+  'installer removes duplicate matching triggers');
+
+projectTriggers.length = 0;
+const calendarInstalled = worker.installNonprodCalendarReconciliationTrigger_();
+check(calendarInstalled.ok && calendarInstalled.created
+  && calendarInstalled.handler === worker.NONPROD_CALENDAR_RECONCILIATION_HANDLER
+  && calendarInstalled.intervalMinutes === worker.NONPROD_CALENDAR_RECONCILIATION_INTERVAL_MINUTES
+  && projectTriggers.length === 1 && projectTriggers[0].minutes === 5,
+  'Calendar reconciliation installer targets one five-minute trigger');
+const calendarInstalledAgain = worker.installNonprodCalendarReconciliationTrigger_();
+check(calendarInstalledAgain.ok && !calendarInstalledAgain.created && projectTriggers.length === 1,
+  'Calendar reconciliation installer is idempotent');
+const calendarRemoved = worker.removeNonprodCalendarReconciliationTrigger_();
+check(calendarRemoved.ok && calendarRemoved.removed === 1 && projectTriggers.length === 0,
+  'Calendar reconciliation removal targets only its handler');
+
 // 22. removal helper removes only intended handler triggers
+projectTriggers.push({
+  handler: worker.NONPROD_NOTIFICATION_RETRY_HANDLER,
+  minutes: 5,
+  getHandlerFunction: () => worker.NONPROD_NOTIFICATION_RETRY_HANDLER,
+});
 projectTriggers.push({
   handler: 'unrelatedHandler_',
   minutes: 10,

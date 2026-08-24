@@ -805,19 +805,69 @@ function processLifecycleNotificationOutbox_(opt) {
 
 var NONPROD_NOTIFICATION_RETRY_HANDLER = 'processLifecycleNotificationOutbox_';
 var NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES = 5;
+var NONPROD_CALENDAR_RECONCILIATION_HANDLER = 'processCalendarReconciliation_';
+var NONPROD_CALENDAR_RECONCILIATION_INTERVAL_MINUTES = 5;
+var NONPROD_CALENDAR_SYNC_TOKEN_PROPERTY = 'NONPROD_CALENDAR_NEXT_SYNC_TOKEN';
 
-// IDEMPOTENT installer. Source preparation only — do not execute in this mission.
-function installNonprodNotificationRetryTrigger_() {
-  readConfig_();
-  const handler = NONPROD_NOTIFICATION_RETRY_HANDLER;
-  const existing = ScriptApp.getProjectTriggers().filter(function(trigger) {
+function matchingProjectTriggers_(handler) {
+  return ScriptApp.getProjectTriggers().filter(function(trigger) {
     return trigger.getHandlerFunction() === handler;
   });
-  if (existing.length) {
-    return { ok: true, created: false, handler: handler, intervalMinutes: NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES };
-  }
-  ScriptApp.newTrigger(handler).timeBased().everyMinutes(NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES).create();
-  return { ok: true, created: true, handler: handler, intervalMinutes: NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES };
+}
+
+function installTimeTriggerExactlyOnce_(handler, intervalMinutes) {
+  const existing = matchingProjectTriggers_(handler);
+  existing.slice(1).forEach(function(trigger) { ScriptApp.deleteTrigger(trigger); });
+  if (existing.length) return { ok: true, created: false, handler: handler, intervalMinutes: intervalMinutes };
+  ScriptApp.newTrigger(handler).timeBased().everyMinutes(intervalMinutes).create();
+  return { ok: true, created: true, handler: handler, intervalMinutes: intervalMinutes };
+}
+
+function processCalendarReconciliation_() {
+  const config = readConfig_();
+  const resources = assertResources_(config);
+  const schema = assertSchema_(resources.sheet);
+  const store = sheetReservationStore_(resources, schema);
+  const properties = PropertiesService.getScriptProperties();
+  const syncState = {
+    get: function() { return String(properties.getProperty(NONPROD_CALENDAR_SYNC_TOKEN_PROPERTY) || ''); },
+    set: function(token) { properties.setProperty(NONPROD_CALENDAR_SYNC_TOKEN_PROPERTY, String(token)); },
+  };
+  const bounds = availabilityBounds_('');
+  return reconcileCalendarSync_({
+    gateway: resources.calendarGateway,
+    syncState: syncState,
+    store: store,
+    bounds: bounds,
+    lock: LockService.getScriptLock(),
+    policyEvaluator: refundPolicy_,
+    enqueueNotification: function(updated) {
+      const eventType = updated.schedule_status === LIFECYCLE.SCHEDULE_STATUS.CANCELLED
+        ? LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_CANCELLED
+        : LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_RESCHEDULED;
+      enqueueLifecycleNotification_(resources.sheet, schema, updated, eventType);
+    },
+  });
+}
+
+function installNonprodCalendarReconciliationTrigger_() {
+  readConfig_();
+  return installTimeTriggerExactlyOnce_(NONPROD_CALENDAR_RECONCILIATION_HANDLER,
+    NONPROD_CALENDAR_RECONCILIATION_INTERVAL_MINUTES);
+}
+
+function removeNonprodCalendarReconciliationTrigger_() {
+  const handler = NONPROD_CALENDAR_RECONCILIATION_HANDLER;
+  const triggers = matchingProjectTriggers_(handler);
+  triggers.forEach(function(trigger) { ScriptApp.deleteTrigger(trigger); });
+  return { ok: true, handler: handler, removed: triggers.length };
+}
+
+// IDEMPOTENT installer. Runtime execution is restricted by readConfig_.
+function installNonprodNotificationRetryTrigger_() {
+  readConfig_();
+  return installTimeTriggerExactlyOnce_(NONPROD_NOTIFICATION_RETRY_HANDLER,
+    NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES);
 }
 
 function removeNonprodNotificationRetryTrigger_() {
@@ -842,7 +892,12 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   managementPageUrl_: managementPageUrl_,
   installNonprodNotificationRetryTrigger_: installNonprodNotificationRetryTrigger_,
   removeNonprodNotificationRetryTrigger_: removeNonprodNotificationRetryTrigger_,
+  installNonprodCalendarReconciliationTrigger_: installNonprodCalendarReconciliationTrigger_,
+  removeNonprodCalendarReconciliationTrigger_: removeNonprodCalendarReconciliationTrigger_,
   notificationWorkerResultSafe_: notificationWorkerResultSafe_,
+  NONPROD_CALENDAR_RECONCILIATION_HANDLER: NONPROD_CALENDAR_RECONCILIATION_HANDLER,
+  NONPROD_CALENDAR_RECONCILIATION_INTERVAL_MINUTES: NONPROD_CALENDAR_RECONCILIATION_INTERVAL_MINUTES,
+  NONPROD_CALENDAR_SYNC_TOKEN_PROPERTY: NONPROD_CALENDAR_SYNC_TOKEN_PROPERTY,
   NONPROD_NOTIFICATION_RETRY_HANDLER: NONPROD_NOTIFICATION_RETRY_HANDLER,
   NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES: NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES,
   assertTestRecipient_: assertTestRecipient_,
