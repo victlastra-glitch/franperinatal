@@ -872,7 +872,8 @@
       var resp = await fetch(MANAGE_API.availability, { method: 'GET', cache: 'no-store', credentials: 'omit' });
       if (resp.ok) {
         var data = await resp.json();
-        bookedSlots = Array.isArray(data) ? data.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; }) : [];
+        var slots = Array.isArray(data) ? data : (data && Array.isArray(data.slots) ? data.slots : []);
+        bookedSlots = slots.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; });
       }
     } catch (_) { bookedSlots = []; }
 
