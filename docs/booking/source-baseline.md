@@ -78,6 +78,6 @@ fuente primaria. No se ejecutó ninguna migración.
 
 ## Commit técnico
 
-El commit de implementación Phase A se debe registrar aquí en el cierre Git
-de la fase, junto con el SHA final informado por Codex. No existe autorización
-para merge, push, deploy o mutación remota en este documento.
+El commit de implementación Phase A es `5afb27d` (`feat: establish nonprod
+booking lifecycle foundation`). No existe autorización para merge, deploy o
+mutación remota en este documento.

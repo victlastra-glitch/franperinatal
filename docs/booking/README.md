@@ -65,5 +65,5 @@ y Preview permanecen fuera del alcance y sin mutaciones.
 ## Traceability delta
 
 Phase A afecta BK-001..BK-015 en calidad de foundation y no declara readiness
-de integración. El commit de implementación se registra en el handoff Git
-final de esta fase y se mantiene separado de cualquier despliegue.
+de integración. El commit de implementación es `5afb27d` y se mantiene
+separado de cualquier despliegue.

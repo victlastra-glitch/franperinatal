@@ -69,5 +69,5 @@ Phase A afecta BK-001..BK-015 como foundation. Las funciones principales son
 `claimNotificationOutbox_`, `completeNotificationOutbox_`,
 `makeOperationId_` y `applyOperationOnce_`.
 
-El SHA del commit de implementación queda registrado en el cierre técnico de
-Git; no se interpreta como autorización de runtime o despliegue.
+El SHA del commit de implementación es `5afb27d`; no se interpreta como
+autorización de runtime o despliegue.
