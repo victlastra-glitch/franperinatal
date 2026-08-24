@@ -5,7 +5,10 @@
 
 var FLOW_REFUND_BASE_URL = 'https://sandbox.flow.cl/api';
 
-function refundFail_(code) { fail_(code || 'FLOW_REFUND_FAILED'); }
+function refundFail_(code, definite) {
+  const error = new Error(code || 'FLOW_REFUND_FAILED'); error.code = code || 'FLOW_REFUND_FAILED';
+  if (definite) error.definite = true; throw error;
+}
 
 function deterministicRefundCommerceOrder_(reservationId) {
   const value = String(reservationId || '');
@@ -40,7 +43,7 @@ function createFlowRefundGateway_(options) {
     let url = baseUrl + endpoint; const requestOptions = { method: verb, muteHttpExceptions: true, contentType: 'application/x-www-form-urlencoded', payload: encoded };
     if (verb === 'get') { url += '?' + encoded; delete requestOptions.payload; delete requestOptions.contentType; }
     const response = fetchImpl(url, requestOptions); const status = response && response.getResponseCode ? response.getResponseCode() : response.status;
-    if (status < 200 || status >= 300) refundFail_('FLOW_REFUND_PROVIDER_ERROR');
+    if (status < 200 || status >= 300) refundFail_(status >= 400 && status < 500 ? 'FLOW_REFUND_PROVIDER_REJECTED' : 'FLOW_REFUND_PROVIDER_ERROR', status >= 400 && status < 500);
     let data; try { data = JSON.parse(response.getContentText ? response.getContentText() : response.body); } catch (_) { refundFail_('FLOW_REFUND_BAD_RESPONSE'); }
     if (!data || typeof data !== 'object') refundFail_('FLOW_REFUND_BAD_RESPONSE');
     return data;
@@ -57,7 +60,7 @@ function createFlowRefundGateway_(options) {
     },
     getStatus: function(token) {
       if (!token) refundFail_('REFUND_TOKEN_INVALID');
-      const response = request('/refund/getStatus', { token: String(token) }, 'post');
+      const response = request('/refund/getStatus', { token: String(token) }, 'get');
       return { ok: true, status: String(response.status || response.refundStatus || 'unknown'), providerReference: String(response.flowTrxId || response.token || '') };
     },
     cancel: function(token) {
@@ -87,8 +90,12 @@ function refundCreateOnce_(input) {
     return { ok: true, replay: false, refundCommerceOrder: order, status: updated.refund_status };
   } catch (error) {
     const code = String(error && error.code || 'FLOW_REFUND_TIMEOUT');
-    input.store.update(record, { refund_commerce_order: order, refund_status: LIFECYCLE.REFUND_STATUS.PENDING, refund_last_error_code: code });
-    return { ok: false, retry: 'status_only', refundCommerceOrder: order, code: code };
+    const definite = Boolean(error && error.definite);
+    input.store.update(record, { refund_commerce_order: order,
+      refund_status: definite ? LIFECYCLE.REFUND_STATUS.FAILED : LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW,
+      refund_last_error_code: definite ? 'PROVIDER_REFUND_REJECTED' : 'REFUND_CREATE_OUTCOME_UNKNOWN' });
+    return { ok: false, retry: 'manual_review', refundCommerceOrder: order,
+      code: definite ? 'PROVIDER_REFUND_REJECTED' : 'REFUND_CREATE_OUTCOME_UNKNOWN' };
   }
 }
 

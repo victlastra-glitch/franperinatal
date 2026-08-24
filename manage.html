@@ -763,12 +763,10 @@
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
       if (!data.ok) {
-        var errTitles = { token_not_found: 'Reserva no encontrada', already_processed: 'Reserva ya procesada' };
+        var errTitles = { CAPABILITY_INVALID: 'Enlace no válido', REQUEST_REJECTED: 'Enlace no válido' };
         showError(
-          errTitles[data.error] || 'Enlace no válido',
-          data.error === 'token_not_found'
-            ? 'No encontramos una reserva activa con este enlace. Si crees que es un error, contáctame directamente.'
-            : 'Esta reserva ya fue cancelada o reagendada anteriormente.'
+          errTitles[data.code] || 'Enlace no válido',
+          managementErrorMessage(data.code)
         );
         return;
       }
@@ -782,9 +780,9 @@
       }
       showView('view-detail');
 
-      if (autoOpen === 'cancel' && reserva.status === 'active') {
+      if (autoOpen === 'cancel' && reserva.status === 'active' && reserva.capabilityType === 'CANCEL') {
         document.getElementById('btn-cancel').click();
-      } else if (autoOpen === 'reschedule' && reserva.status === 'active') {
+      } else if (autoOpen === 'reschedule' && reserva.status === 'active' && reserva.capabilityType === 'RESCHEDULE') {
         document.getElementById('btn-reschedule').click();
       }
     } catch (e) {
@@ -809,12 +807,24 @@
     document.getElementById('det-modalidad').textContent = reserva.modalidad || '—';
     document.getElementById('det-estado').innerHTML      = statusBadge(reserva.status);
     document.getElementById('det-actions').style.display = (reserva.status === 'active') ? 'flex' : 'none';
+    document.getElementById('btn-cancel').style.display = (reserva.status === 'active' && reserva.capabilityType === 'CANCEL') ? '' : 'none';
+    document.getElementById('btn-reschedule').style.display = (reserva.status === 'active' && reserva.capabilityType === 'RESCHEDULE') ? '' : 'none';
   }
 
   function showError(title, body) {
     document.getElementById('err-title').textContent = title;
     document.getElementById('err-body').textContent  = body;
     showView('view-error');
+  }
+
+  function managementErrorMessage(code) {
+    var messages = {
+      CAPABILITY_INVALID: 'No encontramos una reserva activa con este enlace. Si crees que es un error, contáctame directamente.',
+      RECONCILIATION_REQUIRED: 'La reserva requiere una revisión antes de continuar. Contáctame directamente.',
+      SLOT_TAKEN: 'Ese horario ya fue reservado por alguien más. Elige otra hora.',
+      NOTIFICATION_RETRY_REQUIRED: 'La solicitud quedó registrada y requiere confirmación. Contáctame directamente.'
+    };
+    return messages[code] || 'No se pudo completar la solicitud. Intenta nuevamente o contáctame directamente.';
   }
 
   /* ─── Cancelar ─── */
@@ -840,9 +850,7 @@
       if (data.ok) {
         showView('view-cancelled');
       } else {
-        var msg = data.error === 'already_processed'
-          ? 'Esta reserva ya fue procesada anteriormente.'
-          : (data.message || 'No se pudo cancelar. Por favor contáctame directamente.');
+        var msg = managementErrorMessage(data.code);
         showAlert('cancel-alert', msg, 'error');
       }
     } catch (e) {
@@ -1041,9 +1049,7 @@
         showView('view-rescheduled');
       } else {
         console.error('[manage] reschedule_confirm error response:', data, payload);
-        var errMsg = data.code === 'SLOT_TAKEN'
-          ? 'Ese horario ya fue reservado por alguien más. Elige otra hora.'
-          : (data.message || data.error || 'No se pudo reagendar. Intenta con otro horario.');
+        var errMsg = managementErrorMessage(data.code);
         showAlert('reschedule-alert', errMsg, 'error');
       }
     } catch (e) {

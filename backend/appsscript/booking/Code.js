@@ -376,11 +376,7 @@ function startAt_(date, time) {
     const local = {}; formatter.formatToParts(new Date(naiveUtc)).forEach(function(part) { if (part.type !== 'literal') local[part.type] = Number(part.value); });
     const offset = Date.UTC(local.year, local.month - 1, local.day, local.hour, local.minute, local.second) - naiveUtc;
     return new Date(naiveUtc - offset).toISOString();
-  } catch (_) {
-    const fallback = new Date(date + 'T' + time + ':00-04:00');
-    if (Number.isNaN(fallback.getTime())) fail_('REQUEST_REJECTED');
-    return fallback.toISOString();
-  }
+  } catch (_) { fail_('TIMEZONE_UNAVAILABLE'); }
 }
 function paymentStatus_(e) {
   const config = readConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const token = String((e && e.parameter && e.parameter.st) || '').trim();
@@ -419,6 +415,7 @@ function sheetReservationStore_(resources, schema) {
   return {
     loadByReservationId: function(id) { return findBy_(resources.sheet, schema, 'reservation_id', String(id)); },
     loadByCalendarEventId: function(id) { return findBy_(resources.sheet, schema, 'calendar_event_id', String(id)); },
+    loadByCalendarLinkKey: function(linkKey) { return findBy_(resources.sheet, schema, 'calendar_link_key', String(linkKey)); },
     loadByCapability: function(token, type, secret) {
       const capability = capabilityHashForToken_(token, type, secret);
       const field = type === LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE ? 'reschedule_capability_hash' : 'cancel_capability_hash';
@@ -439,10 +436,11 @@ function capabilityHashForToken_(token, type, secret) {
 function manageLookup_(e) {
   const token = managementToken_(e); const config = readCapabilityConfig_();
   const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const store = sheetReservationStore_(resources, schema);
-  const found = store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, config.capabilityTokenSecret)
-    || store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, config.capabilityTokenSecret);
+  const cancel = store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, config.capabilityTokenSecret);
+  const found = cancel || store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, config.capabilityTokenSecret);
+  const capabilityType = cancel ? LIFECYCLE.CAPABILITY_TYPE.CANCEL : (found ? LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE : '');
   if (!found || !managementTokenValidForRecord_(token, found, config.capabilityTokenSecret)) fail_('CAPABILITY_INVALID');
-  return publicManagementRecord_(found);
+  return publicManagementRecord_(found, capabilityType);
 }
 
 function managementToken_(e) {
@@ -459,11 +457,11 @@ function managementTokenValidForRecord_(token, record, secret) {
     || verifyCapability_(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE), { secret: secret });
 }
 
-function publicManagementRecord_(record) {
+function publicManagementRecord_(record, capabilityType) {
   return { ok: true, status: publicManagementStatus_(record), date: String(record.current_start_at).slice(0, 10),
     time: String(record.current_start_at).slice(11, 16), serviceType: record.service_type, modality: record.modality,
     originalStart: record.original_start_at, currentStart: record.current_start_at, currentEnd: record.current_end_at,
-    meetUrl: record.meet_url || '' };
+    meetUrl: record.meet_url || '', capabilityType: capabilityType || '' };
 }
 
 function publicManagementStatus_(record) {

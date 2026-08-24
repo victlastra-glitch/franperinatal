@@ -14,9 +14,9 @@ READY_FOR_NONPROD_ACTIVATION = NO: Meet persistence, Advanced Calendar activatio
 
 - Code.js: entrypoints Apps Script, configuración base/lazy, schema, payment existente, disponibilidad ocupada, side effects idempotentes y management.
 - Lifecycle.js: estados separados, capabilities opacas, LockService transaction boundaries, outbox y CTA matrix.
-- CalendarGateway.js: FreeBusy, evento enlazado, mismo-evento update, delete, ETag/hash, syncToken/410, linkage privado y Meet primitives.
+- CalendarGateway.js: FreeBusy, evento enlazado, mismo-evento update/remove, ETag/If-Match/412, syncToken/410 paginado, linkage privado y Meet primitives.
 - Reconciliation.js: sync incremental, clinician move/cancel y loop protection por ETag/hash/operation.
-- RefundGateway.js: Flow 3.0.1 Sandbox adapter, deterministic order, status/callback/cancel y retry sin segundo create.
+- RefundGateway.js: Flow Sandbox adapter, contratos create/getStatus/cancel, deterministic internal order, manual review ante timeout ambiguo, callback y retry sin segundo create.
 - _worker.js: same-origin availability, payment, management y refund callback proxies; upstream privado, APP_ENV nonprod y response allowlists.
 
 ## Reglas
@@ -57,3 +57,12 @@ Sólo nombres, nunca valores versionados:
 - FLOW_REFUND_CALLBACK_URL — lazy, requerido únicamente por refund callback.
 
 Calendar Advanced Service queda declarado en appsscript.json, pero no ha sido activado ni invocado en este repositorio.
+
+## Delta consolidado
+
+- Provider signatures: `Freebusy.query(resource)`, `Events.get(calendarId,eventId,optionalArgs)`, `Events.list(calendarId,optionalArgs)`, `Events.insert(resource,calendarId,optionalArgs)`, `Events.update(resource,calendarId,eventId,optionalArgs,optionalHeaders)`, `Events.remove(calendarId,eventId,optionalArgs)`.
+- Calendar saga: fresh ETag compare, `If-Match`, HTTP 412 and explicit reconciliation; Calendar/Sheet are not treated as one atomic transaction.
+- Sync: all pages and event processing complete before cursor advance; unresolved outcomes retain the old cursor.
+- CTA retry: no new schema field; one hash-at-rest per CTA is rotated under LockService and no raw bearer is written to outbox/logs.
+- Final schema header count: 57; schema fields added: none.
+- Runtime authorization, Meet persistence, Flow Sandbox, email delivery, Preview and E2E remain intentionally unverified.

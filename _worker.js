@@ -267,7 +267,8 @@ function safeManagementResponse(data) {
     date: typeof data.date === 'string' ? data.date : '', time: typeof data.time === 'string' ? data.time : '',
     serviceType: typeof data.serviceType === 'string' ? data.serviceType : '', modality: typeof data.modality === 'string' ? data.modality : '',
     originalStart: typeof data.originalStart === 'string' ? data.originalStart : '', currentStart: typeof data.currentStart === 'string' ? data.currentStart : '',
-    currentEnd: typeof data.currentEnd === 'string' ? data.currentEnd : '', meetUrl: typeof data.meetUrl === 'string' ? data.meetUrl : '' };
+    currentEnd: typeof data.currentEnd === 'string' ? data.currentEnd : '', meetUrl: typeof data.meetUrl === 'string' ? data.meetUrl : '',
+    capabilityType: data.capabilityType === 'RESCHEDULE' || data.capabilityType === 'CANCEL' ? data.capabilityType : '' };
 }
 
 async function handleManageLookup(request, env) {

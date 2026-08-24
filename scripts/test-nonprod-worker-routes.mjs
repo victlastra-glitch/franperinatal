@@ -63,7 +63,7 @@ try {
   // attempts to return patient/contact/clinical fields.
   globalThis.fetch = async () => new Response(JSON.stringify({
     ok: true, status: 'active', date: '2026-08-24', time: '10:00', serviceType: 'initial', modality: 'Online',
-    nombre: 'synthetic-person', email: 'synthetic@example.test', patientRut: '11.111.111-1', reason: 'clinical text'
+    nombre: 'synthetic-person', email: 'synthetic@example.test', patientRut: '11.111.111-1', reason: 'clinical text', capabilityType: 'RESCHEDULE'
   }), { status: 200, headers: { 'content-type': 'application/json' } });
   const managementResponse = await workerModule.default.fetch(
     new Request('https://preview.example/api/manage', { method: 'POST', headers: { 'content-type': 'application/json' },
@@ -72,6 +72,7 @@ try {
   );
   const managementBody = await managementResponse.json();
   assert.equal(managementBody.ok, true);
+  assert.equal(managementBody.capabilityType, 'RESCHEDULE', 'management capability type is allowlisted');
   assert.equal(Object.hasOwn(managementBody, 'nombre'), false, 'management response excludes patient name');
   assert.equal(Object.hasOwn(managementBody, 'email'), false, 'management response excludes email');
   assert.equal(Object.hasOwn(managementBody, 'patientRut'), false, 'management response excludes RUT');

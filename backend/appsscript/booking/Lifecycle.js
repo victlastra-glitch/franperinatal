@@ -242,6 +242,40 @@ function lifecycleRecordReadyForReschedule_(record) {
     && String(record.patient_reschedule_count) === '0';
 }
 
+function assertCancellationTransition_(record) {
+  if (!record) fail_('INVALID_BOOKING_STATUS_TRANSITION');
+  assertTransition_('booking_status', record.booking_status, LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED);
+  assertTransition_('booking_status', LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED, LIFECYCLE.BOOKING_STATUS.CANCELLED);
+  return true;
+}
+
+// The datastore write is intentionally one atomic final write, but its legal
+// two-hop state-machine semantics are centralized here for every caller.
+function atomicCancellationTransitionFields_(record, updates) {
+  assertCancellationTransition_(record);
+  return Object.assign({}, updates, { booking_status: LIFECYCLE.BOOKING_STATUS.CANCELLED });
+}
+
+function storeUpdateWithRetry_(store, record, updates) {
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      const result = store.update(record, updates);
+      return result || Object.assign({}, record, updates);
+    } catch (error) { lastError = error; }
+  }
+  throw lastError || new Error('STORE_UPDATE_FAILED');
+}
+
+function bestEffortReconciliationUpdate_(deps, record, updates) {
+  try { return storeUpdateWithRetry_(deps.store, record, updates); } catch (_) { return null; }
+}
+
+function isCalendarConcurrencyFailure_(error) {
+  const code = String(error && error.code || ''); const status = Number(error && error.status || 0);
+  return code === 'CALENDAR_ETAG_CONFLICT' || status === 412 || /\b412\b/.test(String(error && error.message || error || ''));
+}
+
 function activeReservationOverlaps_(record, targetStartAt, targetEndAt, store) {
   if (!store || typeof store.records !== 'function') return false;
   return store.records().some(function(candidate) {
@@ -281,10 +315,10 @@ function patientRescheduleTransaction_(input) {
     let event;
     try {
       event = deps.calendar.updateSameEvent(record, input.targetStartAt, targetEnd);
-    } catch (_) {
-      deps.store.update(record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
-        reconciliation_state: 'calendar_reschedule_retry', last_operation_id: operationId });
-      return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+    } catch (error) {
+      bestEffortReconciliationUpdate_(deps, record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
+        reconciliation_state: isCalendarConcurrencyFailure_(error) ? 'calendar_reschedule_conflict' : 'calendar_reschedule_retry', last_operation_id: operationId });
+      return { ok: false, code: isCalendarConcurrencyFailure_(error) ? 'RECONCILIATION_REQUIRED' : 'RECONCILIATION_REQUIRED' };
     }
     const revoked = revokeCapability_(stored, new Date(now).toISOString());
     const updates = { current_start_at: new Date(input.targetStartAt).toISOString(), current_end_at: targetEnd,
@@ -293,8 +327,23 @@ function patientRescheduleTransaction_(input) {
       calendar_event_updated_at: event.updated, calendar_sync_hash: event.syncHash, meet_url: event.meetUrl,
       meet_conference_id: event.meetConferenceId, meet_status: event.meetStatus };
     Object.assign(updates, persistedRevocationFields_(revoked));
-    const updated = deps.store.update(record, updates);
-    if (deps.enqueueNotification) deps.enqueueNotification(updated);
+    let updated;
+    try { updated = storeUpdateWithRetry_(deps.store, record, updates); }
+    catch (_) {
+      bestEffortReconciliationUpdate_(deps, record, Object.assign({}, updates, {
+        schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
+        reconciliation_state: 'calendar_reschedule_store_retry', last_operation_id: operationId,
+      }));
+      return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+    }
+    if (deps.enqueueNotification) {
+      try { deps.enqueueNotification(updated); }
+      catch (_) {
+        bestEffortReconciliationUpdate_(deps, updated, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
+          reconciliation_state: 'notification_reschedule_retry', last_operation_id: operationId });
+        return { ok: false, code: 'NOTIFICATION_RETRY_REQUIRED' };
+      }
+    }
     return { ok: true, replay: false, status: 'rescheduled', currentStart: updated.current_start_at, currentEnd: updated.current_end_at };
   });
 }
@@ -317,24 +366,37 @@ function patientCancelTransaction_(input) {
     if (deps.calendar && typeof deps.calendar.cancelLinkedEvent === 'function') {
       try { deps.calendar.cancelLinkedEvent(record); }
       catch (_) {
-        deps.store.update(record, { booking_status: LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED,
+        bestEffortReconciliationUpdate_(deps, record, { booking_status: LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED,
           schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED, reconciliation_state: 'calendar_cancel_retry' });
         return { ok: false, code: 'RECONCILIATION_REQUIRED' };
       }
     }
-    assertTransition_('booking_status', record.booking_status, LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED);
-    assertTransition_('booking_status', LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED, LIFECYCLE.BOOKING_STATUS.CANCELLED);
+    assertCancellationTransition_(record);
     assertTransition_('schedule_status', record.schedule_status, LIFECYCLE.SCHEDULE_STATUS.CANCELLED);
     const revoked = revokeCapability_(stored, new Date(now).toISOString());
     const policy = deps.policyEvaluator ? deps.policyEvaluator(record) : { decision: 'BUSINESS_POLICY_TBD', eligible: false };
-    const updates = { booking_status: LIFECYCLE.BOOKING_STATUS.CANCELLED, schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
+    const updates = atomicCancellationTransitionFields_(record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
       cancellation_source: 'patient', cancelled_at: new Date(now).toISOString(), last_operation_id: input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_CANCEL, record.reservation_id),
-      reconciliation_state: '', cancel_capability_revoked_at: revoked.revokedAt, refund_last_error_code: policy.eligible ? '' : 'BUSINESS_POLICY_TBD' };
+      reconciliation_state: '', cancel_capability_revoked_at: revoked.revokedAt, refund_last_error_code: policy.eligible ? '' : 'BUSINESS_POLICY_TBD' });
     if (policy.eligible) updates.refund_status = LIFECYCLE.REFUND_STATUS.REQUESTED;
     else updates.refund_status = LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW;
-    const updated = deps.store.update(record, updates);
-    if (deps.enqueueNotification) deps.enqueueNotification(updated);
-    if (policy.eligible && deps.enqueueRefund) deps.enqueueRefund(updated);
+    let updated;
+    try { updated = storeUpdateWithRetry_(deps.store, record, updates); }
+    catch (_) {
+      bestEffortReconciliationUpdate_(deps, record, Object.assign({}, updates, {
+        booking_status: LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED,
+        schedule_status: LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED,
+        reconciliation_state: 'calendar_cancel_store_retry',
+      }));
+      return { ok: false, code: 'RECONCILIATION_REQUIRED' };
+    }
+    try {
+      if (deps.enqueueNotification) deps.enqueueNotification(updated);
+      if (policy.eligible && deps.enqueueRefund) deps.enqueueRefund(updated);
+    } catch (_) {
+      bestEffortReconciliationUpdate_(deps, updated, { reconciliation_state: 'notification_cancel_retry' });
+      return { ok: false, code: 'NOTIFICATION_RETRY_REQUIRED' };
+    }
     return { ok: true, replay: false, status: 'cancelled', refund: policy.eligible ? 'requested' : 'BUSINESS_POLICY_TBD' };
   });
 }
@@ -396,6 +458,31 @@ function makeLifecycleNotification_(eventType, record, options) {
     status: record.booking_status, scheduleStatus: record.schedule_status };
 }
 
+// A retry never reconstructs a bearer from a hash. It rotates the one stored
+// capability for each CTA under the lifecycle lock and returns the fresh raw
+// value only to the caller that immediately renders/sends the notification.
+// The outbox stores only its logical key and delivery state.
+function retryLifecycleNotification_(input) {
+  if (!input || !input.store || !input.reservationId || !input.eventType) fail_('NOTIFICATION_RETRY_INVALID');
+  return withLifecycleLock_(input, function() {
+    const record = input.store.loadByReservationId(String(input.reservationId));
+    if (!record) return { ok: false, code: 'NOTIFICATION_RECORD_MISSING' };
+    const secret = lifecycleCapabilitySecret_(input);
+    const now = lifecycleNow_(input.now); const nowIso = new Date(now).toISOString(); const fields = {}; const tokens = {};
+    const notification = makeLifecycleNotification_(input.eventType, record, { now: nowIso });
+    notification.ctas.forEach(function(cta) {
+      const type = cta === 'RESCHEDULE' ? LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE : LIFECYCLE.CAPABILITY_TYPE.CANCEL;
+      const fresh = createCapability_(type, { secret: secret, now: now });
+      Object.assign(fields, capabilityFields_(fresh)); tokens[cta] = fresh.token;
+    });
+    if (!notification.ctas.length) return { ok: true, notification: notification, capabilityTokens: {} };
+    const updated = storeUpdateWithRetry_(input.store, record, fields);
+    const refreshed = Object.assign({}, record, updated, fields);
+    return { ok: true, notification: makeLifecycleNotification_(input.eventType, refreshed, { now: nowIso }),
+      capabilityTokens: tokens, record: refreshed };
+  });
+}
+
 function claimNotificationOutbox_(entry, now) {
   if (!entry || !entry.key || entry.state === 'sent') return { ok: false, code: 'NOTIFICATION_ALREADY_SENT' };
   if (entry.state === 'claimed') return { ok: false, code: 'NOTIFICATION_CLAIMED' };
@@ -434,9 +521,11 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   makeNotificationLogicalKey_: makeNotificationLogicalKey_, createNotificationOutbox_: createNotificationOutbox_,
   claimNotificationOutbox_: claimNotificationOutbox_, completeNotificationOutbox_: completeNotificationOutbox_,
   makeLifecycleNotification_: makeLifecycleNotification_, lifecycleCtas_: lifecycleCtas_,
+  retryLifecycleNotification_: retryLifecycleNotification_, assertCancellationTransition_: assertCancellationTransition_, atomicCancellationTransitionFields_: atomicCancellationTransitionFields_,
   patientRescheduleTransaction_: patientRescheduleTransaction_, patientCancelTransaction_: patientCancelTransaction_,
   withLifecycleLock_: withLifecycleLock_,
   notificationLogSafe_: notificationLogSafe_, transitionBooking_: transitionBooking_,
   transitionPayment_: transitionPayment_, transitionRefund_: transitionRefund_, transitionSchedule_: transitionSchedule_,
   validIdempotencyKey_: validIdempotencyKey_, makeOpaqueId_: makeOpaqueId_,
+  startAt_: startAt_,
 });

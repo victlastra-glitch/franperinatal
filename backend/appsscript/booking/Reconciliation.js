@@ -14,7 +14,10 @@ function reconcileCalendarChange_(input) {
   if (!input || !input.store || !input.event) fail_('RECONCILIATION_INPUT_INVALID');
   const event = input.event; const linkage = calendarExtendedProperties_(event);
   if (!linkage) return { ok: true, ignored: true, reason: 'unlinked_event' };
-  const record = input.store.loadByCalendarEventId ? input.store.loadByCalendarEventId(event.id) : input.store.loadByReservationId(linkage.link_key);
+  let record;
+  if (typeof input.store.loadByCalendarEventId === 'function') record = input.store.loadByCalendarEventId(event.id);
+  else if (typeof input.store.loadByCalendarLinkKey === 'function') record = input.store.loadByCalendarLinkKey(linkage.link_key);
+  else fail_('CALENDAR_LINKAGE_LOOKUP_UNAVAILABLE');
   if (!record) return { ok: true, ignored: true, reason: 'linked_record_missing' };
   const hash = calendarSyncHash_(event);
   if (String(record.calendar_sync_hash || '') === hash && String(record.calendar_event_etag || '') === String(event.etag || '')) {
@@ -39,12 +42,11 @@ function reconcileCalendarChange_(input) {
 
 function reconcileClinicianCancellation_(input, record, operationId) {
   if (record.booking_status === LIFECYCLE.BOOKING_STATUS.CANCELLED) return { ok: true, noop: true, reason: 'already_cancelled' };
-  assertTransition_('booking_status', record.booking_status, LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED);
   const policy = input.policyEvaluator ? input.policyEvaluator(record) : { eligible: false, decision: 'BUSINESS_POLICY_TBD' };
-  const updated = input.store.update(record, { booking_status: LIFECYCLE.BOOKING_STATUS.CANCELLED,
+  const updated = input.store.update(record, atomicCancellationTransitionFields_(record, {
     schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED, cancellation_source: 'clinician', cancelled_at: new Date().toISOString(),
     last_operation_id: operationId, reconciliation_state: '', refund_status: policy.eligible ? LIFECYCLE.REFUND_STATUS.REQUESTED : LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW,
-    refund_last_error_code: policy.eligible ? '' : 'BUSINESS_POLICY_TBD' });
+    refund_last_error_code: policy.eligible ? '' : 'BUSINESS_POLICY_TBD' }));
   if (input.enqueueNotification) input.enqueueNotification(updated);
   if (policy.eligible && input.enqueueRefund) input.enqueueRefund(updated);
   return { ok: true, changed: true, source: 'clinician', refund: policy.eligible ? 'requested' : 'BUSINESS_POLICY_TBD' };
@@ -54,12 +56,14 @@ function reconcileCalendarSync_(input) {
   if (!input || !input.gateway || !input.syncState || !input.store) fail_('RECONCILIATION_INPUT_INVALID');
   return withLifecycleLock_(input, function() {
     const token = input.syncState.get(); const result = input.gateway.reconcileIncremental(token, input.bounds);
-    let changed = 0; let ignored = 0; let stale = 0;
+    let changed = 0; let ignored = 0; let stale = 0; let unresolved = false;
     result.events.forEach(function(item) {
       const outcome = reconcileCalendarChange_(Object.assign({}, input, { event: item.event }));
-      if (outcome.changed) changed += 1; else if (outcome.ignored || outcome.noop) ignored += 1; else if (outcome.code === 'STALE_CALENDAR_EVENT') stale += 1;
+      if (outcome.changed) changed += 1; else if (outcome.ignored || outcome.noop) ignored += 1; else { unresolved = true; if (outcome.code === 'STALE_CALENDAR_EVENT') stale += 1; }
     });
-    if (result.nextSyncToken) input.syncState.set(result.nextSyncToken);
+    if (unresolved) return { ok: false, code: 'RECONCILIATION_REQUIRED', fullSyncReset: result.fullSyncReset, nextSyncToken: '', changed: changed, ignored: ignored, stale: stale };
+    if (!result.nextSyncToken) return { ok: false, code: 'SYNC_CURSOR_MISSING', fullSyncReset: result.fullSyncReset, nextSyncToken: '', changed: changed, ignored: ignored, stale: stale };
+    input.syncState.set(result.nextSyncToken);
     return { ok: true, fullSyncReset: result.fullSyncReset, nextSyncToken: result.nextSyncToken, changed: changed, ignored: ignored, stale: stale };
   });
 }

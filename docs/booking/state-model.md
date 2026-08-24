@@ -6,7 +6,7 @@ booking_status, payment_status, schedule_status y refund_status no se infieren e
 
 ## Patient RESCHEDULE
 
-LockService -> fresh load -> confirmed/paid/scheduled/count=0 -> reconstruct capability -> verify -> FreeBusy + datastore target recheck -> same-event Calendar update -> current start/end -> count=1 -> persistent revoke -> CANCEL-only notification.
+LockService -> fresh load -> confirmed/paid/scheduled/count=0 -> reconstruct capability -> verify -> FreeBusy + datastore target recheck -> fresh Calendar GET/ETag compare -> same-event Calendar update with If-Match -> current start/end -> count=1 -> persistent revoke -> CANCEL-only notification. A mismatch or 412 enters reconciliation and never increments count or revokes the capability.
 
 El record entregado antes del lock nunca autoriza. Un segundo intento con el token antiguo o count 1 falla cerrado.
 
@@ -28,4 +28,8 @@ RESCHEDULE y CANCEL tienen tokens distintos de alta entropía, hash HMAC con dom
 
 ## Refund
 
-Refund es un estado propio: not_required -> refund_requested -> refund_pending -> refunded/refund_failed/manual_review. Timeout deja una orden determinista y fuerza status-only; no crea una segunda orden. La decisión comercial se delega a policyEvaluator y no se hardcodea.
+Refund es un estado propio: not_required -> refund_requested -> refund_pending -> refunded/refund_failed/manual_review. Timeout deja una orden determinista sólo como idempotencia interna y fuerza `manual_review`; no afirma `status_only` ni crea una segunda orden sin evidencia provider-side. La decisión comercial se delega a policyEvaluator y no se hardcodea.
+
+## Cancellation atomic transition
+
+Patient y clinician usan `atomicCancellationTransitionFields_`: valida `confirmed -> cancellation_requested -> cancelled` y construye el único write final atómico del datastore, sin bypass directo del state machine. Si Calendar ya fue liberado y la escritura falla, el resultado es `RECONCILIATION_REQUIRED`; no se emiten refund ni notification duplicados.

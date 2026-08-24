@@ -14,6 +14,13 @@ var AVAILABILITY_HORIZON_DAYS = 90;
 
 function calendarFail_(code) { fail_(code || 'CALENDAR_UNAVAILABLE'); }
 
+function calendarConflict_(code, status) {
+  const error = new Error(code || 'RECONCILIATION_REQUIRED');
+  error.code = code || 'RECONCILIATION_REQUIRED';
+  if (status) error.status = status;
+  throw error;
+}
+
 function calendarApi_(options) {
   if (options && options.api) return options.api;
   if (typeof Calendar !== 'undefined') return Calendar;
@@ -117,39 +124,71 @@ function createCalendarGateway_(options) {
     updateSameEvent: function(record, targetStartAt, targetEndAt) {
       const current = this.getEvent(record.calendar_event_id);
       if (!current) calendarFail_('CALENDAR_EVENT_MISSING');
+      if (String(record.calendar_event_etag || '') !== String(current.etag || '')) {
+        calendarConflict_('CALENDAR_ETAG_CONFLICT', 412);
+      }
       const event = current.event;
       event.start = { dateTime: calendarDateTime_(targetStartAt).toISOString(), timeZone: DEFAULT_BOOKING_TIME_ZONE };
       event.end = { dateTime: calendarDateTime_(targetEndAt).toISOString(), timeZone: DEFAULT_BOOKING_TIME_ZONE };
       event.extendedProperties = opaqueCalendarProperties_(record.calendar_link_key);
       // Sending conferenceDataVersion while retaining event.conferenceData
       // preserves Meet on the same event. Sandbox must prove this behavior.
-      return calendarEventResult_(api.Events.update(calendarId, event.id, event, { conferenceDataVersion: 1, sendUpdates: 'none' }));
+      try {
+        return calendarEventResult_(api.Events.update(event, calendarId, event.id,
+          { conferenceDataVersion: 1, sendUpdates: 'none' }, { 'If-Match': current.etag }));
+      } catch (error) {
+        if (calendarHttpStatus_(error) === 412) calendarConflict_('CALENDAR_ETAG_CONFLICT', 412);
+        throw error;
+      }
     },
     cancelLinkedEvent: function(record) {
       if (!record.calendar_event_id) return { ok: true, alreadyAbsent: true };
-      try { api.Events.delete(calendarId, String(record.calendar_event_id), { sendUpdates: 'none' }); return { ok: true, deleted: true }; }
+      try { api.Events.remove(calendarId, String(record.calendar_event_id), { sendUpdates: 'none' }); return { ok: true, deleted: true }; }
       catch (error) { if (calendarHttpStatus_(error) === 404) return { ok: true, alreadyAbsent: true }; throw error; }
     },
     reconcileIncremental: function(syncToken, bounds) {
-      const request = { showDeleted: true, singleEvents: false, maxResults: 2500 };
-      if (syncToken) request.syncToken = String(syncToken);
-      else { request.timeMin = calendarDateTime_(bounds.start).toISOString(); request.timeMax = calendarDateTime_(bounds.end).toISOString(); }
-      let fullSyncReset = false; let response;
+      const baseRequest = { showDeleted: true, singleEvents: false, maxResults: 2500 };
+      if (syncToken) baseRequest.syncToken = String(syncToken);
+      else { baseRequest.timeMin = calendarDateTime_(bounds.start).toISOString(); baseRequest.timeMax = calendarDateTime_(bounds.end).toISOString(); }
+      let fullSyncReset = false; let response; let request = Object.assign({}, baseRequest); const items = [];
       try { response = api.Events.list(calendarId, request); }
       catch (error) {
         if (calendarHttpStatus_(error) !== 410 || !syncToken) throw error;
         fullSyncReset = true;
-        response = api.Events.list(calendarId, { showDeleted: true, singleEvents: false, maxResults: 2500,
-          timeMin: calendarDateTime_(bounds.start).toISOString(), timeMax: calendarDateTime_(bounds.end).toISOString() });
+        request = { showDeleted: true, singleEvents: false, maxResults: 2500,
+          timeMin: calendarDateTime_(bounds.start).toISOString(), timeMax: calendarDateTime_(bounds.end).toISOString() };
+        response = api.Events.list(calendarId, request);
       }
-      const items = response && Array.isArray(response.items) ? response.items : [];
-      return { ok: true, fullSyncReset: fullSyncReset, nextSyncToken: String(response.nextSyncToken || ''),
+      while (response) {
+        if (Array.isArray(response.items)) items.push.apply(items, response.items);
+        if (!response.nextPageToken) break;
+        request = Object.assign({}, baseRequest, { pageToken: String(response.nextPageToken) });
+        if (fullSyncReset) request = { showDeleted: true, singleEvents: false, maxResults: 2500,
+          timeMin: calendarDateTime_(bounds.start).toISOString(), timeMax: calendarDateTime_(bounds.end).toISOString(),
+          pageToken: String(response.nextPageToken) };
+        response = api.Events.list(calendarId, request);
+      }
+      return { ok: true, fullSyncReset: fullSyncReset, nextSyncToken: String(response && response.nextSyncToken || ''),
         events: items.map(function(item) { return { event: item, linkage: calendarExtendedProperties_(item), syncHash: calendarSyncHash_(item) }; }) };
     },
     isSlotAvailable: function(start, end, currentEventId) {
-      return this.freeBusy(start, end).every(function(interval) {
-        return String(interval.eventId || '') === String(currentEventId || '')
-          || !intervalOverlap_(start, end, interval.start, interval.end);
+      const busy = this.freeBusy(start, end);
+      const overlaps = busy.some(function(interval) { return intervalOverlap_(start, end, interval.start, interval.end); });
+      if (!overlaps) return true;
+      if (!currentEventId) return false;
+      const current = this.getEvent(currentEventId);
+      const ownInterval = current && eventInterval_(current.event);
+      if (!ownInterval || !intervalOverlap_(start, end, ownInterval.start, ownInterval.end)) return false;
+      // FreeBusy intervals intentionally have no eventId. When the target
+      // overlaps the linked event, identify competitors through Events.list
+      // and exclude only the exact linked event id.
+      const response = api.Events.list(calendarId, { timeMin: calendarDateTime_(start).toISOString(),
+        timeMax: calendarDateTime_(end).toISOString(), singleEvents: true, showDeleted: false, maxResults: 2500 });
+      const events = response && Array.isArray(response.items) ? response.items : [];
+      return !events.some(function(event) {
+        const interval = eventInterval_(event);
+        return String(event && event.id || '') !== String(currentEventId) && interval
+          && intervalOverlap_(start, end, interval.start, interval.end);
       });
     },
   };
@@ -165,23 +204,37 @@ function calendarHttpStatus_(error) {
 function availabilityBounds_(requestedDate) {
   const startDate = requestedDate || new Date().toISOString().slice(0, 10);
   const start = startAt_(startDate, '00:00');
-  const endDate = new Date(Date.parse(start) + AVAILABILITY_HORIZON_DAYS * 86400000).toISOString().slice(0, 10);
+  const endDate = addCalendarDays_(startDate, AVAILABILITY_HORIZON_DAYS);
   return { start: start, end: startAt_(endDate, '23:59') };
 }
 
 function workingSlots_(start, end, requestedDate) {
-  const slots = []; const cursor = new Date(start); const last = new Date(end);
-  while (cursor.getTime() <= last.getTime()) {
-    const date = cursor.toISOString().slice(0, 10);
-    if ((!requestedDate || date === requestedDate) && cursor.getUTCDay() !== 0 && cursor.getUTCDay() !== 6) {
+  const slots = []; let date = localDateLabel_(start); const last = localDateLabel_(end);
+  while (date <= last) {
+    const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
+    if ((!requestedDate || date === requestedDate) && weekday !== 0 && weekday !== 6) {
       WORKING_HOURS.forEach(function(time) {
         const slotStart = startAt_(date, time); const slotEnd = new Date(Date.parse(slotStart) + 3600000).toISOString();
         slots.push({ date: date, time: time, start: slotStart, end: slotEnd });
       });
     }
-    cursor.setUTCDate(cursor.getUTCDate() + 1);
+    date = addCalendarDays_(date, 1);
   }
   return slots;
+}
+
+function addCalendarDays_(date, amount) {
+  const value = new Date(String(date) + 'T00:00:00Z');
+  if (Number.isNaN(value.getTime())) calendarFail_('CALENDAR_TIME_INVALID');
+  value.setUTCDate(value.getUTCDate() + Number(amount || 0));
+  return value.toISOString().slice(0, 10);
+}
+
+function localDateLabel_(value) {
+  const date = calendarDateTime_(value);
+  const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: DEFAULT_BOOKING_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' });
+  const parts = {}; formatter.formatToParts(date).forEach(function(part) { if (part.type !== 'literal') parts[part.type] = part.value; });
+  return String(parts.year) + '-' + String(parts.month).padStart(2, '0') + '-' + String(parts.day).padStart(2, '0');
 }
 
 function computeOccupiedSlots_(input) {
@@ -205,5 +258,6 @@ var __CALENDAR_TEST_EXPORTS__ = Object.freeze({
   opaqueCalendarProperties_: opaqueCalendarProperties_, eventInterval_: eventInterval_, intervalOverlap_: intervalOverlap_,
   calendarExtendedProperties_: calendarExtendedProperties_, calendarSyncHash_: calendarSyncHash_, meetFields_: meetFields_,
   createCalendarGateway_: createCalendarGateway_, computeOccupiedSlots_: computeOccupiedSlots_, availabilityBounds_: availabilityBounds_,
-  workingSlots_: workingSlots_, calendarHttpStatus_: calendarHttpStatus_, calendarEventResult_: calendarEventResult_,
+  workingSlots_: workingSlots_, addCalendarDays_: addCalendarDays_, localDateLabel_: localDateLabel_,
+  calendarHttpStatus_: calendarHttpStatus_, calendarEventResult_: calendarEventResult_,
 });
