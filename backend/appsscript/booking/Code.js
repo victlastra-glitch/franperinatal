@@ -14,6 +14,7 @@ const PROPERTY_KEYS = Object.freeze([
   'APP_ENV', 'FLOW_API_KEY', 'FLOW_SECRET_KEY', 'FLOW_BASE_URL', 'FLOW_RETURN_URL',
   'FLOW_CONFIRMATION_URL', 'BOOKING_STORE_ID', 'CALENDAR_ID', 'INTERNAL_NOTIFICATION_EMAIL',
   'PATIENT_EMAIL_RECIPIENT_ALLOWLIST', 'IDEMPOTENCY_NAMESPACE', 'STATUS_TOKEN_SECRET',
+  'CAPABILITY_TOKEN_SECRET',
 ]);
 var LIFECYCLE = Object.freeze({
   BOOKING_STATUS: Object.freeze({
@@ -49,8 +50,9 @@ var RESERVATION_HEADERS = Object.freeze([
   'calendar_event_id', 'calendar_event_etag', 'calendar_event_updated_at', 'calendar_sync_hash',
   'calendar_link_key', 'calendar_change_source', 'schedule_changed_at', 'meet_url',
   'meet_conference_id', 'meet_status', 'patient_reschedule_count', 'reschedule_capability_hash',
-  'reschedule_capability_expires_at', 'reschedule_capability_version', 'cancel_capability_hash',
-  'cancel_capability_expires_at', 'cancel_capability_version', 'cancellation_source', 'cancelled_at',
+  'reschedule_capability_expires_at', 'reschedule_capability_version', 'reschedule_capability_revoked_at',
+  'cancel_capability_hash', 'cancel_capability_expires_at', 'cancel_capability_version',
+  'cancel_capability_revoked_at', 'cancellation_source', 'cancelled_at',
   'refund_commerce_order', 'refund_provider_reference', 'refund_requested_at', 'refund_completed_at',
   'refund_last_checked_at', 'refund_last_error_code', 'notification_version',
   'notification_outbox_key', 'notification_patient_state', 'notification_internal_state',
@@ -107,7 +109,8 @@ function readConfig_() {
     flowBaseUrl: properties.FLOW_BASE_URL, flowReturnUrl: properties.FLOW_RETURN_URL,
     flowConfirmationUrl: properties.FLOW_CONFIRMATION_URL, bookingStoreId: properties.BOOKING_STORE_ID,
     calendarId: properties.CALENDAR_ID, internalNotificationEmail: internal, patientAllowlist: allowlist,
-    idempotencyNamespace: properties.IDEMPOTENCY_NAMESPACE, statusTokenSecret: properties.STATUS_TOKEN_SECRET };
+    idempotencyNamespace: properties.IDEMPOTENCY_NAMESPACE, statusTokenSecret: properties.STATUS_TOKEN_SECRET,
+    capabilityTokenSecret: properties.CAPABILITY_TOKEN_SECRET };
 }
 
 function assertPreviewRoute_(value, requiredPath) {

@@ -17,9 +17,12 @@ El harness es local y no-network:
 | Área | Invariantes cubiertos |
 |---|---|
 | State | transiciones válidas, backwards/illegal fail-closed, independencia de dominios, booking cancelado con refund pendiente |
-| Schema | 55 headers exactos, sin duplicados, campos lifecycle presentes, ausencia de `status`/`flow_status` como columnas |
+| Schema | 57 headers exactos, sin duplicados, campos lifecycle presentes, ausencia de `status`/`flow_status` como columnas |
 | Capabilities | entropy, hash-at-rest, tipo, expiración, revocación, versión, malformed, comparación y no PII |
-| Reschedule | count 0 permite, claim consume a 1, count 1 y capability stale rechazan |
+| Reschedule | tuple `confirmed + paid + scheduled + count 0`, estados/payment/schedule no elegibles, claim consume a 1, capability stale/revocada/expirada rechazan |
+| HMAC | secreto faltante/blank/débil rechaza, secreto correcto valida, secreto incorrecto rechaza, dominios RESCHEDULE/CANCEL separados |
+| Revocation persistence | map/reconstruct conserva hash, expiración, versión y `revoked_at`; activo valida y revocado rechaza |
+| Transitions | secuencias en el mismo record, record actualizado, una escritura por cambio, no-op sin escritura e invalid backwards rechazado |
 | Outbox | key estable, claim determinista, retry de fallo, no duplicación tras sent, log sin detalles clínicos |
 | Idempotency | `operation_id` repetido devuelve replay sin ejecutar dos veces |
 | Privacy | token/capability/operation opacos; no nombres, RUT, teléfono, email clínico o texto clínico en metadata |
@@ -28,7 +31,7 @@ El harness es local y no-network:
 
 ```text
 node backend/appsscript/booking/test/phase-a.test.mjs
-NO_NETWORK_TESTS=PASS count=64
+NO_NETWORK_TESTS=PASS count=108
 ```
 
 También se ejecuta `node --check` sobre ambos archivos Apps Script.
@@ -62,7 +65,10 @@ son sintéticos y no contienen recipients reales ni información clínica.
 
 ## Trazabilidad
 
-Phase A afecta BK-001..BK-015 como foundation. Las funciones principales son
+Phase A afecta BK-001..BK-015 como foundation. El hardening añade cobertura
+sanitizada para BK-007, BK-008, BK-010, BK-012 y BK-014: elegibilidad exacta,
+HMAC fail-closed con dominio explícito, revocación persistible y helpers de
+transición sincronizados. Las funciones principales son
 `transitionBooking_`, `transitionPayment_`, `transitionRefund_`,
 `transitionSchedule_`, `createCapability_`, `verifyCapability_`,
 `claimPatientReschedule_`, `createNotificationOutbox_`,

@@ -38,6 +38,21 @@ var LIFECYCLE_TRANSITIONS = Object.freeze({
 
 var CAPABILITY_TTL_MS = 1000 * 60 * 60 * 24;
 var CAPABILITY_RANDOM_UUID_COUNT = 3;
+var CAPABILITY_SECRET_MIN_LENGTH = 32;
+var CAPABILITY_DOMAIN_VERSION = 'booking-capability:v1';
+
+function capabilityTypeAllowed_(type) {
+  return [LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, LIFECYCLE.CAPABILITY_TYPE.CANCEL].indexOf(type) !== -1;
+}
+
+function capabilitySecretIsStrong_(secret) {
+  return typeof secret === 'string' && secret.length >= CAPABILITY_SECRET_MIN_LENGTH && secret.trim() === secret;
+}
+
+function assertCapabilitySecret_(secret) {
+  if (!capabilitySecretIsStrong_(secret)) fail_('CAPABILITY_SECRET_INVALID');
+  return secret;
+}
 
 function transitionAllowed_(domain, current, next) {
   if (current === next) return true;
@@ -52,22 +67,38 @@ function assertTransition_(domain, current, next) {
 
 function transitionBooking_(sheet, schema, record, next) {
   assertTransition_('booking_status', String(record.booking_status || ''), next);
-  if (record.booking_status !== next) updateRecord_(sheet, schema, record.rowNumber, { booking_status: next });
+  if (record.booking_status !== next) {
+    updateRecord_(sheet, schema, record.rowNumber, { booking_status: next });
+    record.booking_status = next;
+  }
+  return record;
 }
 
 function transitionPayment_(sheet, schema, record, next) {
   assertTransition_('payment_status', String(record.payment_status || ''), next);
-  if (record.payment_status !== next) updateRecord_(sheet, schema, record.rowNumber, { payment_status: next });
+  if (record.payment_status !== next) {
+    updateRecord_(sheet, schema, record.rowNumber, { payment_status: next });
+    record.payment_status = next;
+  }
+  return record;
 }
 
 function transitionRefund_(sheet, schema, record, next) {
   assertTransition_('refund_status', String(record.refund_status || ''), next);
-  if (record.refund_status !== next) updateRecord_(sheet, schema, record.rowNumber, { refund_status: next });
+  if (record.refund_status !== next) {
+    updateRecord_(sheet, schema, record.rowNumber, { refund_status: next });
+    record.refund_status = next;
+  }
+  return record;
 }
 
 function transitionSchedule_(sheet, schema, record, next) {
   assertTransition_('schedule_status', String(record.schedule_status || ''), next);
-  if (record.schedule_status !== next) updateRecord_(sheet, schema, record.rowNumber, { schedule_status: next });
+  if (record.schedule_status !== next) {
+    updateRecord_(sheet, schema, record.rowNumber, { schedule_status: next });
+    record.schedule_status = next;
+  }
+  return record;
 }
 
 function randomOpaqueCapabilityToken_() {
@@ -77,8 +108,11 @@ function randomOpaqueCapabilityToken_() {
   return uuids.join('').replace(/-/g, '');
 }
 
-function hashCapabilityToken_(token, secret) {
-  return hexBytes_(Utilities.computeHmacSha256Signature(String(token), String(secret || '')));
+function hashCapabilityToken_(token, secret, type) {
+  if (!capabilityTypeAllowed_(type)) fail_('CAPABILITY_INVALID');
+  assertCapabilitySecret_(secret);
+  const input = CAPABILITY_DOMAIN_VERSION + ':' + type + ':' + String(token);
+  return hexBytes_(Utilities.computeHmacSha256Signature(input, secret));
 }
 
 function hexBytes_(bytes) {
@@ -93,15 +127,15 @@ function constantTimeEqual_(left, right) {
 }
 
 function createCapability_(type, options) {
-  const allowed = [LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, LIFECYCLE.CAPABILITY_TYPE.CANCEL];
-  if (allowed.indexOf(type) === -1) fail_('CAPABILITY_INVALID');
+  if (!capabilityTypeAllowed_(type)) fail_('CAPABILITY_INVALID');
+  const secret = assertCapabilitySecret_(options && options.secret);
   const now = Number(options && options.now || Date.now());
   const expiresAt = String(options && options.expiresAt || new Date(now + CAPABILITY_TTL_MS).toISOString());
   if (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= now) fail_('CAPABILITY_INVALID');
   const version = String(options && options.version || '1');
   const token = randomOpaqueCapabilityToken_();
   return Object.freeze({
-    type: type, token: token, hash: hashCapabilityToken_(token, options && options.secret),
+    type: type, token: token, hash: hashCapabilityToken_(token, secret, type),
     expiresAt: expiresAt, version: version, revokedAt: null,
   });
 }
@@ -113,10 +147,12 @@ function capabilityForStorage_(capability) {
 
 function verifyCapability_(token, expectedType, stored, options) {
   const now = Number(options && options.now || Date.now()); const version = String(options && options.version || '1');
+  if (!capabilityTypeAllowed_(expectedType) || !capabilitySecretIsStrong_(options && options.secret)) return false;
+  if (!/^[a-f0-9]{96}$/i.test(String(token || ''))) return false;
   if (!stored || stored.type !== expectedType || stored.version !== version || stored.revokedAt) return false;
   if (!stored.expiresAt || Date.parse(stored.expiresAt) <= now) return false;
   if (!/^[A-Fa-f0-9]{64}$/.test(String(stored.hash || ''))) return false;
-  return constantTimeEqual_(hashCapabilityToken_(token, options && options.secret), stored.hash);
+  return constantTimeEqual_(hashCapabilityToken_(token, options.secret, expectedType), stored.hash);
 }
 
 function revokeCapability_(stored, now) {
@@ -126,24 +162,36 @@ function revokeCapability_(stored, now) {
 }
 
 function capabilityFields_(capability) {
-  if (!capability || !capability.type) fail_('CAPABILITY_INVALID');
+  if (!capability || !capabilityTypeAllowed_(capability.type)) fail_('CAPABILITY_INVALID');
   const prefix = capability.type === LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE ? 'reschedule' : 'cancel';
   const result = {}; result[prefix + '_capability_hash'] = capability.hash;
   result[prefix + '_capability_expires_at'] = capability.expiresAt;
   result[prefix + '_capability_version'] = capability.version;
+  result[prefix + '_capability_revoked_at'] = capability.revokedAt || '';
   return result;
 }
 
-function isActiveBookingStatus_(status) {
-  return [LIFECYCLE.BOOKING_STATUS.INITIATED, LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING,
-    LIFECYCLE.BOOKING_STATUS.CONFIRMED, LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED,
-    LIFECYCLE.BOOKING_STATUS.RECONCILIATION_REQUIRED].indexOf(status) !== -1;
+function capabilityFromRecord_(record, type) {
+  if (!record || !capabilityTypeAllowed_(type)) fail_('CAPABILITY_INVALID');
+  const prefix = type === LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE ? 'reschedule' : 'cancel';
+  return {
+    type: type,
+    hash: String(record[prefix + '_capability_hash'] || ''),
+    expiresAt: String(record[prefix + '_capability_expires_at'] || ''),
+    version: String(record[prefix + '_capability_version'] || ''),
+    revokedAt: String(record[prefix + '_capability_revoked_at'] || '') || null,
+  };
 }
 
-function canPatientReschedule_(input) {
-  if (!input || !isActiveBookingStatus_(input.bookingStatus) || Number(input.patientRescheduleCount) !== 0) return false;
+function isPatientRescheduleEligible_(input) {
+  if (!input || input.bookingStatus !== LIFECYCLE.BOOKING_STATUS.CONFIRMED
+    || input.paymentStatus !== LIFECYCLE.PAYMENT_STATUS.PAID
+    || input.scheduleStatus !== LIFECYCLE.SCHEDULE_STATUS.SCHEDULED
+    || !(input.patientRescheduleCount === 0 || input.patientRescheduleCount === '0')) return false;
   return verifyCapability_(input.token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, input.storedCapability, input);
 }
+
+function canPatientReschedule_(input) { return isPatientRescheduleEligible_(input); }
 
 function claimPatientReschedule_(input) {
   if (!canPatientReschedule_(input)) return { ok: false, code: 'CAPABILITY_INVALID' };
@@ -209,11 +257,14 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   HEADERS: RESERVATION_HEADERS,
   TRANSITIONS: LIFECYCLE_TRANSITIONS,
   CAPABILITY_RANDOM_UUID_COUNT: CAPABILITY_RANDOM_UUID_COUNT,
+  CAPABILITY_SECRET_MIN_LENGTH: CAPABILITY_SECRET_MIN_LENGTH,
+  PROPERTY_KEYS: PROPERTY_KEYS, readConfig_: readConfig_,
   transitionAllowed_: transitionAllowed_, assertTransition_: assertTransition_,
   randomOpaqueCapabilityToken_: randomOpaqueCapabilityToken_, hashCapabilityToken_: hashCapabilityToken_,
   constantTimeEqual_: constantTimeEqual_, createCapability_: createCapability_,
   capabilityForStorage_: capabilityForStorage_, verifyCapability_: verifyCapability_,
   revokeCapability_: revokeCapability_, capabilityFields_: capabilityFields_,
+  capabilityFromRecord_: capabilityFromRecord_, isPatientRescheduleEligible_: isPatientRescheduleEligible_,
   canPatientReschedule_: canPatientReschedule_, claimPatientReschedule_: claimPatientReschedule_,
   makeOperationId_: makeOperationId_, applyOperationOnce_: applyOperationOnce_,
   makeCalendarLinkKey_: makeCalendarLinkKey_,

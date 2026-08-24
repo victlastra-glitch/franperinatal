@@ -72,12 +72,28 @@ campos y validators; no llama Calendar.
 
 `RESCHEDULE` y `CANCEL` son tipos distintos. Cada capability tiene token opaco
 de al menos 256 bits, hash HMAC-at-rest, expiración, versión y revocación. El
-token no contiene reservation ID ni PII. La verificación responde de forma
-uniforme ante tipo, versión, formato, expiración o revocación inválidos.
+token no contiene reservation ID ni PII. El HMAC usa el dominio explícito
+`booking-capability:v1:<TYPE>:<TOKEN>` y requiere el secreto fuerte de la
+propiedad `CAPABILITY_TOKEN_SECRET`; no existe fallback a secreto vacío.
+RESCHEDULE y CANCEL no comparten dominio HMAC. La verificación responde de
+forma uniforme ante tipo, versión, formato, expiración, secreto o revocación
+inválidos.
 
 `patient_reschedule_count` parte en `0`. El helper de reschedule requiere
-booking activo, count `0` y capability RESCHEDULE válida. Un claim exitoso
-devuelve count `1` y una capability revocada; un segundo claim falla.
+exactamente `booking_status=confirmed`, `payment_status=paid`,
+`schedule_status=scheduled`, count `0` y capability RESCHEDULE válida,
+vigente y no revocada. Un claim exitoso devuelve count `1` y una capability
+revocada; un segundo claim falla.
+
+La revocación se persiste conceptualmente en
+`reschedule_capability_revoked_at` y `cancel_capability_revoked_at`. El
+round-trip desde campos de reservation conserva hash, expiración, versión y
+revocación.
+
+Los helpers `transitionBooking_`, `transitionPayment_`, `transitionRefund_` y
+`transitionSchedule_` validan, persisten una vez si el estado cambia, mutan el
+record suministrado y retornan ese record. Un mismo estado es idempotente y no
+genera una segunda escritura; no requieren reread oculto.
 
 ## Operaciones y outbox
 

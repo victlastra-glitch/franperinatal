@@ -5,6 +5,29 @@ los contratos locales de estado, schema, capabilities, outbox e idempotencia.
 No ejecuta bootstrap de schema ni habilita Calendar, Meet, Flow refund, email,
 Preview, producción o endpoints públicos de gestión.
 
+## Phase A hardening patch
+
+La revisión pre-runtime identificó cuatro gaps de foundation y todos quedan
+resueltos localmente:
+
+- `canPatientReschedule_` exige exactamente `booking_status=confirmed`,
+  `payment_status=paid`, `schedule_status=scheduled`,
+  `patient_reschedule_count=0` y una capability RESCHEDULE válida, vigente y
+  no revocada. No depende de un predicate genérico de estado activo.
+- `CAPABILITY_TOKEN_SECRET` es una propiedad Script Property requerida por el
+  contrato futuro. La creación y verificación fallan cerrado ante ausencia,
+  blank o secreto débil; el nombre de la propiedad es la única referencia
+  versionada, sin valor.
+- La revocación es persistible: el schema tiene campos explícitos
+  `reschedule_capability_revoked_at` y `cancel_capability_revoked_at`, y el
+  round-trip conserva hash, expiración, versión y revocación.
+- Los helpers `transitionBooking_`, `transitionPayment_`,
+  `transitionRefund_` y `transitionSchedule_` actualizan el record en memoria,
+  retornan ese mismo record, persisten una vez por cambio real y no escriben en
+  un no-op idempotente.
+
+El schema target queda en `57` headers. No se ejecutó `bootstrapNonprodSchema_`.
+
 ## Índice BK-001..BK-015
 
 | Requisito | Fundación de esta fase | Gate posterior |
@@ -65,5 +88,15 @@ y Preview permanecen fuera del alcance y sin mutaciones.
 ## Traceability delta
 
 Phase A afecta BK-001..BK-015 en calidad de foundation y no declara readiness
-de integración. El commit de implementación es `5afb27d` y se mantiene
-separado de cualquier despliegue.
+de integración. El delta sanitizado para el Brain es:
+
+| Requisito | Delta de hardening local | Estado posterior |
+|---|---|---|
+| BK-007 | Elegibilidad RESCHEDULE exacta y one-shot con count `0` | foundation endurecida |
+| BK-008 | Versión y revocación round-trip persistible | foundation endurecida |
+| BK-010 | Transiciones separadas con record sincronizado | foundation endurecida |
+| BK-012 | HMAC fail-closed, dominio explícito y hash-at-rest | foundation endurecida |
+| BK-014 | Persistencia conceptual de revocación sin datastore remoto | foundation endurecida |
+
+El commit de implementación original es `5afb27d`; este parche sigue separado
+de cualquier despliegue, bootstrap o mutación remota.

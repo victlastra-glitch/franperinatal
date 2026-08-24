@@ -76,6 +76,28 @@ La respuesta pública de payment status se deriva localmente desde
 `booking_status` + `payment_status` para compatibilidad; no se persiste como
 fuente primaria. No se ejecutó ninguna migración.
 
+## Schema target después del hardening
+
+El schema local target tiene `57` headers. Los dos campos agregados para
+alinear revocación con almacenamiento son:
+
+```text
+reschedule_capability_revoked_at
+cancel_capability_revoked_at
+```
+
+`capabilityFields_()` y `capabilityFromRecord_()` preservan hash, expiración,
+versión y `revoked_at` para ambos tipos. La propiedad requerida para HMAC es
+`CAPABILITY_TOKEN_SECRET`; sólo se versiona su nombre y no su valor.
+
+La elegibilidad de self-reschedule requiere la tupla exacta
+`confirmed + paid + scheduled + count=0 + RESCHEDULE vigente/no revocada`.
+Los cuatro helpers de transición mutan y retornan el record suministrado
+después de una escritura real; el mismo estado es un no-op sin escritura.
+
+Este cambio es únicamente de source y pruebas locales. No se ejecutó
+`bootstrapNonprodSchema_()` ni se modificó el datastore.
+
 ## Commit técnico
 
 El commit de implementación Phase A es `5afb27d` (`feat: establish nonprod
