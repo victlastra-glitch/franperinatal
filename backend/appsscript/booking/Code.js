@@ -151,8 +151,11 @@ function readRefundConfig_() {
 }
 
 function assertPreviewRoute_(value, requiredPath) {
-  const match = /^https:\/\/([a-z0-9-]+\.pages\.dev)(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(String(value || ''));
+  const match = previewPagesUrlMatch_(value);
   if (!match || match[2] !== requiredPath) fail_('CONFIGURATION_INCOMPLETE');
+}
+function previewPagesUrlMatch_(value) {
+  return /^https:\/\/((?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+pages\.dev)(\/[^?#]*)?(?:\?([^#]*))?$/i.exec(String(value || ''));
 }
 function getHttpsHost_(value) { const match = /^https:\/\/([^/:?#]+)(?::\d+)?(?:\/|$)/i.exec(String(value)); return match ? match[1].toLowerCase() : ''; }
 function fingerprint_(value) { return Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(value), Utilities.Charset.UTF_8).map(function(byte) { return ('0' + (byte & 0xff).toString(16)).slice(-2); }).join('').slice(0, 12); }
@@ -528,14 +531,15 @@ function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTo
 }
 
 function previewOriginFromConfig_(config) {
-  const match = /^https:\/\/([a-z0-9-]+\.pages\.dev)(\/[^?#]*)?(?:\?[^#]*)?$/i.exec(String(config && config.flowReturnUrl || ''));
+  const match = previewPagesUrlMatch_(config && config.flowReturnUrl);
   if (!match) fail_('CONFIGURATION_INCOMPLETE');
   return 'https://' + match[1].toLowerCase();
 }
 
 function managementPageUrl_(origin, token, open) {
   const base = String(origin || '').replace(/\/$/, '');
-  if (!/^https:\/\/[a-z0-9-]+\.pages\.dev$/i.test(base)) fail_('CONFIGURATION_INCOMPLETE');
+  const match = previewPagesUrlMatch_(base);
+  if (!match || match[2] || match[3]) fail_('CONFIGURATION_INCOMPLETE');
   if (!/^[A-Za-z0-9_-]{64,256}$/.test(String(token || ''))) fail_('CAPABILITY_INVALID');
   let url = base + '/manage.html?token=' + encodeURIComponent(String(token));
   if (open === 'reschedule' || open === 'cancel') url += '&open=' + open;
