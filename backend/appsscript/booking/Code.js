@@ -169,7 +169,7 @@ function assertResources_(config) {
   const calendar = CalendarApp.getCalendarById(config.calendarId);
   if (!calendar || calendar.getId() !== config.calendarId) fail_('CONFIGURATION_INCOMPLETE');
   return { spreadsheet: spreadsheet, sheet: spreadsheet.getSheetByName(NONPROD.sheetName), calendar: calendar,
-    calendarGateway: createCalendarGateway_({ calendarId: config.calendarId }) };
+    calendarGateway: createCalendarGateway_({ calendarId: config.calendarId, requestMeet: true }) };
 }
 
 // Guarded and idempotent. It is intentionally not invoked during this mission.
@@ -214,7 +214,7 @@ function createFlowPayment_(e) {
   try {
     const existing = findBy_(resources.sheet, schema, 'idempotency_key', payload.idempotencyKey);
     if (existing) return existingBookingResult_(existing);
-    const reservation = reserveOnce_(resources.sheet, schema, payload);
+    const reservation = reserveOnce_(resources.sheet, schema, payload, resources.calendarGateway);
     if (!reservation.ok) return reservation; // SLOT_TAKEN: never contact Flow.
     let flow;
     try { flow = createSandboxFlowPayment_(config, payload, reservation); }
@@ -247,8 +247,25 @@ function parseCreatePayload_(e) {
 }
 function validIdempotencyKey_(value) { return new RegExp('^' + NONPROD.idempotencyNamespace + '-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'i').test(String(value || '')); }
 
-function reserveOnce_(sheet, schema, payload) {
-  const requestedStart = startAt_(payload.date, payload.time);
+function assertBookableSlot_(date, time, nowMs) {
+  if (WORKING_HOURS.indexOf(String(time || '')) === -1) fail_('REQUEST_REJECTED');
+  const requestedStart = startAt_(String(date || ''), String(time || ''));
+  const weekday = new Date(String(date) + 'T00:00:00Z').getUTCDay();
+  if (weekday === 0 || weekday === 6) fail_('REQUEST_REJECTED');
+  const currentMs = nowMs === undefined ? Date.now() : Number(nowMs);
+  if (!Number.isFinite(currentMs)) fail_('REQUEST_REJECTED');
+  const today = localDateLabel_(new Date(currentMs));
+  const lastBookableDate = addCalendarDays_(today, AVAILABILITY_HORIZON_DAYS);
+  if (String(date) < today || String(date) > lastBookableDate) fail_('REQUEST_REJECTED');
+  if (Date.parse(requestedStart) < currentMs + BOOKING_LEAD_MINUTES * 60000) fail_('REQUEST_REJECTED');
+  return requestedStart;
+}
+
+function reserveOnce_(sheet, schema, payload, calendarGateway) {
+  const requestedStart = assertBookableSlot_(payload.date, payload.time);
+  const requestedEnd = new Date(Date.parse(requestedStart) + 3600000).toISOString();
+  if (!calendarGateway || typeof calendarGateway.isSlotAvailable !== 'function') fail_('CALENDAR_UNAVAILABLE');
+  if (!calendarGateway.isSlotAvailable(requestedStart, requestedEnd, null)) return { ok: false, code: 'SLOT_TAKEN' };
   const taken = reservationRecords_(sheet, schema).some(function(record) {
     return record.current_start_at === requestedStart && ACTIVE_SLOT_STATES.indexOf(record.booking_status) !== -1;
   });

@@ -11,6 +11,7 @@ var CALENDAR_LINK_SOURCE = 'fran_booking';
 var DEFAULT_BOOKING_TIME_ZONE = 'America/Santiago';
 var WORKING_HOURS = Object.freeze(['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']);
 var AVAILABILITY_HORIZON_DAYS = 90;
+var BOOKING_LEAD_MINUTES = 120;
 
 function calendarFail_(code) { fail_(code || 'CALENDAR_UNAVAILABLE'); }
 
@@ -267,5 +268,5 @@ var __CALENDAR_TEST_EXPORTS__ = Object.freeze({
   calendarExtendedProperties_: calendarExtendedProperties_, calendarSyncHash_: calendarSyncHash_, meetFields_: meetFields_,
   createCalendarGateway_: createCalendarGateway_, computeOccupiedSlots_: computeOccupiedSlots_, availabilityBounds_: availabilityBounds_,
   workingSlots_: workingSlots_, addCalendarDays_: addCalendarDays_, localDateLabel_: localDateLabel_,
-  calendarHttpStatus_: calendarHttpStatus_, calendarEventResult_: calendarEventResult_,
+  calendarHttpStatus_: calendarHttpStatus_, calendarEventResult_: calendarEventResult_, BOOKING_LEAD_MINUTES: BOOKING_LEAD_MINUTES,
 });

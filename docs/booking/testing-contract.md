@@ -10,7 +10,10 @@ ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=51
 PROVIDER_CONTRACT_TESTS=PASS count=13
 
 node backend/appsscript/booking/test/notification-outbox-worker.test.mjs
-OUTBOX_TRIGGER_TESTS=PASS assertions=31
+OUTBOX_TRIGGER_TESTS=PASS assertions=35
+
+node backend/appsscript/booking/test/pre-transaction-contract.test.mjs
+PRE_TRANSACTION_CONTRACT_TESTS=PASS
 
 El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y RefundGateway.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, ScriptApp, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
 
@@ -31,6 +34,7 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 13. Durable CTA retry por rotación de capability y contrato frontend `code`.
 14. Linkage privado sin PII y Worker management response sin PII.
 15. Outbox worker: batch acotado, allowlist, CTA matrix, rotación, max attempts, lock, installer/removal idempotente sin crear triggers reales.
+16. Pre-transaction: runtime Meet request, preservación de conferencia en reschedule, validación server-side de slot, FreeBusy bajo lock, `SLOT_TAKEN` sin fila ni Flow.
 
 ## Worker y artefacto
 
