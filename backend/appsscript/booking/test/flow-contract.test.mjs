@@ -102,7 +102,8 @@ fetchImpl = (url, options) => {
   const body = String(options.payload || '');
   const params = Object.fromEntries(body.split('&').map((part) => part.split('=').map(decodeURIComponent)));
   check(params.apiKey === 'synthetic-flow-key', 'apiKey included');
-  check(params.amount === '1' && params.currency === 'CLP', 'amount/currency representation');
+  check(params.amount === String(flow.NONPROD_FLOW_TEST_AMOUNT_CLP) && params.currency === 'CLP'
+    && Number(params.amount) === 500 && Number(params.amount) > 350, 'amount/currency representation uses NONPROD sandbox minimum-safe 500 CLP');
   check(params.commerceOrder === order, 'commerceOrder in body');
   check(params.subject === 'NONPROD booking', 'subject present');
   check(params.email === allowlisted, 'email present');
@@ -123,6 +124,16 @@ rows = [];
 const created = context.createFlowPayment_({ postData: { contents: JSON.stringify(payload) } });
 check(created.ok && created.paymentUrl.startsWith('https://sandbox.flow.cl/app/web/pay?token=')
   && /^fran-nonprod-20260821-st-[0-9a-f]{32}$/i.test(created.publicStatusToken), 'token response parsing and payment URL construction');
+check(flow.NONPROD_FLOW_TEST_AMOUNT_CLP === 500, 'canonical NONPROD_FLOW_TEST_AMOUNT_CLP is 500');
+const signedBody = Object.fromEntries(String(lastFetch.options.payload).split('&').map((part) => part.split('=').map(decodeURIComponent)));
+check(signedBody.amount === '500' && signedBody.s === flow.signFlowParams_({
+  amount: signedBody.amount, apiKey: signedBody.apiKey, commerceOrder: signedBody.commerceOrder,
+  currency: signedBody.currency, email: signedBody.email, subject: signedBody.subject,
+  urlConfirmation: signedBody.urlConfirmation, urlReturn: signedBody.urlReturn,
+}, 'synthetic-flow-secret'), 'request signature includes the 500 amount correctly');
+check(flow.nonprodRefundAmountClp_() === '500', 'refund synthetic amount derives from NONPROD paid amount');
+const status = flow.paymentStatus_({ parameter: { st: created.publicStatusToken } });
+check(status.ok && status.amount === 500 && status.currency === 'CLP', 'public payment status returns amount 500');
 
 // 11. HTTP 4xx classification + failure recovery
 rows = [];

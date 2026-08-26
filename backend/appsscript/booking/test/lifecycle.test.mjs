@@ -173,17 +173,17 @@ check(cancelResult.ok && cancelResult.refund === 'BUSINESS_POLICY_TBD' && cancel
 let refundCalls = 0; const refundRecord = { reservation_id: 'fran-nonprod-20260821-reservation-refund', refund_status: 'refund_requested', refund_commerce_order: '', refund_provider_reference: '', payment_status: 'paid' };
 const refundStore = { update: (_record, fields) => Object.assign(refundRecord, fields) };
 const refundGateway = { create: () => { refundCalls += 1; return { providerReference: 'provider-opaque', status: 'pending' }; }, getStatus: () => ({ status: 'completed', providerReference: 'provider-opaque' }) };
-const refundFirst = refund.refundCreateOnce_({ store: refundStore, record: refundRecord, gateway: refundGateway, receiverEmail: 'qa+nonprod@example.test', amount: '1', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
-const refundSecond = refund.refundCreateOnce_({ store: refundStore, record: refundRecord, gateway: refundGateway, receiverEmail: 'qa+nonprod@example.test', amount: '1', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
+const refundFirst = refund.refundCreateOnce_({ store: refundStore, record: refundRecord, gateway: refundGateway, receiverEmail: 'qa+nonprod@example.test', amount: '500', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
+const refundSecond = refund.refundCreateOnce_({ store: refundStore, record: refundRecord, gateway: refundGateway, receiverEmail: 'qa+nonprod@example.test', amount: '500', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
 check(refundFirst.ok && refundSecond.replay === true && refundCalls === 1, 'refund create retry reuses deterministic logical order');
 const callback = refund.refundCallbackOnce_({ store: refundStore, record: refundRecord, gateway: refundGateway, token: 'provider-opaque' });
 const callbackReplay = refund.refundCallbackOnce_({ store: refundStore, record: refundRecord, gateway: refundGateway, token: 'provider-opaque' });
 check(callback.ok && callback.status === 'refunded' && callbackReplay.replay === true, 'duplicate refund callback is safe');
 let timeoutCalls = 0; const timeoutRecord = { reservation_id: 'fran-nonprod-20260821-reservation-timeout', refund_status: 'refund_requested', refund_commerce_order: '' };
 const timeoutResult = refund.refundCreateOnce_({ store: { update: (_record, fields) => Object.assign(timeoutRecord, fields) }, record: timeoutRecord,
-  gateway: { create: () => { timeoutCalls += 1; const error = new Error('timeout'); error.code = 'FLOW_TIMEOUT'; throw error; } }, receiverEmail: 'qa+nonprod@example.test', amount: '1', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
+  gateway: { create: () => { timeoutCalls += 1; const error = new Error('timeout'); error.code = 'FLOW_TIMEOUT'; throw error; } }, receiverEmail: 'qa+nonprod@example.test', amount: '500', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
 const timeoutRetry = refund.refundCreateOnce_({ store: { update: (_record, fields) => Object.assign(timeoutRecord, fields) }, record: timeoutRecord,
-  gateway: { create: () => { timeoutCalls += 1; return { providerReference: 'must-not-run' }; } }, receiverEmail: 'qa+nonprod@example.test', amount: '1', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
+  gateway: { create: () => { timeoutCalls += 1; return { providerReference: 'must-not-run' }; } }, receiverEmail: 'qa+nonprod@example.test', amount: '500', urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
 check(timeoutResult.code === 'REFUND_CREATE_OUTCOME_UNKNOWN' && timeoutRecord.refund_status === 'manual_review'
   && timeoutRetry.replay === true && timeoutCalls === 1, 'Flow timeout is manual-review and never creates a second refund');
 const timeoutCallback = refund.refundCallbackOnce_({ store: { update: (_record, fields) => Object.assign(timeoutRecord, fields) }, record: timeoutRecord,
@@ -212,7 +212,7 @@ const transportGateway = refund.createFlowRefundGateway_({
     return transportResponse({}, 404);
   },
 });
-transportGateway.create({ reservationId: 'fran-nonprod-20260821-reservation-transport', receiverEmail: 'qa+nonprod@example.test', amount: '1',
+transportGateway.create({ reservationId: 'fran-nonprod-20260821-reservation-transport', receiverEmail: 'qa+nonprod@example.test', amount: '500',
   urlCallBack: 'https://preview-example.pages.dev/api/refund-confirmation', commerceTrxId: 'commerce-opaque' });
 transportGateway.getStatus('provider-create');
 transportGateway.cancel('provider-create');
@@ -223,7 +223,7 @@ check(refundTransportCalls[0].options.method === 'post' && refundTransportCalls[
 check(statusCall.options.method === 'get' && !Object.hasOwn(statusCall.options, 'payload') && !Object.hasOwn(statusCall.options, 'contentType'), 'refund getStatus is GET with no body');
 check(JSON.stringify([...statusCall.parsed.searchParams.keys()].sort()) === JSON.stringify(['apiKey', 's', 'token'])
   && statusCall.parsed.searchParams.get('token') === 'provider-create', 'refund getStatus signs only apiKey, token and s');
-assert.throws(() => transportGateway.create({ reservationId: 'fran-nonprod-20260821-reservation-invalid-callback', receiverEmail: 'qa+nonprod@example.test', amount: '1',
+assert.throws(() => transportGateway.create({ reservationId: 'fran-nonprod-20260821-reservation-invalid-callback', receiverEmail: 'qa+nonprod@example.test', amount: '500',
   urlCallBack: 'https://example.invalid/callback', commerceTrxId: 'commerce-opaque' }), /REFUND_REQUEST_INVALID/);
 providerContractAssertions += 4;
 

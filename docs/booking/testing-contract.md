@@ -41,7 +41,7 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 14. Linkage privado sin PII y Worker management response sin PII.
 15. Outbox worker: batch acotado, allowlist, CTA matrix, rotación, max attempts, lock, installer/removal idempotente sin crear triggers reales.
 16. Pre-transaction: runtime Meet request, preservación de conferencia en reschedule, validación server-side de slot, FreeBusy bajo lock, `SLOT_TAKEN` sin fila ni Flow.
-17. Flow create: commerceOrder ≤45, signature/form contract, safe failure classes, hold release, idempotent replay, operator abandon.
+17. Flow create: commerceOrder defensive bound, amount=500 (≥ Flow FAQ minimum >350), signature/form contract, safe failure classes, hold release, idempotent replay, operator abandon.
 18. High-level lifecycle harness: create → confirm → Meet/outbox → reschedule → clinician move → cancel → refund → notification retry.
 
 ## Worker y artefacto

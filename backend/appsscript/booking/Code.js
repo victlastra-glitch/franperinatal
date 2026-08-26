@@ -10,6 +10,11 @@ const NONPROD = Object.freeze({
   backendVersion: 'nonprod-hardened-20260822', statusTokenTtlMs: 7200000,
 });
 
+// Synthetic NONPROD Sandbox amount only. Production clinical prices remain
+// unchanged (initial 65000 / followup 60000) and are not used here.
+// Flow Chile FAQ: payable amount must be greater than 350 CLP.
+var NONPROD_FLOW_TEST_AMOUNT_CLP = 500;
+
 const BASE_PROPERTY_KEYS = Object.freeze([
   'APP_ENV', 'FLOW_API_KEY', 'FLOW_SECRET_KEY', 'FLOW_BASE_URL', 'FLOW_RETURN_URL',
   'FLOW_CONFIRMATION_URL', 'BOOKING_STORE_ID', 'CALENDAR_ID', 'INTERNAL_NOTIFICATION_EMAIL',
@@ -311,7 +316,7 @@ function createSandboxFlowPayment_(config, payload, reservation) {
     commerceOrder: commerceOrder,
     subject: 'NONPROD booking',
     currency: 'CLP',
-    amount: '1',
+    amount: String(NONPROD_FLOW_TEST_AMOUNT_CLP),
     email: payload.email,
     urlConfirmation: config.flowConfirmationUrl,
     urlReturn: config.flowReturnUrl + '?st=' + encodeURIComponent(publicStatusToken),
@@ -540,7 +545,7 @@ function paymentStatus_(e) {
   const config = readConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const token = String((e && e.parameter && e.parameter.st) || '').trim();
   if (!validStatusToken_(token)) fail_('STATUS_TOKEN_REJECTED'); const record = findBy_(resources.sheet, schema, 'status_token_hash', statusTokenHash_(token, config.statusTokenSecret));
   if (!record || !record.status_token_expires_at || Date.parse(record.status_token_expires_at) < Date.now()) fail_('STATUS_TOKEN_REJECTED');
-  return { ok: true, status: publicStatus_(record), amount: 1, currency: 'CLP', serviceType: record.service_type, modality: record.modality, backendVersion: NONPROD.backendVersion };
+  return { ok: true, status: publicStatus_(record), amount: NONPROD_FLOW_TEST_AMOUNT_CLP, currency: 'CLP', serviceType: record.service_type, modality: record.modality, backendVersion: NONPROD.backendVersion };
 }
 function validStatusToken_(value) { return new RegExp('^' + NONPROD.idempotencyNamespace + '-st-[0-9a-f]{32}$', 'i').test(value); }
 function publicStatus_(record) {
@@ -1028,6 +1033,10 @@ function removeNonprodNotificationRetryTrigger_() {
   return { ok: true, handler: handler, removed: removed };
 }
 
+function nonprodRefundAmountClp_() {
+  return String(NONPROD_FLOW_TEST_AMOUNT_CLP);
+}
+
 var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   createFlowPayment_: createFlowPayment_,
   createSandboxFlowPayment_: createSandboxFlowPayment_,
@@ -1040,6 +1049,9 @@ var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   safeFlowFailureClass_: safeFlowFailureClass_,
   existingBookingResult_: existingBookingResult_,
   FLOW_COMMERCE_ORDER_MAX_LENGTH: FLOW_COMMERCE_ORDER_MAX_LENGTH,
+  NONPROD_FLOW_TEST_AMOUNT_CLP: NONPROD_FLOW_TEST_AMOUNT_CLP,
+  nonprodRefundAmountClp_: nonprodRefundAmountClp_,
+  paymentStatus_: paymentStatus_,
 });
 
 var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({

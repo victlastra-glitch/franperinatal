@@ -228,7 +228,7 @@ const gateway = refund.createFlowRefundGateway_({
   fetch: () => ({ getResponseCode: () => 200, getContentText: () => JSON.stringify({ token: 'refund-token-opaque', status: 'pending' }) }),
 });
 const refunded = refund.refundCreateOnce_({
-  store, record: record(), gateway, receiverEmail: allowlisted, amount: '1',
+  store, record: record(), gateway, receiverEmail: allowlisted, amount: String(context.NONPROD_FLOW_TEST_AMOUNT_CLP || 500),
   urlCallBack: propertyValues.FLOW_REFUND_CALLBACK_URL, commerceTrxId: record().commerce_order,
 });
 check(refunded.ok && record().refund_status === 'refund_pending', 'refund transitions independently of capacity');
