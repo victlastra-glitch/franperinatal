@@ -88,7 +88,7 @@ const check = (condition, message) => { assert.ok(condition, message); assertion
 const payload = {
   idempotencyKey: 'fran-nonprod-20260821-123e4567-e89b-12d3-a456-426614174000',
   serviceType: 'initial', modality: 'online', date: '2026-08-27', time: '10:00',
-  name: 'Synthetic Patient', email: 'qa+nonprod@example.test', phone: '999999999', patientRut: '11.111.111-1', reason: 'synthetic', message: '',
+  name: 'Synthetic Patient', email: 'qa+nonprod@example.test', phone: '', patientRut: '', reason: '', message: '',
 };
 
 assert.throws(() => context.assertBookableSlot_('2026-08-30', '10:00', fixedNow), /REQUEST_REJECTED/); assertions += 1;

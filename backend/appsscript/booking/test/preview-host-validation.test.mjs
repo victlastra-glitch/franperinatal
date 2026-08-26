@@ -57,6 +57,15 @@ check(context.readConfig_().flowConfirmationUrl === previewOrigin + '/api/flow-c
 check(context.readRefundConfig_().refundCallbackUrl === previewOrigin + '/api/refund-confirmation',
   'FLOW_REFUND_CALLBACK_URL accepts the branch alias');
 
+// Refund gateway callback validator must accept the same branch Preview origin.
+const refundSource = await readFile(new URL('../RefundGateway.js', import.meta.url), 'utf8');
+vm.runInContext(refundSource, context);
+check(context.__REFUND_TEST_EXPORTS__.validRefundCallbackUrl_(previewOrigin + '/api/refund-confirmation'),
+  'refund gateway accepts branch Preview callback URL');
+check(!context.__REFUND_TEST_EXPORTS__.validRefundCallbackUrl_('https://example.com/api/refund-confirmation'),
+  'refund gateway rejects non-Preview callback URL');
+
+
 // 6. The derived origin preserves every valid DNS label.
 check(context.previewOriginFromConfig_({ flowReturnUrl: previewOrigin + '/pago-resultado' }) === previewOrigin,
   'previewOriginFromConfig_ returns the full branch.project.pages.dev origin');

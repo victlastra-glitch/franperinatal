@@ -203,6 +203,10 @@ const paymentIdempotencyKey = 'fran-nonprod-20260821-123e4567-e89b-42d3-a456-426
 check(api.validIdempotencyKey_(paymentIdempotencyKey), 'existing payment idempotency key remains valid');
 check(!api.validIdempotencyKey_('other-namespace-123e4567-e89b-42d3-a456-426614174000'), 'foreign idempotency namespace rejected');
 check(api.makeOpaqueId_('order', paymentIdempotencyKey) === api.makeOpaqueId_('order', paymentIdempotencyKey), 'payment order id remains deterministic for replay');
+const flowCommerceOrder = api.makeFlowCommerceOrder_(paymentIdempotencyKey);
+check(flowCommerceOrder === api.makeFlowCommerceOrder_(paymentIdempotencyKey)
+  && flowCommerceOrder.length <= api.FLOW_COMMERCE_ORDER_MAX_LENGTH
+  && /^npo-[0-9a-f]{40}$/i.test(flowCommerceOrder), 'Flow commerceOrder is deterministic and bounded to 45 chars');
 const calendarLinkKey = api.makeCalendarLinkKey_(paymentIdempotencyKey);
 check(calendarLinkKey.startsWith('fran-nonprod-20260821-calendar-link-') && !calendarLinkKey.includes('123e4567'), 'Calendar link identifier is opaque');
 

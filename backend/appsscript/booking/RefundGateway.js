@@ -29,7 +29,13 @@ function refundForm_(params) {
 }
 
 function validRefundCallbackUrl_(value) {
-  return /^https:\/\/[a-z0-9-]+\.pages\.dev\/api\/refund-confirmation$/i.test(String(value || ''));
+  // Prefer the shared Preview host matcher so branch aliases
+  // (label.project.pages.dev) are accepted consistently with readRefundConfig_.
+  if (typeof previewPagesUrlMatch_ === 'function') {
+    const match = previewPagesUrlMatch_(value);
+    return Boolean(match && match[2] === '/api/refund-confirmation');
+  }
+  return /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+pages\.dev\/api\/refund-confirmation$/i.test(String(value || ''));
 }
 
 function createFlowRefundGateway_(options) {
@@ -127,6 +133,7 @@ function refundCallbackOnce_(input) {
 
 var __REFUND_TEST_EXPORTS__ = Object.freeze({
   deterministicRefundCommerceOrder_: deterministicRefundCommerceOrder_, refundSign_: refundSign_, refundForm_: refundForm_,
+  validRefundCallbackUrl_: validRefundCallbackUrl_,
   createFlowRefundGateway_: createFlowRefundGateway_, refundStatusFromProvider_: refundStatusFromProvider_,
   refundCreateOnce_: refundCreateOnce_, refundCallbackOnce_: refundCallbackOnce_,
 });

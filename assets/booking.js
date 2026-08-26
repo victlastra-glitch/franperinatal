@@ -515,7 +515,7 @@
     const payload = {
       idempotencyKey: bookingIdempotencyKey(),
       serviceType: serviceType,
-      modality:    state.modality && state.modality.label ? state.modality.label : '',
+      modality:    state.modality && state.modality.value ? state.modality.value : '',
       date:        fechaISO,
       time:        horaISO,
       name:        state.form.name,

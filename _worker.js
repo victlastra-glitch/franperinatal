@@ -103,7 +103,8 @@ function validCreatePayload(value) {
     payload[key] = field;
   }
   if (!/^fran-nonprod-20260821-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.idempotencyKey)
-      || !/^(initial|followup)$/.test(payload.serviceType) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)
+      || !/^(initial|followup)$/.test(payload.serviceType) || !/^(online|presencial)$/.test(payload.modality)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)
       || !/^\d{2}:\d{2}$/.test(payload.time) || !payload.name || payload.name.length > 80
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) return null;
   return payload;

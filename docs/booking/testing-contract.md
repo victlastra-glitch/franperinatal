@@ -3,7 +3,7 @@
 ## Tests locales no-network
 
 node backend/appsscript/booking/test/phase-a.test.mjs
-NO_NETWORK_TESTS=PASS count=108
+NO_NETWORK_TESTS=PASS count=109
 
 node backend/appsscript/booking/test/lifecycle.test.mjs
 ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=51
@@ -14,6 +14,12 @@ OUTBOX_TRIGGER_TESTS=PASS assertions=35
 
 node backend/appsscript/booking/test/pre-transaction-contract.test.mjs
 PRE_TRANSACTION_CONTRACT_TESTS=PASS
+
+node backend/appsscript/booking/test/flow-contract.test.mjs
+FLOW_CONTRACT_TESTS=PASS
+
+node backend/appsscript/booking/test/lifecycle-harness.test.mjs
+LIFECYCLE_HARNESS_TESTS=PASS
 
 El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y RefundGateway.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, ScriptApp, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
 
@@ -35,6 +41,8 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 14. Linkage privado sin PII y Worker management response sin PII.
 15. Outbox worker: batch acotado, allowlist, CTA matrix, rotación, max attempts, lock, installer/removal idempotente sin crear triggers reales.
 16. Pre-transaction: runtime Meet request, preservación de conferencia en reschedule, validación server-side de slot, FreeBusy bajo lock, `SLOT_TAKEN` sin fila ni Flow.
+17. Flow create: commerceOrder ≤45, signature/form contract, safe failure classes, hold release, idempotent replay, operator abandon.
+18. High-level lifecycle harness: create → confirm → Meet/outbox → reschedule → clinician move → cancel → refund → notification retry.
 
 ## Worker y artefacto
 

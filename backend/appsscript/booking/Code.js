@@ -102,7 +102,7 @@ function doPost(e) {
 }
 
 function fail_(code) { const error = new Error(code); error.code = code; throw error; }
-function safeCode_(error) { const code = String(error && error.code || 'REQUEST_REJECTED'); return /^[A-Z_]{3,64}$/.test(code) ? code : 'REQUEST_REJECTED'; }
+function safeCode_(error) { const code = String(error && error.code || 'REQUEST_REJECTED'); return /^[A-Z_][A-Z0-9_]{2,63}$/.test(code) ? code : 'REQUEST_REJECTED'; }
 function getAction_(e) { return String((e && e.parameter && e.parameter.action) || '').trim(); }
 function json_(payload) { return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON); }
 
@@ -218,15 +218,14 @@ function createFlowPayment_(e) {
     if (!reservation.ok) return reservation; // SLOT_TAKEN: never contact Flow.
     let flow;
     try { flow = createSandboxFlowPayment_(config, payload, reservation); }
-    catch (_) {
-      transitionPayment_(resources.sheet, schema, reservation, LIFECYCLE.PAYMENT_STATUS.FAILED);
-      transitionBooking_(resources.sheet, schema, reservation, LIFECYCLE.BOOKING_STATUS.MANUAL_REVIEW);
+    catch (error) {
+      persistFailedFlowCreate_(resources.sheet, schema, reservation, error);
       return { ok: false, code: 'FLOW_CREATE_FAILED' };
     }
     updateRecord_(resources.sheet, schema, reservation.rowNumber, { payment_url: flow.paymentUrl, flow_token: flow.token,
       commerce_order: flow.commerceOrder, status_token_hash: statusTokenHash_(flow.publicStatusToken, config.statusTokenSecret),
       status_token_expires_at: new Date(Date.now() + NONPROD.statusTokenTtlMs).toISOString(),
-      payment_status: LIFECYCLE.PAYMENT_STATUS.PENDING });
+      payment_status: LIFECYCLE.PAYMENT_STATUS.PENDING, reconciliation_state: '' });
     transitionBooking_(resources.sheet, schema, reservation, LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING);
     return { ok: true, paymentUrl: flow.paymentUrl, publicStatusToken: flow.publicStatusToken };
   } finally { lock.releaseLock(); }
@@ -240,9 +239,10 @@ function parseCreatePayload_(e) {
   if (candidate.action !== 'create_flow_payment') fail_('REQUEST_REJECTED');
   const payload = {}; CREATE_FLOW_FIELDS.forEach(function(key) { payload[key] = String(candidate[key] || '').trim(); });
   if (!validIdempotencyKey_(payload.idempotencyKey)) fail_('IDEMPOTENCY_KEY_REJECTED');
-  if (!/^(initial|followup)$/.test(payload.serviceType) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date) || !/^\d{2}:\d{2}$/.test(payload.time)) fail_('REQUEST_REJECTED');
+  if (!/^(initial|followup)$/.test(payload.serviceType) || !/^(online|presencial)$/.test(payload.modality)
+    || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date) || !/^\d{2}:\d{2}$/.test(payload.time)) fail_('REQUEST_REJECTED');
   if (!payload.name || payload.name.length > 80 || !payload.email || payload.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) fail_('REQUEST_REJECTED');
-  ['modality', 'phone', 'patientRut', 'reason', 'message'].forEach(function(key) { if (payload[key].length > 500) fail_('REQUEST_REJECTED'); });
+  ['phone', 'patientRut', 'reason', 'message'].forEach(function(key) { if (payload[key].length > 500) fail_('REQUEST_REJECTED'); });
   return payload;
 }
 function validIdempotencyKey_(value) { return new RegExp('^' + NONPROD.idempotencyNamespace + '-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'i').test(String(value || '')); }
@@ -291,29 +291,153 @@ function existingBookingResult_(record) {
   return { ok: false, code: 'BOOKING_NOT_RETRYABLE' };
 }
 
+// Flow Sandbox commerceOrder must stay short. The previous namespaced
+// makeOpaqueId_('order') form was 52 chars and exceeded the practical
+// provider limit observed across Flow client integrations (45).
+var FLOW_COMMERCE_ORDER_MAX_LENGTH = 45;
+function makeFlowCommerceOrder_(idempotencyKey) {
+  if (!validIdempotencyKey_(idempotencyKey)) fail_('IDEMPOTENCY_KEY_REJECTED');
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, 'order:' + String(idempotencyKey), Utilities.Charset.UTF_8)
+    .map(function(byte) { return ('0' + (byte & 0xff).toString(16)).slice(-2); }).join('');
+  const order = 'npo-' + digest.slice(0, 40);
+  if (order.length > FLOW_COMMERCE_ORDER_MAX_LENGTH) fail_('FLOW_ORDER_INVALID');
+  return order;
+}
+
 function createSandboxFlowPayment_(config, payload, reservation) {
-  const commerceOrder = makeOpaqueId_('order', payload.idempotencyKey); const publicStatusToken = makeStatusToken_(payload.idempotencyKey, config.statusTokenSecret);
-  const data = flowRequest_(config, '/payment/create', { commerceOrder: commerceOrder, subject: 'NONPROD booking', currency: 'CLP', amount: 1,
-    email: payload.email, urlConfirmation: config.flowConfirmationUrl, urlReturn: config.flowReturnUrl + '?st=' + encodeURIComponent(publicStatusToken),
-    optional: JSON.stringify({ environment: NONPROD.appEnv, reservation: reservation.reservation_id }) }, 'post');
-  if (!data || !String(data.token || '') || !/^https:\/\/sandbox\.flow\.cl\//.test(String(data.url || ''))) fail_('FLOW_CREATE_FAILED');
-  return { token: String(data.token), commerceOrder: commerceOrder, publicStatusToken: publicStatusToken, paymentUrl: String(data.url) + '?token=' + encodeURIComponent(String(data.token)) };
+  const commerceOrder = makeFlowCommerceOrder_(payload.idempotencyKey);
+  const publicStatusToken = makeStatusToken_(payload.idempotencyKey, config.statusTokenSecret);
+  const data = flowRequest_(config, '/payment/create', {
+    commerceOrder: commerceOrder,
+    subject: 'NONPROD booking',
+    currency: 'CLP',
+    amount: '1',
+    email: payload.email,
+    urlConfirmation: config.flowConfirmationUrl,
+    urlReturn: config.flowReturnUrl + '?st=' + encodeURIComponent(publicStatusToken),
+  }, 'post');
+  if (!data || !String(data.token || '') || !/^https:\/\/sandbox\.flow\.cl\//.test(String(data.url || ''))) {
+    failFlow_('FLOW_RESPONSE_SHAPE', { statusClass: '2xx' });
+  }
+  return {
+    token: String(data.token),
+    commerceOrder: commerceOrder,
+    publicStatusToken: publicStatusToken,
+    paymentUrl: String(data.url) + '?token=' + encodeURIComponent(String(data.token)),
+  };
 }
 function makeOpaqueId_(kind, idempotencyKey) { const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, kind + ':' + idempotencyKey, Utilities.Charset.UTF_8).map(function(byte) { return ('0' + (byte & 0xff).toString(16)).slice(-2); }).join(''); return NONPROD.idempotencyNamespace + '-' + kind + '-' + digest.slice(0, 24); }
 function makeStatusToken_(idempotencyKey, secret) { return NONPROD.idempotencyNamespace + '-st-' + statusTokenHash_(idempotencyKey, secret).slice(0, 32); }
 function statusTokenHash_(token, secret) { return Utilities.computeHmacSha256Signature(String(token), String(secret)).map(function(byte) { return ('0' + ((byte < 0 ? byte + 256 : byte).toString(16))).slice(-2); }).join(''); }
 
+function failFlow_(code, meta) {
+  const error = new Error(code || 'FLOW_CREATE_FAILED');
+  error.code = code || 'FLOW_CREATE_FAILED';
+  if (meta && meta.statusClass) error.statusClass = String(meta.statusClass);
+  if (meta && meta.providerCode) error.providerCode = String(meta.providerCode).slice(0, 32);
+  throw error;
+}
+
+function safeFlowFailureClass_(error) {
+  const code = safeCode_(error);
+  if (code === 'FLOW_PROVIDER_REJECTED' || code === 'FLOW_PROVIDER_UNAVAILABLE' || code === 'FLOW_NETWORK'
+    || code === 'FLOW_BAD_RESPONSE' || code === 'FLOW_RESPONSE_SHAPE' || code === 'FLOW_ORDER_INVALID'
+    || code === 'FLOW_VERIFICATION_FAILED' || code === 'CONFIGURATION_INCOMPLETE') return code;
+  return 'FLOW_CREATE_FAILED';
+}
+
+function safeFlowProviderCode_(error) {
+  const value = String(error && error.providerCode || '');
+  return /^[A-Za-z0-9_.-]{1,32}$/.test(value) ? value : '';
+}
+
+function persistFailedFlowCreate_(sheet, schema, reservation, error) {
+  const classification = safeFlowFailureClass_(error);
+  const providerCode = safeFlowProviderCode_(error);
+  const updates = {
+    payment_status: LIFECYCLE.PAYMENT_STATUS.FAILED,
+    booking_status: LIFECYCLE.BOOKING_STATUS.MANUAL_REVIEW,
+    schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
+    reconciliation_state: 'flow_create_' + classification.toLowerCase(),
+    refund_last_error_code: providerCode ? ('flow_' + providerCode) : classification,
+  };
+  updateRecord_(sheet, schema, reservation.rowNumber, updates);
+  Object.assign(reservation, updates);
+}
+
+// Operator-safe NONPROD cleanup for failed checkout rows. Never deletes.
+// Requires payment_failed + manual_review and does not call Flow/Calendar/email.
+function abandonFailedNonprodCheckout_(reservationId) {
+  const config = readConfig_();
+  const resources = assertResources_(config);
+  const schema = assertSchema_(resources.sheet);
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) fail_('LOCK_UNAVAILABLE');
+  try {
+    const record = findBy_(resources.sheet, schema, 'reservation_id', String(reservationId || ''));
+    if (!record) fail_('REQUEST_REJECTED');
+    if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.FAILED
+      || record.booking_status !== LIFECYCLE.BOOKING_STATUS.MANUAL_REVIEW) {
+      fail_('BOOKING_NOT_RETRYABLE');
+    }
+    if (record.payment_status === LIFECYCLE.PAYMENT_STATUS.PAID
+      || record.booking_status === LIFECYCLE.BOOKING_STATUS.CONFIRMED) fail_('BOOKING_NOT_RETRYABLE');
+    updateRecord_(resources.sheet, schema, record.rowNumber, {
+      booking_status: LIFECYCLE.BOOKING_STATUS.CANCELLED,
+      schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
+      reconciliation_state: 'flow_create_abandoned',
+      cancellation_source: 'operator_nonprod',
+      cancelled_at: new Date().toISOString(),
+    });
+    return { ok: true, reservationId: record.reservation_id, status: 'abandoned' };
+  } finally { lock.releaseLock(); }
+}
+
 function flowRequest_(config, endpoint, params, method) {
   if (config.flowBaseUrl !== NONPROD.flowBaseUrl || getHttpsHost_(config.flowBaseUrl) !== NONPROD.flowHost) fail_('CONFIGURATION_INCOMPLETE');
   if (['/payment/create', '/payment/getStatus'].indexOf(endpoint) === -1 || ['get', 'post'].indexOf(method) === -1) fail_('REQUEST_REJECTED');
-  const signed = {}; Object.keys(params).forEach(function(key) { signed[key] = params[key]; }); signed.apiKey = config.flowApiKey; signed.s = signFlowParams_(signed, config.flowSecretKey);
-  const encoded = Object.keys(signed).map(function(key) { return encodeURIComponent(key) + '=' + encodeURIComponent(signed[key]); }).join('&');
-  const options = { method: method, muteHttpExceptions: true }; let url = config.flowBaseUrl + endpoint;
-  if (method === 'get') url += '?' + encoded; else { options.contentType = 'application/x-www-form-urlencoded'; options.payload = encoded; }
-  const response = UrlFetchApp.fetch(url, options); if (response.getResponseCode() < 200 || response.getResponseCode() >= 300) fail_('FLOW_VERIFICATION_FAILED');
-  try { return JSON.parse(response.getContentText()); } catch (_) { fail_('FLOW_VERIFICATION_FAILED'); }
+  const signed = {};
+  Object.keys(params || {}).forEach(function(key) {
+    if (params[key] === null || params[key] === undefined) return;
+    signed[key] = String(params[key]);
+  });
+  signed.apiKey = String(config.flowApiKey);
+  signed.s = signFlowParams_(signed, config.flowSecretKey);
+  const encoded = Object.keys(signed).sort().map(function(key) {
+    return encodeURIComponent(key) + '=' + encodeURIComponent(signed[key]);
+  }).join('&');
+  const options = { method: method, muteHttpExceptions: true };
+  let url = config.flowBaseUrl + endpoint;
+  if (method === 'get') url += '?' + encoded;
+  else { options.contentType = 'application/x-www-form-urlencoded'; options.payload = encoded; }
+  let response;
+  try { response = UrlFetchApp.fetch(url, options); }
+  catch (_) { failFlow_('FLOW_NETWORK', { statusClass: 'network' }); }
+  const status = response.getResponseCode();
+  const statusClass = status >= 500 ? '5xx' : (status >= 400 ? '4xx' : (status >= 200 && status < 300 ? '2xx' : 'other'));
+  let bodyText = '';
+  try { bodyText = String(response.getContentText() || ''); } catch (_) { bodyText = ''; }
+  let data = null;
+  if (bodyText) {
+    try { data = JSON.parse(bodyText); } catch (_) { data = null; }
+  }
+  if (status < 200 || status >= 300) {
+    const providerCode = data && (data.code != null || data.errorCode != null)
+      ? String(data.code != null ? data.code : data.errorCode) : '';
+    failFlow_(statusClass === '4xx' ? 'FLOW_PROVIDER_REJECTED' : (statusClass === '5xx' ? 'FLOW_PROVIDER_UNAVAILABLE' : 'FLOW_VERIFICATION_FAILED'),
+      { statusClass: statusClass, providerCode: providerCode });
+  }
+  if (!data || typeof data !== 'object') failFlow_('FLOW_BAD_RESPONSE', { statusClass: statusClass });
+  return data;
 }
-function signFlowParams_(params, secretKey) { const toSign = Object.keys(params).sort().reduce(function(value, key) { return params[key] === null || params[key] === undefined ? value : value + key + params[key]; }, ''); return Utilities.computeHmacSha256Signature(toSign, secretKey).map(function(byte) { return ('0' + ((byte < 0 ? byte + 256 : byte).toString(16))).slice(-2); }).join(''); }
+function signFlowParams_(params, secretKey) {
+  const toSign = Object.keys(params).sort().reduce(function(value, key) {
+    return params[key] === null || params[key] === undefined ? value : value + key + String(params[key]);
+  }, '');
+  return Utilities.computeHmacSha256Signature(toSign, secretKey).map(function(byte) {
+    return ('0' + ((byte < 0 ? byte + 256 : byte).toString(16))).slice(-2);
+  }).join('');
+}
 
 function flowConfirmation_(e) {
   const config = readConfig_(); const callbackToken = parseCallbackToken_(e); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet); const lock = LockService.getScriptLock();
@@ -344,7 +468,7 @@ function flowConfirmation_(e) {
 }
 function parseCallbackToken_(e) { const direct = String((e && e.parameter && e.parameter.token) || '').trim(); const raw = String((e && e.postData && e.postData.contents) || ''); if (raw.length > 1024) fail_('REQUEST_REJECTED'); const parsed = raw ? parseForm_(raw) : {}; const token = direct || String(parsed.token || '').trim(); if (!/^[A-Za-z0-9_-]{16,256}$/.test(token)) fail_('REQUEST_REJECTED'); return token; }
 function parseForm_(raw) { return raw.split('&').reduce(function(result, part) { const pieces = part.split('='); if (pieces.length !== 2 || !pieces[0]) fail_('REQUEST_REJECTED'); const key = decodeURIComponent(pieces[0].replace(/\+/g, ' ')); if (key !== 'token' || Object.prototype.hasOwnProperty.call(result, key)) fail_('REQUEST_REJECTED'); result[key] = decodeURIComponent(pieces[1].replace(/\+/g, ' ')); return result; }, {}); }
-function validCommerceOrder_(value) { return new RegExp('^' + NONPROD.idempotencyNamespace + '-order-[0-9a-f]{24}$', 'i').test(value); }
+function validCommerceOrder_(value) { return /^npo-[0-9a-f]{40}$/i.test(String(value || '')); }
 function stateForFlowStatus_(value) { const status = Number(value); if (status === 2) return LIFECYCLE.PAYMENT_STATUS.PAID; if (status === 1) return LIFECYCLE.PAYMENT_STATUS.PENDING; if (status === 3 || status === 4) return LIFECYCLE.PAYMENT_STATUS.REJECTED; return LIFECYCLE.PAYMENT_STATUS.FAILED; }
 
 function applyConfirmedSideEffects_(resources, schema, config, record) {
@@ -904,6 +1028,20 @@ function removeNonprodNotificationRetryTrigger_() {
   return { ok: true, handler: handler, removed: removed };
 }
 
+var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
+  createFlowPayment_: createFlowPayment_,
+  createSandboxFlowPayment_: createSandboxFlowPayment_,
+  flowRequest_: flowRequest_,
+  signFlowParams_: signFlowParams_,
+  makeFlowCommerceOrder_: makeFlowCommerceOrder_,
+  validCommerceOrder_: validCommerceOrder_,
+  persistFailedFlowCreate_: persistFailedFlowCreate_,
+  abandonFailedNonprodCheckout_: abandonFailedNonprodCheckout_,
+  safeFlowFailureClass_: safeFlowFailureClass_,
+  existingBookingResult_: existingBookingResult_,
+  FLOW_COMMERCE_ORDER_MAX_LENGTH: FLOW_COMMERCE_ORDER_MAX_LENGTH,
+});
+
 var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   processLifecycleNotificationOutbox_: processLifecycleNotificationOutbox_,
   processOneLifecycleNotificationOutbox_: processOneLifecycleNotificationOutbox_,
@@ -924,4 +1062,5 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   assertTestRecipient_: assertTestRecipient_,
   isTestRecipient_: isTestRecipient_,
   enqueueLifecycleNotification_: enqueueLifecycleNotification_,
+  abandonFailedNonprodCheckout_: abandonFailedNonprodCheckout_,
 });

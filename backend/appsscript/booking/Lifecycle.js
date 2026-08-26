@@ -595,5 +595,6 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   transitionBooking_: transitionBooking_,
   transitionPayment_: transitionPayment_, transitionRefund_: transitionRefund_, transitionSchedule_: transitionSchedule_,
   validIdempotencyKey_: validIdempotencyKey_, makeOpaqueId_: makeOpaqueId_,
+  makeFlowCommerceOrder_: makeFlowCommerceOrder_, FLOW_COMMERCE_ORDER_MAX_LENGTH: FLOW_COMMERCE_ORDER_MAX_LENGTH,
   startAt_: startAt_,
 });
