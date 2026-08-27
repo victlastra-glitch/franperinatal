@@ -26,8 +26,11 @@ READY_FOR_NONPROD_ACTIVATION = NO: Meet persistence, Advanced Calendar activatio
 - Max attempts: `MAX_NOTIFICATION_ATTEMPTS = 5`; after that → `reconciliation_state=notification_max_attempts`
 - Batch: max 10 retryable outbox rows (`pending` / `failed` / `claimed`) per invocation
 - Durable sheet: `notification_outbox_nonprod` (append-only; booking 57 columns remain last-pointer audit)
+- Occurrence identity: `source_operation_id` (replay of the same source mutation, not same type + same snapshot_start_at)
 - Drain between mutations is not required for correctness
-- Capability rotation: each retry calls `retryLifecycleNotification_` under lock; prior bearer of that CTA type becomes invalid; raw bearer never persisted
+- Capability rotation: each retry calls `retryLifecycleNotification_` with `lockAlreadyHeld`; prior bearer of that CTA type becomes invalid; raw bearer never persisted
+- Lock ownership: `processLifecycleNotificationOutbox_` owns ScriptLock for the batch; nested helpers must not release it
+- Delivery semantics: MailApp crash window is AT_LEAST_ONCE; concurrent workers cannot independently duplicate send
 - Trigger handler: `processLifecycleNotificationOutbox_`
 - Installer: `installNonprodNotificationRetryTrigger_` (idempotent, `everyMinutes(5)`)
 - Removal: `removeNonprodNotificationRetryTrigger_`
@@ -79,7 +82,7 @@ Calendar Advanced Service queda declarado en appsscript.json, pero no ha sido ac
 - Calendar saga: fresh ETag compare, `If-Match`, HTTP 412 and explicit reconciliation; Calendar/Sheet are not treated as one atomic transaction.
 - Sync: all pages and event processing complete before cursor advance; unresolved outcomes retain the old cursor.
 - CTA retry: no new schema field; one active hash-at-rest per CTA/type/version is rotated under LockService, replacing the previous hash so the old bearer stops validating. Raw bearers are returned only to the immediate dispatcher and never written to outbox/logs.
-- Outbox worker: `processLifecycleNotificationOutbox_` processes a bounded retryable batch from `notification_outbox_nonprod` (max 10), reconstructs event type from the outbox row, applies process-time supersession, rotates CTAs when needed, delivers via `deliverLifecycleNotification_`, and stops after `MAX_NOTIFICATION_ATTEMPTS=5`. Same type + same snapshot is replay; a later event appends a new row. Installer `installNonprodNotificationRetryTrigger_` / `removeNonprodNotificationRetryTrigger_` prepare a 5-minute NONPROD time-driven trigger; not installed yet.
+- Outbox worker: `processLifecycleNotificationOutbox_` processes a bounded retryable batch from `notification_outbox_nonprod` (max 10), reconstructs event type from the outbox row, applies process-time supersession, rotates CTAs when needed, delivers via `deliverLifecycleNotification_`, and stops after `MAX_NOTIFICATION_ATTEMPTS=5`. Replay is `source_operation_id` of the source mutation; a later same-type occurrence with the same appointment time appends a new row. Inner rotation uses `lockAlreadyHeld`. MailApp delivery is at-least-once in the send-then-crash window. Installer `installNonprodNotificationRetryTrigger_` / `removeNonprodNotificationRetryTrigger_` prepare a 5-minute NONPROD time-driven trigger; not installed yet.
 - Partial failure: every cross-provider boundary returns an explicit reconciliation/manual-review code and an operation-bound snapshot; a retry must reconcile the recorded Calendar outcome before another destructive action.
 - Timezone: Chile slot labels use `America/Santiago` timezone-aware conversion across DST transitions; no permanent UTC-04 offset is assumed.
 - Final schema header count: 57; schema fields added: none.

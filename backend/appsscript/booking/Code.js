@@ -78,7 +78,7 @@ var NOTIFICATION_OUTBOX_HEADERS = Object.freeze([
   'attempt_count', 'created_at', 'last_attempt_at', 'last_result', 'disposition_reason',
   'snapshot_service_type', 'snapshot_modality', 'snapshot_start_at', 'snapshot_end_at',
   'snapshot_meet_url', 'snapshot_meet_status', 'snapshot_booking_status', 'snapshot_schedule_status',
-  'snapshot_patient_reschedule_count',
+  'snapshot_patient_reschedule_count', 'source_operation_id',
 ]);
 var NOTIFICATION_OUTBOX_RETRYABLE_STATES = Object.freeze(['pending', 'failed', 'claimed']);
 var NOTIFICATION_OUTBOX_TERMINAL_STATES = Object.freeze(['sent', 'superseded']);
@@ -756,7 +756,8 @@ function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTo
   const snapshot = notificationSnapshotFromRecord_(record);
   const store = outboxStore || notificationOutboxStoreFromSheet_(sheet);
   const existing = store.records();
-  const replay = findDurableNotificationReplay_(existing, record.reservation_id, type, snapshot.snapshot_start_at);
+  const sourceOperationId = notificationOccurrenceKey_(record, type);
+  const replay = findDurableNotificationReplay_(existing, record.reservation_id, type, sourceOperationId);
   if (replay) {
     syncBookingNotificationAudit_(sheet, schema, record, replay);
     const notification = makeLifecycleNotification_(type, Object.assign({}, record, {
@@ -786,6 +787,7 @@ function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTo
     last_attempt_at: '',
     last_result: type,
     disposition_reason: '',
+    source_operation_id: sourceOperationId,
   }, snapshot));
   const audit = {
     notification_outbox_key: notification.logicalKey,
@@ -1039,6 +1041,18 @@ function snapshotRenderRecord_(booking, entry) {
   });
 }
 
+function notificationAttemptFailureFields_(claimView, nowIso) {
+  const atMax = Number(claimView && claimView.attemptCount || 0) >= MAX_NOTIFICATION_ATTEMPTS;
+  const fields = {
+    state: claimView && claimView.state || 'failed',
+    attempt_count: String(claimView && claimView.attemptCount || 0),
+    last_attempt_at: nowIso,
+    last_result: atMax ? 'max_attempts' : 'failed',
+  };
+  if (atMax) fields.disposition_reason = 'max_attempts';
+  return fields;
+}
+
 function notificationWorkerResultSafe_(result) {
   return {
     ok: Boolean(result && result.ok),
@@ -1126,16 +1140,12 @@ function processOneLifecycleNotificationOutbox_(deps) {
       eventType: eventType,
       now: deps.now || Date.now(),
       lock: deps.lock,
+      lockAlreadyHeld: deps.lockAlreadyHeld === true,
       requireCapabilitySecret_: deps.requireCapabilitySecret_ || requireCapabilitySecret_,
     });
     if (!retry || !retry.ok) {
       completeNotificationOutbox_(claimView, { ok: false });
-      persist({
-        state: claimView.state,
-        attempt_count: String(claimView.attemptCount),
-        last_attempt_at: nowIso,
-        last_result: 'failed',
-      });
+      persist(notificationAttemptFailureFields_(claimView, nowIso));
       return { ok: false, code: (retry && retry.code) || 'NOTIFICATION_RETRY_FAILED', reservationId: reservationId,
         eventType: eventType, state: claimView.state, attemptCount: claimView.attemptCount };
     }
@@ -1143,12 +1153,7 @@ function processOneLifecycleNotificationOutbox_(deps) {
     capabilityTokens = retry.capabilityTokens || {};
   } catch (error) {
     completeNotificationOutbox_(claimView, { ok: false });
-    persist({
-      state: claimView.state,
-      attempt_count: String(claimView.attemptCount),
-      last_attempt_at: nowIso,
-      last_result: 'failed',
-    });
+    persist(notificationAttemptFailureFields_(claimView, nowIso));
     return { ok: false, code: safeCode_(error), reservationId: reservationId, eventType: eventType,
       state: claimView.state, attemptCount: claimView.attemptCount };
   }
@@ -1175,14 +1180,7 @@ function processOneLifecycleNotificationOutbox_(deps) {
     delivered = Boolean(delivery && delivery.ok);
   } catch (error) {
     completeNotificationOutbox_(claimView, { ok: false });
-    const failedFields = {
-      state: claimView.state,
-      attempt_count: String(claimView.attemptCount),
-      last_attempt_at: nowIso,
-      last_result: claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS ? 'max_attempts' : 'failed',
-    };
-    if (claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) failedFields.disposition_reason = 'max_attempts';
-    persist(failedFields);
+    persist(notificationAttemptFailureFields_(claimView, nowIso));
     return { ok: false, code: safeCode_(error) === 'REQUEST_REJECTED' ? 'NOTIFICATION_DELIVERY_FAILED' : safeCode_(error),
       reservationId: reservationId, eventType: eventType, state: claimView.state, attemptCount: claimView.attemptCount };
   }
@@ -1216,14 +1214,7 @@ function processOneLifecycleNotificationOutbox_(deps) {
       state: claimView.state, attemptCount: claimView.attemptCount };
   }
 
-  const failedFields = {
-    state: claimView.state,
-    attempt_count: String(claimView.attemptCount),
-    last_attempt_at: nowIso,
-    last_result: claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS ? 'max_attempts' : 'failed',
-  };
-  if (claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) failedFields.disposition_reason = 'max_attempts';
-  persist(failedFields);
+  persist(notificationAttemptFailureFields_(claimView, nowIso));
   return { ok: false, code: 'NOTIFICATION_DELIVERY_FAILED', reservationId: reservationId, eventType: eventType,
     state: claimView.state, attemptCount: claimView.attemptCount };
 }
@@ -1262,6 +1253,7 @@ function processLifecycleNotificationOutbox_(opt) {
           schema: schema,
           config: config,
           lock: lock,
+          lockAlreadyHeld: true,
           now: deps.now,
           deliver: deps.deliver,
           requireCapabilitySecret_: deps.requireCapabilitySecret_ || requireCapabilitySecret_,
@@ -1407,6 +1399,7 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   assertTestRecipient_: assertTestRecipient_,
   isTestRecipient_: isTestRecipient_,
   enqueueLifecycleNotification_: enqueueLifecycleNotification_,
+  notificationAttemptFailureFields_: notificationAttemptFailureFields_,
   abandonFailedNonprodCheckout_: abandonFailedNonprodCheckout_,
   formatPatientFacingDateTime_: formatPatientFacingDateTime_,
   patientFacingServiceLabel_: patientFacingServiceLabel_,

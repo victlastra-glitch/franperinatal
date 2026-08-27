@@ -54,8 +54,9 @@ const rejects = (fn, pattern, message) => { assert.throws(fn, pattern, message);
 // Schema: exact, unique and lifecycle-separated.
 check(api.HEADERS.length === 57, 'schema header count is exact');
 check(new Set(api.HEADERS).size === api.HEADERS.length, 'schema has no duplicate headers');
-check(Array.isArray(api.OUTBOX_HEADERS) && api.OUTBOX_HEADERS.length === 19
-  && new Set(api.OUTBOX_HEADERS).size === api.OUTBOX_HEADERS.length,
+check(Array.isArray(api.OUTBOX_HEADERS) && api.OUTBOX_HEADERS.length === 20
+  && new Set(api.OUTBOX_HEADERS).size === api.OUTBOX_HEADERS.length
+  && api.OUTBOX_HEADERS.includes('source_operation_id'),
   'durable outbox schema is exact and unique');
 check(!api.OUTBOX_HEADERS.some((header) => /email|token|rut|secret|bearer|phone|message/.test(header)),
   'outbox schema stores no recipient, token, RUT, or clinical text');
@@ -203,6 +204,82 @@ const firstOperation = api.applyOperationOnce_(operationStore, operationId, () =
 const replayOperation = api.applyOperationOnce_(operationStore, operationId, () => { operationRuns += 1; return { ok: false }; });
 check(firstOperation.ok && !firstOperation.replay && replayOperation.replay && operationRuns === 1, 'repeated operation id is replay-safe');
 check(!operationId.includes('synthetic-person-label') && !operationId.includes('synthetic-email'), 'operation id contains no PII');
+
+const confirmedRecord = {
+  reservation_id: 'fran-nonprod-20260821-reservation-occ',
+  idempotency_key: 'fran-nonprod-20260821-123e4567-e89b-42d3-a456-426614174000',
+  commerce_order: 'npo-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  current_start_at: '2026-08-25T16:00:00.000Z',
+};
+const confirmKey = api.notificationOccurrenceKey_(confirmedRecord, 'BOOKING_CONFIRMED');
+check(confirmKey === api.notificationOccurrenceKey_({ ...confirmedRecord, current_start_at: '2026-08-25T18:00:00.000Z' }, 'BOOKING_CONFIRMED'),
+  'BOOKING_CONFIRMED occurrence identity is payment-derived, not snapshot_start_at');
+check(confirmKey !== api.notificationOccurrenceKey_({ ...confirmedRecord, commerce_order: 'npo-bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' }, 'BOOKING_CONFIRMED'),
+  'a different payment identity is a different BOOKING_CONFIRMED occurrence');
+
+const timeB = '2026-08-25T16:00:00.000Z';
+const clinicianFirst = {
+  reservation_id: confirmedRecord.reservation_id,
+  current_start_at: timeB,
+  last_operation_id: api.makeOperationId_('clinician_reconcile_move', 'event-1:etag-1:2026-08-25T16:00:00.000Z'),
+};
+const clinicianMid = {
+  reservation_id: confirmedRecord.reservation_id,
+  current_start_at: '2026-08-25T17:00:00.000Z',
+  last_operation_id: api.makeOperationId_('clinician_reconcile_move', 'event-1:etag-2:2026-08-25T16:30:00.000Z'),
+};
+const clinicianBackToB = {
+  reservation_id: confirmedRecord.reservation_id,
+  current_start_at: timeB,
+  last_operation_id: api.makeOperationId_('clinician_reconcile_move', 'event-1:etag-3:2026-08-25T17:00:00.000Z'),
+};
+const firstOcc = api.notificationOccurrenceKey_(clinicianFirst, 'CLINICIAN_RESCHEDULED');
+const thirdOcc = api.notificationOccurrenceKey_(clinicianBackToB, 'CLINICIAN_RESCHEDULED');
+check(firstOcc !== thirdOcc && firstOcc !== api.notificationOccurrenceKey_(clinicianMid, 'CLINICIAN_RESCHEDULED'),
+  'CLINICIAN_RESCHEDULED back to the same snapshot_start_at is a new occurrence');
+check(firstOcc === api.notificationOccurrenceKey_(clinicianFirst, 'CLINICIAN_RESCHEDULED'),
+  'same clinician source mutation is a deterministic replay identity');
+const occEntries = [
+  { reservation_id: confirmedRecord.reservation_id, event_type: 'CLINICIAN_RESCHEDULED', source_operation_id: firstOcc, snapshot_start_at: timeB, state: 'sent' },
+];
+check(api.findDurableNotificationReplay_(occEntries, confirmedRecord.reservation_id, 'CLINICIAN_RESCHEDULED', firstOcc)
+  && !api.findDurableNotificationReplay_(occEntries, confirmedRecord.reservation_id, 'CLINICIAN_RESCHEDULED', thirdOcc),
+  'replay lookup is source_operation_id, not snapshot_start_at');
+check(!confirmKey.includes('synthetic-email') && !firstOcc.includes('@') && !firstOcc.includes(timeB),
+  'occurrence keys are non-PII and do not embed the appointment snapshot');
+
+const eventTypes = ['BOOKING_CONFIRMED', 'PATIENT_RESCHEDULED', 'CLINICIAN_RESCHEDULED', 'PATIENT_CANCELLED',
+  'CLINICIAN_CANCELLED', 'REFUND_REQUESTED', 'REFUND_COMPLETED', 'REFUND_FAILED_MANUAL_REVIEW'];
+for (const eventType of eventTypes) {
+  const opA = api.makeOperationId_(eventType === 'BOOKING_CONFIRMED' ? 'notification' : 'clinician_reconcile_move', eventType + ':op-a');
+  const opB = api.makeOperationId_(eventType === 'BOOKING_CONFIRMED' ? 'notification' : 'clinician_reconcile_move', eventType + ':op-b');
+  const base = {
+    reservation_id: confirmedRecord.reservation_id,
+    idempotency_key: confirmedRecord.idempotency_key,
+    commerce_order: confirmedRecord.commerce_order,
+    current_start_at: timeB,
+    calendar_event_id: 'event-1',
+    calendar_event_etag: 'etag-x',
+    calendar_event_updated_at: '2026-08-25T16:00:00.000Z',
+    refund_commerce_order: 'fran-nonprod-refund-aaaaaaaaaaaaaaaaaaaaaaaa',
+    refund_provider_reference: 'refund-ref-1',
+    last_operation_id: eventType === 'BOOKING_CONFIRMED' ? '' : opA,
+  };
+  const keyA = api.notificationOccurrenceKey_(base, eventType);
+  const replay = api.notificationOccurrenceKey_(base, eventType);
+  const other = api.notificationOccurrenceKey_({
+    ...base,
+    last_operation_id: eventType === 'BOOKING_CONFIRMED' ? '' : opB,
+    commerce_order: eventType === 'BOOKING_CONFIRMED' ? 'npo-cccccccccccccccccccccccccccccccccccccccc' : base.commerce_order,
+    calendar_event_etag: 'etag-y',
+    calendar_event_updated_at: '2026-08-25T17:00:00.000Z',
+    refund_provider_reference: 'refund-ref-2',
+    refund_commerce_order: 'fran-nonprod-refund-bbbbbbbbbbbbbbbbbbbbbbbb',
+    refund_last_error_code: 'PROVIDER_REFUND_FAILED',
+  }, eventType);
+  check(keyA === replay && keyA !== other && api.validOperationId_(keyA),
+    `${eventType} replay is one identity and a later same-type mutation is another`);
+}
 
 // Existing payment idempotency primitives remain deterministic and namespaced.
 const paymentIdempotencyKey = 'fran-nonprod-20260821-123e4567-e89b-42d3-a456-426614174000';

@@ -94,19 +94,29 @@ last-pointer audit, not the queue.
 
 ```
 NOTIFICATION_OUTBOX_STORAGE=notification_outbox_nonprod
-NOTIFICATION_EVENT_IDEMPOTENCY=logical_key + snapshot_start_at
+NOTIFICATION_OCCURRENCE_IDENTITY=source_operation_id
+REPLAY_IDENTITY=reservation_id + event_type + source_operation_id
+NOTIFICATION_EVENT_IDEMPOTENCY=source_operation_id (not snapshot_start_at)
 NOTIFICATION_ORDERING=created_at, then notification_version, then rowNumber
 NOTIFICATION_SNAPSHOT_POLICY=render time/service/Meet from enqueue snapshot; CTAs from live booking
 NOTIFICATION_SUPERSESSION_POLICY=process-time disposition, never overwrite
 NOTIFICATION_RETRY=pending|failed|claimed, max 5 per durable row
 NOTIFICATION_TERMINAL_DISPOSITION=sent|superseded
+LOCK_OWNERSHIP=outer worker owns ScriptLock; inner helpers use lockAlreadyHeld
+WORKER_CONCURRENCY=one successful claim/send per outbox row
+CRASH_WINDOW_DELIVERY_SEMANTICS=AT_LEAST_ONCE
+SHEET_BACKED_OUTBOX_TEST=PASS
 OUTBOX_DRAIN_REQUIRED_FOR_CORRECTNESS=NO
 SINGLE_SLOT_EVENT_LOSS_RISK=ELIMINATED
+SAME_TYPE_REPEAT_COLLISION=ELIMINATED
 ```
 
 - Worker reads **outbox rows only**. Booking `notification_*` fields are audit.
-- Same event type + same `snapshot_start_at` is a replay of one durable row.
-- Same event type + different snapshot supersedes the previous retryable row
+- Replay is the same lifecycle mutation / provider callback / reconciliation operation processed again.
+- Same event type + same `snapshot_start_at` is **not** sufficient to treat a later mutation as replay.
+- `CLINICIAN_RESCHEDULED` to time B, another clinician mutation, then back to B are three distinct occurrences.
+- Same source occurrence processed twice appends exactly one durable row.
+- Same event type + different source occurrence supersedes the previous retryable row
   (`later_same_type`) and appends a new identity.
 - A later different event type appends; it does not delete or overwrite a
   previous unsent row.
@@ -121,6 +131,11 @@ SINGLE_SLOT_EVENT_LOSS_RISK=ELIMINATED
   are reclaimed.
 - Outbox stores no email, tokens, RUT, clinical text, or secrets. Recipient
   is resolved from the booking row at send time.
+- Outer worker acquires ScriptLock once for the batch. `retryLifecycleNotification_`
+  receives `lockAlreadyHeld` and must not release a caller-owned lock.
+- MailApp has no provider idempotency primitive. If `sendEmail` succeeds and the
+  process dies before the outbox row is persisted `sent`, a later reclaim may
+  send again. That crash window is at-least-once, not exactly-once.
 
 Correctness does **not** depend on draining between mutations. Drain remains
 an E2E observation aid so each mail can be inspected one at a time.
@@ -315,6 +330,15 @@ P2=none
 P3=presencial patient-facing modality label left as stored `presencial`; no in-person positioning invented
 OUTBOX_DRAIN_REQUIRED_FOR_CORRECTNESS=NO
 SINGLE_SLOT_EVENT_LOSS_RISK=ELIMINATED
+SAME_TYPE_REPEAT_COLLISION=ELIMINATED
+SAME_OCCURRENCE_REPLAY=PASS
+LOCK_OWNERSHIP=PASS
+NESTED_LOCK_RELEASE_RISK=ELIMINATED
+CONCURRENT_WORKER_SEND_GUARD=PASS
+LOCK_TEST_FIDELITY=PASS
+SHEET_BACKED_OUTBOX_WORKER=PASS
+MAX_ATTEMPT_TERMINAL_MARKING=PASS
+CRASH_WINDOW_DELIVERY_SEMANTICS=AT_LEAST_ONCE
 ```
 
 ## READY_FOR_FINAL_RUNTIME_CLOSEOUT

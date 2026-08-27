@@ -51,15 +51,30 @@ const context = {
   GmailApp: { sendEmail: () => { throw new Error('GmailApp must not be called'); } },
   LockService: {
     getScriptLock: () => {
-      let depth = 0;
-      return {
+      const lock = {
+        held: false,
+        owner: 'script',
+        acquireCount: 0,
+        releaseCount: 0,
+        nestedTryLock: 0,
         tryLock: () => {
           if (lockRejectNext) { lockRejectNext = false; return false; }
-          depth += 1;
+          if (lock.held) {
+            lock.nestedTryLock += 1;
+            return true;
+          }
+          lock.held = true;
+          lock.acquireCount += 1;
           return true;
         },
-        releaseLock: () => { depth = Math.max(0, depth - 1); },
+        releaseLock: () => {
+          lock.releaseCount += 1;
+          lock.held = false;
+          lock.owner = null;
+        },
+        hasLock: () => lock.held,
       };
+      return lock;
     },
   },
   UrlFetchApp: { fetch: () => { networkCalls += 1; throw new Error('network must not be called'); } },
@@ -160,6 +175,11 @@ function durableFromRecord(record, extra = {}) {
     snapshot_patient_reschedule_count: String(extra.snapshot_patient_reschedule_count != null
       ? extra.snapshot_patient_reschedule_count
       : (record.patient_reschedule_count || '0')),
+    source_operation_id: extra.source_operation_id
+      || record.last_operation_id
+      || (eventType && phase.LIFECYCLE_NOTIFICATION_TYPE[eventType]
+        ? phase.notificationOccurrenceKey_(record, eventType)
+        : ''),
   };
 }
 
@@ -190,7 +210,7 @@ function runWorker(store, overrides = {}) {
     outboxStore,
     resources: { sheet: null },
     schema: { headers: phase.HEADERS, columns: Object.fromEntries(phase.HEADERS.map((h, i) => [h, i + 1])) },
-    requireCapabilitySecret_: () => secret,
+    requireCapabilitySecret_: overrides.requireCapabilitySecret_ || (() => secret),
     now: Date.parse('2026-08-23T12:10:00Z'),
     batchSize: overrides.batchSize,
     deliver: overrides.deliver,
@@ -426,15 +446,14 @@ worker.enqueueLifecycleNotification_(makeSheet(replayBooking), enqueueSchema, re
 const firstReplayKey = replayOutbox.records()[0].logical_key;
 worker.enqueueLifecycleNotification_(makeSheet(replayBooking), enqueueSchema, replayBooking, 'BOOKING_CONFIRMED', null, replayOutbox);
 check(replayOutbox.records().length === 1 && replayOutbox.records()[0].logical_key === firstReplayKey
-  && replayOutbox.records()[0].state === 'pending',
-  'same type + same snapshot enqueue is a durable replay, not a second row');
+  && replayOutbox.records()[0].state === 'pending'
+  && replayOutbox.records()[0].source_operation_id,
+  'same source occurrence enqueue is a durable replay, not a second row');
 
 replayBooking.current_start_at = '2026-08-25T16:00:00.000Z';
 worker.enqueueLifecycleNotification_(makeSheet(replayBooking), enqueueSchema, replayBooking, 'BOOKING_CONFIRMED', null, replayOutbox);
-check(replayOutbox.records().length === 2
-  && replayOutbox.records().filter((row) => row.state === 'superseded' && row.disposition_reason === 'later_same_type').length === 1
-  && replayOutbox.records().filter((row) => row.state === 'pending').length === 1,
-  'same type with a different snapshot supersedes the unsent previous row and appends a new identity');
+check(replayOutbox.records().length === 1 && replayOutbox.records()[0].logical_key === firstReplayKey,
+  'BOOKING_CONFIRMED replay stays one row even if snapshot_start_at later differs');
 
 mailed = [];
 const snapBooking = makeRecord({
@@ -593,6 +612,232 @@ check(cancelOutbox.records().filter((row) => row.event_type === 'PATIENT_CANCELL
   && cancelOutbox.records()[0].state === 'sent'
   && JSON.stringify(staleCancel) === hashesAfter,
   'terminal cancel replay does not duplicate or resurrect capability hashes');
+
+function opId(type, entropy) {
+  return phase.makeOperationId_(type, entropy);
+}
+
+const timeB = '2026-08-25T16:00:00.000Z';
+const clinicianBooking = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-occ-clinician',
+  current_start_at: timeB,
+});
+clinicianBooking.rowNumber = 2;
+clinicianBooking.last_operation_id = opId('clinician_reconcile_move', 'event-occ:etag-1:2026-08-25T16:00:00.000Z');
+const clinicianOutbox = worker.memoryNotificationOutboxStore_();
+worker.enqueueLifecycleNotification_(makeSheet(clinicianBooking), enqueueSchema, clinicianBooking, 'CLINICIAN_RESCHEDULED', null, clinicianOutbox);
+const firstClinician = clinicianOutbox.records()[0];
+clinicianBooking.last_operation_id = opId('clinician_reconcile_move', 'event-occ:etag-2:2026-08-25T16:20:00.000Z');
+clinicianBooking.current_start_at = '2026-08-25T17:00:00.000Z';
+worker.enqueueLifecycleNotification_(makeSheet(clinicianBooking), enqueueSchema, clinicianBooking, 'CLINICIAN_RESCHEDULED', null, clinicianOutbox);
+clinicianBooking.last_operation_id = opId('clinician_reconcile_move', 'event-occ:etag-3:2026-08-25T17:00:00.000Z');
+clinicianBooking.current_start_at = timeB;
+worker.enqueueLifecycleNotification_(makeSheet(clinicianBooking), enqueueSchema, clinicianBooking, 'CLINICIAN_RESCHEDULED', null, clinicianOutbox);
+const clinicianRows = clinicianOutbox.records();
+const firstAgain = clinicianRows.find((row) => row.source_operation_id === firstClinician.source_operation_id);
+const thirdClinician = clinicianRows[clinicianRows.length - 1];
+check(clinicianRows.filter((row) => row.event_type === 'CLINICIAN_RESCHEDULED').length === 3
+  && firstClinician.source_operation_id !== thirdClinician.source_operation_id
+  && firstClinician.snapshot_start_at === thirdClinician.snapshot_start_at
+  && firstClinician.logical_key !== thirdClinician.logical_key
+  && firstAgain === firstClinician,
+  'CLINICIAN_RESCHEDULED back to time B is a new occurrence, not a replay of the first move to B');
+worker.enqueueLifecycleNotification_(makeSheet(clinicianBooking), enqueueSchema, clinicianBooking, 'CLINICIAN_RESCHEDULED', null, clinicianOutbox);
+check(clinicianOutbox.records().length === 3 && clinicianOutbox.records()[2].logical_key === thirdClinician.logical_key,
+  'same source occurrence processed twice creates exactly one durable row');
+
+const typeNames = ['BOOKING_CONFIRMED', 'PATIENT_RESCHEDULED', 'CLINICIAN_RESCHEDULED', 'PATIENT_CANCELLED',
+  'CLINICIAN_CANCELLED', 'REFUND_REQUESTED', 'REFUND_COMPLETED', 'REFUND_FAILED_MANUAL_REVIEW'];
+typeNames.forEach((eventType) => {
+  const typed = makeRecord({
+    reservation_id: 'fran-nonprod-20260821-reservation-type-' + eventType.toLowerCase(),
+    current_start_at: timeB,
+    commerce_order: 'npo-1111111111111111111111111111111111111111',
+    calendar_event_id: 'event-type',
+    calendar_event_etag: 'etag-a',
+    calendar_event_updated_at: '2026-08-25T16:00:00.000Z',
+    refund_commerce_order: 'fran-nonprod-refund-111111111111111111111111',
+    refund_provider_reference: 'refund-ref-a',
+  });
+  typed.rowNumber = 2;
+  typed.last_operation_id = eventType === 'BOOKING_CONFIRMED' ? '' : opId('patient_reschedule', eventType + ':first');
+  const typedOutbox = worker.memoryNotificationOutboxStore_();
+  worker.enqueueLifecycleNotification_(makeSheet(typed), enqueueSchema, typed, eventType, null, typedOutbox);
+  worker.enqueueLifecycleNotification_(makeSheet(typed), enqueueSchema, typed, eventType, null, typedOutbox);
+  check(typedOutbox.records().length === 1, eventType + ' same occurrence replay is exactly one row');
+  if (eventType === 'BOOKING_CONFIRMED') {
+    typed.commerce_order = 'npo-2222222222222222222222222222222222222222';
+  } else {
+    typed.last_operation_id = opId('patient_reschedule', eventType + ':second');
+  }
+  worker.enqueueLifecycleNotification_(makeSheet(typed), enqueueSchema, typed, eventType, null, typedOutbox);
+  check(typedOutbox.records().length === 2
+    && typedOutbox.records()[0].source_operation_id !== typedOutbox.records()[1].source_operation_id
+    && typedOutbox.records()[0].snapshot_start_at === typedOutbox.records()[1].snapshot_start_at,
+    eventType + ' later same-type occurrence with the same snapshot_start_at is independent');
+});
+
+function createSharedStrictLock() {
+  const state = {
+    held: false, owner: null, acquireCount: 0, releaseCount: 0, nestedTryLock: 0, doubleRelease: 0,
+  };
+  const handle = (owner) => ({
+    tryLock: () => {
+      if (state.held) {
+        if (state.owner === owner) {
+          state.nestedTryLock += 1;
+          return true;
+        }
+        return false;
+      }
+      state.held = true;
+      state.owner = owner;
+      state.acquireCount += 1;
+      return true;
+    },
+    releaseLock: () => {
+      if (!state.held) {
+        state.doubleRelease += 1;
+        return;
+      }
+      state.held = false;
+      state.owner = null;
+      state.releaseCount += 1;
+    },
+    hasLock: () => state.held && state.owner === owner,
+  });
+  return { state, handle };
+}
+
+const nested = createSharedStrictLock();
+const nestedLock = nested.handle('worker-a');
+check(nestedLock.tryLock() === true && nested.state.acquireCount === 1, 'outer worker acquires once');
+phase.withLifecycleLock_({ lock: nestedLock, lockAlreadyHeld: true }, () => {
+  check(nested.state.held && nested.state.owner === 'worker-a'
+    && nested.state.acquireCount === 1 && nested.state.releaseCount === 0,
+    'inner helper with lockAlreadyHeld does not acquire or release');
+});
+check(nested.state.held && nested.state.releaseCount === 0, 'caller still owns the lock after inner helper');
+nestedLock.releaseLock();
+check(!nested.state.held && nested.state.releaseCount === 1 && nested.state.doubleRelease === 0,
+  'exactly one matching release by the owner');
+
+const stolen = createSharedStrictLock();
+const stolenLock = stolen.handle('worker-a');
+stolenLock.tryLock();
+phase.withLifecycleLock_({ lock: stolenLock }, () => {
+  check(stolen.state.nestedTryLock === 1, 'tryLock while already held is a no-op second acquisition');
+});
+check(!stolen.state.held && stolen.state.releaseCount === 1,
+  'helper without lockAlreadyHeld would release a caller-owned lock; worker must not use that path');
+
+const batchLock = createSharedStrictLock();
+const workerLock = batchLock.handle('worker-a');
+const firstBatch = makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-lock-a' });
+const secondBatch = makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-lock-b' });
+const batchStore = makeStore([firstBatch, secondBatch]);
+const heldDuring = [];
+const observingDeliver = (input) => {
+  heldDuring.push({
+    held: batchLock.state.held,
+    owner: batchLock.state.owner,
+    acquireCount: batchLock.state.acquireCount,
+    releaseCount: batchLock.state.releaseCount,
+  });
+  return worker.deliverLifecycleNotification_(input);
+};
+mailed = [];
+const batchRun = runWorker(batchStore, { lock: workerLock, deliver: observingDeliver });
+check(batchRun.processed === 2 && batchRun.results.every((item) => item.ok)
+  && heldDuring.length === 2
+  && heldDuring.every((snap) => snap.held && snap.owner === 'worker-a' && snap.acquireCount === 1 && snap.releaseCount === 0)
+  && batchLock.state.acquireCount === 1 && batchLock.state.releaseCount === 1 && !batchLock.state.held
+  && batchLock.state.nestedTryLock === 0 && batchLock.state.doubleRelease === 0,
+  'outer lock remains held across capability rotation and the rest of the batch, then owner releases once');
+
+const concurrent = createSharedStrictLock();
+const lockA = concurrent.handle('worker-a');
+const lockB = concurrent.handle('worker-b');
+const sharedEntry = durableFromRecord(makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-lock-race' }));
+const sharedBooking = makeRecord({ reservation_id: sharedEntry.reservation_id });
+const sharedStore = makeStore([sharedBooking]);
+const sharedOutbox = worker.memoryNotificationOutboxStore_([sharedEntry]);
+let workerBAttempted = false;
+const blockingDeliver = (input) => {
+  workerBAttempted = true;
+  assert.throws(() => runWorker(sharedStore, { lock: lockB, outboxStore: sharedOutbox }), /LOCK_UNAVAILABLE/);
+  check(sharedOutbox.records()[0].state === 'claimed' || sharedOutbox.records()[0].state === 'sent',
+    'worker B cannot claim the in-flight row while worker A holds the lock');
+  return worker.deliverLifecycleNotification_(input);
+};
+mailed = [];
+const workerARun = runWorker(sharedStore, { lock: lockA, outboxStore: sharedOutbox, deliver: blockingDeliver });
+check(workerARun.results[0].ok && workerBAttempted && sharedOutbox.records()[0].state === 'sent'
+  && concurrent.state.acquireCount === 1 && concurrent.state.releaseCount === 1,
+  'concurrent worker cannot independently send the same outbox row');
+
+const enqueueWhileHeld = createSharedStrictLock();
+const heldLock = enqueueWhileHeld.handle('worker-a');
+const liveBooking = makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-lock-enqueue' });
+liveBooking.rowNumber = 2;
+const liveStore = makeStore([liveBooking]);
+const liveOutbox = worker.memoryNotificationOutboxStore_([durableFromRecord(liveBooking)]);
+const enqueueDuringSend = (input) => {
+  check(enqueueWhileHeld.state.held && enqueueWhileHeld.state.owner === 'worker-a',
+    'enqueue during send observes the caller-owned lock');
+  liveBooking.last_operation_id = opId('patient_reschedule', 'live-booking:later');
+  liveBooking.patient_reschedule_count = '1';
+  liveBooking.reschedule_capability_revoked_at = 'used';
+  worker.enqueueLifecycleNotification_(makeSheet(liveBooking), enqueueSchema, liveBooking, 'PATIENT_RESCHEDULED', null, liveOutbox);
+  const claimed = liveOutbox.records().find((row) => row.event_type === 'BOOKING_CONFIRMED');
+  const appended = liveOutbox.records().find((row) => row.event_type === 'PATIENT_RESCHEDULED');
+  check(claimed && (claimed.state === 'claimed' || claimed.state === 'sent')
+    && appended && appended.state === 'pending' && appended.source_operation_id !== claimed.source_operation_id,
+    'a new different event persists beside a claimed event');
+  return worker.deliverLifecycleNotification_(input);
+};
+mailed = [];
+const liveRun = runWorker(liveStore, { lock: heldLock, outboxStore: liveOutbox, deliver: enqueueDuringSend });
+const liveConfirm = liveOutbox.records().find((row) => row.event_type === 'BOOKING_CONFIRMED');
+const liveLater = liveOutbox.records().find((row) => row.event_type === 'PATIENT_RESCHEDULED');
+check(liveRun.results[0].ok && liveConfirm.state === 'sent' && liveLater.state === 'pending',
+  'enqueue while worker owns lock does not corrupt claimed or sent state');
+liveConfirm.state = 'sent';
+liveConfirm.last_result = 'sent';
+const sentGuard = worker.memoryNotificationOutboxStore_([{ ...liveConfirm }]);
+runWorker(liveStore, { outboxStore: sentGuard });
+check(sentGuard.records()[0].state === 'sent' && sentGuard.records()[0].last_result === 'sent',
+  'sent never reverts to claimed or failed');
+const supersededGuard = worker.memoryNotificationOutboxStore_([{
+  ...liveConfirm, state: 'superseded', last_result: 'superseded', disposition_reason: 'later_same_type',
+}]);
+runWorker(liveStore, { outboxStore: supersededGuard });
+check(supersededGuard.records()[0].state === 'superseded' && supersededGuard.records()[0].last_result === 'superseded',
+  'superseded never reverts to claimed or failed');
+
+const maxRotate = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-max-rotate',
+  notification_attempt_count: String(phase.MAX_NOTIFICATION_ATTEMPTS - 1),
+});
+const maxRotateOutbox = worker.memoryNotificationOutboxStore_([
+  durableFromRecord(maxRotate, { attempt_count: String(phase.MAX_NOTIFICATION_ATTEMPTS - 1), state: 'failed' }),
+]);
+mailed = [];
+const maxRotateRun = runWorker(makeStore([maxRotate]), {
+  outboxStore: maxRotateOutbox,
+  requireCapabilitySecret_: () => { throw Object.assign(new Error('CAPABILITY_SECRET_INVALID'), { code: 'CAPABILITY_SECRET_INVALID' }); },
+});
+const maxRotateEntry = maxRotateOutbox.records()[0];
+check(!maxRotateRun.results[0].ok
+  && Number(maxRotateEntry.attempt_count) === phase.MAX_NOTIFICATION_ATTEMPTS
+  && maxRotateEntry.last_result === 'max_attempts'
+  && maxRotateEntry.disposition_reason === 'max_attempts'
+  && maxRotateEntry.state === 'failed'
+  && maxRotate.reconciliation_state === 'notification_max_attempts'
+  && mailed.length === 0,
+  'capability-rotation failure at attempt 5 marks max_attempts in the same cycle');
+const maxRotateAgain = runWorker(makeStore([maxRotate]), { outboxStore: maxRotateOutbox });
+check(maxRotateAgain.processed === 0, 'max_attempts terminal marking does not wait for a later worker invocation');
 
 // 19 + 20 + 21. installer does not duplicate; targets handler; interval = 5
 projectTriggers.length = 0;

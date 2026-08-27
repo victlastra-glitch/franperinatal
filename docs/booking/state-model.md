@@ -18,7 +18,13 @@ Refund no bloquea la liberación de agenda. Repetir la acción devuelve replay y
 
 ## Notifications
 
-Cada evento lógico (`BOOKING_CONFIRMED`, `PATIENT_RESCHEDULED`, `CLINICIAN_RESCHEDULED`, `PATIENT_CANCELLED`, …) tiene una fila durable propia en `notification_outbox_nonprod`. El worker procesa esas filas, no el puntero de 57 columnas de la reserva. Un `sent` de un evento anterior no suprime el siguiente. El replay del mismo tipo + mismo `snapshot_start_at` no duplica ni reenvía. Un evento no enviado se marca `superseded` con motivo explícito; no se pierde por overwrite. La cancelación terminal no incluye Meet ni CTA. Vaciar el outbox entre mutaciones no es requisito de corrección.
+Cada evento lógico (`BOOKING_CONFIRMED`, `PATIENT_RESCHEDULED`, `CLINICIAN_RESCHEDULED`, `PATIENT_CANCELLED`, …) tiene una fila durable propia en `notification_outbox_nonprod`. El worker procesa esas filas, no el puntero de 57 columnas de la reserva. Un `sent` de un evento anterior no suprime el siguiente.
+
+Replay identity is the source mutation, not the appointment snapshot. `source_operation_id` is derived from `last_operation_id` when present, otherwise from a deterministic non-PII operation id (payment identity for confirmation; Calendar event id/ETag/updated for clinician changes; reservation-scoped cancel/refund identifiers). Same source occurrence → one durable row. A later same-type mutation with the same `snapshot_start_at` is a new occurrence.
+
+Un evento no enviado se marca `superseded` con motivo explícito; no se pierde por overwrite. La cancelación terminal no incluye Meet ni CTA. Vaciar el outbox entre mutaciones no es requisito de corrección.
+
+The outbox worker owns one ScriptLock for its batch. Inner capability rotation receives `lockAlreadyHeld` and does not acquire or release that lock. MailApp delivery is at-least-once: if send succeeds and the process dies before the row is persisted `sent`, a later reclaim may send again. Concurrent workers cannot independently claim/send the same row.
 
 ## Clinician reconciliation
 

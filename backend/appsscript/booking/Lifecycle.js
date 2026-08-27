@@ -219,6 +219,7 @@ function claimPatientReschedule_(input) {
 }
 
 function withLifecycleLock_(deps, operation) {
+  if (deps && deps.lockAlreadyHeld) return operation();
   const lock = deps && deps.lock ? deps.lock : (typeof LockService !== 'undefined' && LockService.getScriptLock ? LockService.getScriptLock() : null);
   if (!lock || !lock.tryLock(10000)) fail_('LOCK_UNAVAILABLE');
   try { return operation(); } finally { lock.releaseLock(); }
@@ -546,14 +547,75 @@ function notificationEventDisposition_(entry, record) {
   return { disposition: 'deliver', reason: '' };
 }
 
-function findDurableNotificationReplay_(entries, reservationId, eventType, snapshotStartAt) {
+function validOperationId_(value) {
+  return /^op_[a-z_]+_[a-f0-9]{32}$/.test(String(value || ''));
+}
+
+function notificationOccurrenceOperationType_(eventType) {
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.PATIENT_RESCHEDULED) return LIFECYCLE.OPERATION_TYPE.PATIENT_RESCHEDULE;
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.PATIENT_CANCELLED) return LIFECYCLE.OPERATION_TYPE.PATIENT_CANCEL;
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.CLINICIAN_RESCHEDULED) return LIFECYCLE.OPERATION_TYPE.CLINICIAN_RECONCILE_MOVE;
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.CLINICIAN_CANCELLED) return LIFECYCLE.OPERATION_TYPE.CLINICIAN_RECONCILE_CANCEL;
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_REQUESTED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_COMPLETED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW) {
+    return LIFECYCLE.OPERATION_TYPE.REFUND_CREATE;
+  }
+  return LIFECYCLE.OPERATION_TYPE.NOTIFICATION;
+}
+
+function notificationOccurrenceEntropy_(record, eventType) {
+  const reservationId = String(record && record.reservation_id || '');
+  if (!reservationId) fail_('NOTIFICATION_OCCURRENCE_INVALID');
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.BOOKING_CONFIRMED) {
+    const paymentId = String(record.commerce_order || record.flow_token || record.idempotency_key || '');
+    if (!paymentId) fail_('NOTIFICATION_OCCURRENCE_INVALID');
+    return reservationId + ':BOOKING_CONFIRMED:' + paymentId;
+  }
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.PATIENT_RESCHEDULED) {
+    return reservationId + ':' + String(record.current_start_at || '');
+  }
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.CLINICIAN_RESCHEDULED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.CLINICIAN_CANCELLED) {
+    return String(record.calendar_event_id || '') + ':'
+      + String(record.calendar_event_etag || '') + ':'
+      + String(record.calendar_event_updated_at || '');
+  }
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.PATIENT_CANCELLED) {
+    return reservationId;
+  }
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_REQUESTED) {
+    return reservationId + ':REFUND_REQUESTED:' + String(record.refund_commerce_order || record.last_operation_id || '');
+  }
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_COMPLETED) {
+    return reservationId + ':REFUND_COMPLETED:'
+      + String(record.refund_provider_reference || record.refund_commerce_order || '');
+  }
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW) {
+    return reservationId + ':REFUND_FAILED_MANUAL_REVIEW:'
+      + String(record.refund_last_error_code || record.refund_commerce_order || '');
+  }
+  fail_('NOTIFICATION_TYPE_INVALID');
+}
+
+function notificationOccurrenceKey_(record, eventType) {
+  if (!LIFECYCLE_NOTIFICATION_TYPE[eventType]) fail_('NOTIFICATION_TYPE_INVALID');
+  if (eventType !== LIFECYCLE_NOTIFICATION_TYPE.BOOKING_CONFIRMED) {
+    const existing = String(record && record.last_operation_id || '');
+    if (validOperationId_(existing)) return existing;
+  }
+  return makeOperationId_(notificationOccurrenceOperationType_(eventType), notificationOccurrenceEntropy_(record, eventType));
+}
+
+function findDurableNotificationReplay_(entries, reservationId, eventType, sourceOperationId) {
   const list = Array.isArray(entries) ? entries : [];
+  const occurrence = String(sourceOperationId || '');
+  if (!occurrence) return null;
   for (let i = 0; i < list.length; i += 1) {
     const entry = list[i];
     if (String(entry.reservation_id || '') !== String(reservationId || '')) continue;
     if (String(entry.event_type || '') !== String(eventType || '')) continue;
-    if (String(entry.snapshot_start_at || '') !== String(snapshotStartAt || '')) continue;
-    if (String(entry.state || '') === 'superseded') continue;
+    if (String(entry.source_operation_id || '') !== occurrence) continue;
     return entry;
   }
   return null;
@@ -714,6 +776,8 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   nextDurableNotificationVersion_: nextDurableNotificationVersion_,
   notificationSnapshotFromRecord_: notificationSnapshotFromRecord_,
   notificationEventDisposition_: notificationEventDisposition_,
+  validOperationId_: validOperationId_,
+  notificationOccurrenceKey_: notificationOccurrenceKey_,
   findDurableNotificationReplay_: findDurableNotificationReplay_,
   pendingSameTypeNotification_: pendingSameTypeNotification_,
   reconstructLifecycleEventTypeFromEntry_: reconstructLifecycleEventTypeFromEntry_,
