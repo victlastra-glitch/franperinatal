@@ -54,6 +54,11 @@ const rejects = (fn, pattern, message) => { assert.throws(fn, pattern, message);
 // Schema: exact, unique and lifecycle-separated.
 check(api.HEADERS.length === 57, 'schema header count is exact');
 check(new Set(api.HEADERS).size === api.HEADERS.length, 'schema has no duplicate headers');
+check(Array.isArray(api.OUTBOX_HEADERS) && api.OUTBOX_HEADERS.length === 19
+  && new Set(api.OUTBOX_HEADERS).size === api.OUTBOX_HEADERS.length,
+  'durable outbox schema is exact and unique');
+check(!api.OUTBOX_HEADERS.some((header) => /email|token|rut|secret|bearer|phone|message/.test(header)),
+  'outbox schema stores no recipient, token, RUT, or clinical text');
 for (const header of [
   'idempotency_key', 'reservation_id', 'original_start_at', 'current_start_at', 'current_end_at',
   'booking_status', 'payment_status', 'refund_status', 'schedule_status', 'status_token_hash',

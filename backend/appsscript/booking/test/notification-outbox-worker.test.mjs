@@ -133,6 +133,36 @@ function makeRecord(overrides = {}) {
   return Object.assign(base, overrides);
 }
 
+function durableFromRecord(record, extra = {}) {
+  const eventType = extra.event_type || extra.eventType || 'BOOKING_CONFIRMED';
+  const state = extra.state || (record.notification_patient_state === 'pending' || record.notification_patient_state === 'failed' || record.notification_patient_state === 'claimed'
+    ? record.notification_patient_state
+    : (record.notification_internal_state === 'pending' || record.notification_internal_state === 'failed' ? record.notification_internal_state : 'pending'));
+  return {
+    logical_key: extra.logical_key || record.notification_outbox_key,
+    reservation_id: record.reservation_id,
+    event_type: eventType,
+    notification_version: String(extra.notification_version || record.notification_version || '1'),
+    state,
+    attempt_count: String(extra.attempt_count != null ? extra.attempt_count : (record.notification_attempt_count || '0')),
+    created_at: extra.created_at || '2026-08-23T12:00:00.000Z',
+    last_attempt_at: extra.last_attempt_at || record.notification_last_attempt_at || '',
+    last_result: extra.last_result || record.notification_last_result || eventType,
+    disposition_reason: extra.disposition_reason || '',
+    snapshot_service_type: extra.snapshot_service_type || record.service_type || '',
+    snapshot_modality: extra.snapshot_modality || record.modality || '',
+    snapshot_start_at: extra.snapshot_start_at || record.current_start_at || '',
+    snapshot_end_at: extra.snapshot_end_at || record.current_end_at || '',
+    snapshot_meet_url: extra.snapshot_meet_url || record.meet_url || '',
+    snapshot_meet_status: extra.snapshot_meet_status || record.meet_status || '',
+    snapshot_booking_status: extra.snapshot_booking_status || record.booking_status || '',
+    snapshot_schedule_status: extra.snapshot_schedule_status || record.schedule_status || '',
+    snapshot_patient_reschedule_count: String(extra.snapshot_patient_reschedule_count != null
+      ? extra.snapshot_patient_reschedule_count
+      : (record.patient_reschedule_count || '0')),
+  };
+}
+
 function makeStore(records) {
   const byId = new Map(records.map((record) => [record.reservation_id, record]));
   return {
@@ -148,11 +178,18 @@ function makeStore(records) {
 }
 
 function runWorker(store, overrides = {}) {
-  return worker.processLifecycleNotificationOutbox_({
+  const outboxStore = overrides.outboxStore || worker.memoryNotificationOutboxStore_(
+    (overrides.outboxEntries || (typeof store.records === 'function' ? store.records() : [])).map((record) => {
+      if (record.logical_key) return record;
+      return durableFromRecord(record, { eventType: record.eventType || phase.reconstructLifecycleEventType_(record) || 'BOOKING_CONFIRMED' });
+    })
+  );
+  const result = worker.processLifecycleNotificationOutbox_({
     config: phase.readCapabilityConfig_(),
     store,
+    outboxStore,
     resources: { sheet: null },
-    schema: { headers: phase.HEADERS },
+    schema: { headers: phase.HEADERS, columns: Object.fromEntries(phase.HEADERS.map((h, i) => [h, i + 1])) },
     requireCapabilitySecret_: () => secret,
     now: Date.parse('2026-08-23T12:10:00Z'),
     batchSize: overrides.batchSize,
@@ -160,6 +197,8 @@ function runWorker(store, overrides = {}) {
     lock: overrides.lock,
     lockTimeoutMs: 10,
   });
+  result.outboxStore = outboxStore;
+  return result;
 }
 
 // 1 + 2. pending booking-confirmation discovered; bounded batch
@@ -173,7 +212,8 @@ for (let i = 0; i < 12; i += 1) {
 mailed = []; mailCalls = 0;
 const bounded = runWorker(makeStore(many), { batchSize: 10 });
 check(bounded.ok && bounded.processed === 10, 'worker processes bounded batch of 10');
-check(mailCalls === 10 && many.filter((row) => row.notification_patient_state === 'pending').length === 2, 'pending booking-confirmation outbox is discovered within the bound');
+check(mailCalls === 10 && bounded.outboxStore.records().filter((row) => row.state === 'pending').length === 2,
+  'pending booking-confirmation outbox is discovered within the bound');
 
 // 3 + 4. allowlist recipient accepted; non-allowlisted rejected
 mailed = []; mailCalls = 0;
@@ -210,8 +250,11 @@ const countOneConfirmed = makeRecord({
   patient_reschedule_count: '1',
   reschedule_capability_revoked_at: 'used',
 });
-runWorker(makeStore([countOneConfirmed]));
-check(!mailed[0].body.includes('Reagendar:') && mailed[0].body.includes('Cancelar:'), 'count=1 never produces RESCHEDULE');
+const countOneRun = runWorker(makeStore([countOneConfirmed]));
+check(countOneRun.results[0].code === 'SUPERSEDED' && mailed.length === 0
+  && countOneRun.outboxStore.records()[0].state === 'superseded'
+  && countOneRun.outboxStore.records()[0].disposition_reason === 'schedule_changed',
+  'unsent BOOKING_CONFIRMED is superseded after count=1 and never produces RESCHEDULE');
 
 // 8. raw bearer never persisted
 persistedSnapshots.length = 0;
@@ -250,7 +293,7 @@ check(!failedRun.results[0].ok && rotateRecord.notification_patient_state === 'f
 const afterFailHash = rotateRecord.reschedule_capability_hash;
 check(afterFailHash && afterFailHash !== firstHash, 'retry rotates capability on first attempt');
 mailed = [];
-const retryRun = runWorker(rotateStore);
+const retryRun = runWorker(rotateStore, { outboxStore: failedRun.outboxStore });
 check(retryRun.results[0].ok && rotateRecord.notification_patient_state === 'sent', 'retry sends using new usable capability');
 const tokenInEmail = (mailed[0].body.match(/token=([A-Za-z0-9_-]{64,256})/) || [])[1];
 check(tokenInEmail && phase.verifyCapability_(tokenInEmail, 'RESCHEDULE', phase.capabilityFromRecord_(rotateRecord, 'RESCHEDULE'), {
@@ -268,7 +311,7 @@ const sentOnce = runWorker(sentStore);
 check(sentOnce.results[0].ok && sentRecord.notification_patient_state === 'sent' && sentRecord.notification_last_result === 'sent',
   'successful send becomes sent');
 mailCalls = 0;
-const resent = runWorker(sentStore);
+const resent = runWorker(sentStore, { outboxStore: sentOnce.outboxStore });
 check(resent.processed === 0 && mailCalls === 0, 'sent notification is not resent');
 
 // 15. concurrent worker execution is lock-safe
@@ -294,7 +337,12 @@ const badRecord = makeRecord({
   reservation_id: 'fran-nonprod-20260821-reservation-bad',
   notification_outbox_key: 'lifecycle_fran-nonprod-20260821-reservation-bad_NOT_A_REAL_EVENT_1',
 });
-const badRun = runWorker(makeStore([badRecord]));
+const badRun = runWorker(makeStore([badRecord]), {
+  outboxEntries: [durableFromRecord(badRecord, {
+    eventType: 'NOT_A_REAL_EVENT',
+    logical_key: 'lifecycle_fran-nonprod-20260821-reservation-bad_NOT_A_REAL_EVENT_1',
+  })],
+});
 check(badRun.results[0].code === 'NOTIFICATION_EVENT_TYPE_INVALID' && mailCalls === 0
   && badRecord.reconciliation_state === 'notification_event_type_invalid', 'malformed event type never sends');
 
@@ -321,10 +369,12 @@ function makeSheet(record) {
 const enqueueSchema = { headers: phase.HEADERS, columns: Object.fromEntries(phase.HEADERS.map((h, i) => [h, i + 1])) };
 const sequential = makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-seq' });
 sequential.rowNumber = 2;
-runWorker(makeStore([sequential]));
+const sequentialStore = makeStore([sequential]);
+const sequentialOutbox = worker.memoryNotificationOutboxStore_([durableFromRecord(sequential)]);
+runWorker(sequentialStore, { outboxStore: sequentialOutbox });
 check(sequential.notification_patient_state === 'sent', 'sequential fixture confirmation is sent');
 const afterConfirmKey = sequential.notification_outbox_key;
-worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_RESCHEDULED');
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_RESCHEDULED', null, sequentialOutbox);
 check(sequential.notification_patient_state === 'pending' && String(sequential.notification_attempt_count) === '0'
   && String(sequential.notification_outbox_key).includes('PATIENT_RESCHEDULED')
   && sequential.notification_outbox_key !== afterConfirmKey,
@@ -332,42 +382,217 @@ check(sequential.notification_patient_state === 'pending' && String(sequential.n
 mailed = [];
 sequential.patient_reschedule_count = '1';
 sequential.reschedule_capability_revoked_at = 'used';
-runWorker(makeStore([sequential]));
+runWorker(sequentialStore, { outboxStore: sequentialOutbox });
 check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue reagendada'
   && mailed[0].body.includes('Cancelar:') && !mailed[0].body.includes('Reagendar:')
   && mailed[0].body.includes('11:00') && !mailed[0].body.includes('.000Z'),
   'patient reschedule email is Chile-local CANCEL-only');
 const afterRescheduleKey = sequential.notification_outbox_key;
-worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'CLINICIAN_RESCHEDULED');
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'CLINICIAN_RESCHEDULED', null, sequentialOutbox);
 check(sequential.notification_patient_state === 'pending' && sequential.notification_outbox_key !== afterRescheduleKey
   && String(sequential.notification_outbox_key).includes('CLINICIAN_RESCHEDULED'),
   'sent patient-reschedule does not suppress CLINICIAN_RESCHEDULED');
 mailed = [];
-runWorker(makeStore([sequential]));
+runWorker(sequentialStore, { outboxStore: sequentialOutbox });
 check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue reagendada'
   && mailed[0].body.includes('Cancelar:') && !mailed[0].body.includes('Reagendar:'),
   'clinician reschedule email is CANCEL-only');
 sequential.booking_status = 'cancelled';
 sequential.schedule_status = 'cancelled';
 sequential.cancel_capability_revoked_at = 'now';
-worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_CANCELLED');
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_CANCELLED', null, sequentialOutbox);
 check(sequential.notification_internal_state === 'pending'
   && String(sequential.notification_outbox_key).includes('PATIENT_CANCELLED')
   && String(sequential.notification_attempt_count) === '0',
   'cancellation uses the internal channel and resets attempts');
 mailed = [];
-runWorker(makeStore([sequential]));
+runWorker(sequentialStore, { outboxStore: sequentialOutbox });
 check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue cancelada'
   && mailed[0].body.includes('Confirmamos la cancelación')
   && !mailed[0].body.includes('Meet:') && !/meet\.google\.com/i.test(mailed[0].body)
   && !mailed[0].body.includes('Reagendar:') && !mailed[0].body.includes('Cancelar:')
   && mailed[0].body.includes('11:00') && !mailed[0].body.includes('.000Z'),
   'cancellation email has Chile local context and no Meet or CTAs');
-worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_CANCELLED');
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_CANCELLED', null, sequentialOutbox);
 check(sequential.notification_internal_state === 'sent', 'cancellation replay enqueue does not reopen a sent event');
 
 const renderedTime = worker.formatPatientFacingDateTime_('2026-08-25T15:00:00.000Z');
 check(renderedTime === 'martes 25 de agosto de 2026, 11:00', 'outbox render clock is America/Santiago');
+
+const replayBooking = makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-replay' });
+replayBooking.rowNumber = 2;
+const replayOutbox = worker.memoryNotificationOutboxStore_();
+worker.enqueueLifecycleNotification_(makeSheet(replayBooking), enqueueSchema, replayBooking, 'BOOKING_CONFIRMED', null, replayOutbox);
+const firstReplayKey = replayOutbox.records()[0].logical_key;
+worker.enqueueLifecycleNotification_(makeSheet(replayBooking), enqueueSchema, replayBooking, 'BOOKING_CONFIRMED', null, replayOutbox);
+check(replayOutbox.records().length === 1 && replayOutbox.records()[0].logical_key === firstReplayKey
+  && replayOutbox.records()[0].state === 'pending',
+  'same type + same snapshot enqueue is a durable replay, not a second row');
+
+replayBooking.current_start_at = '2026-08-25T16:00:00.000Z';
+worker.enqueueLifecycleNotification_(makeSheet(replayBooking), enqueueSchema, replayBooking, 'BOOKING_CONFIRMED', null, replayOutbox);
+check(replayOutbox.records().length === 2
+  && replayOutbox.records().filter((row) => row.state === 'superseded' && row.disposition_reason === 'later_same_type').length === 1
+  && replayOutbox.records().filter((row) => row.state === 'pending').length === 1,
+  'same type with a different snapshot supersedes the unsent previous row and appends a new identity');
+
+mailed = [];
+const snapBooking = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-snap',
+  current_start_at: '2026-08-27T20:00:00.000Z',
+  patient_reschedule_count: '1',
+  reschedule_capability_revoked_at: 'used',
+  notification_version: '3',
+});
+const snapOutbox = worker.memoryNotificationOutboxStore_([
+  durableFromRecord(snapBooking, {
+    eventType: 'PATIENT_RESCHEDULED',
+    notification_version: '2',
+    logical_key: 'lifecycle_fran-nonprod-20260821-reservation-snap_PATIENT_RESCHEDULED_2',
+    created_at: '2026-08-27T16:10:00.000Z',
+    snapshot_start_at: '2026-08-27T18:00:00.000Z',
+    snapshot_patient_reschedule_count: '1',
+  }),
+  durableFromRecord(snapBooking, {
+    eventType: 'CLINICIAN_RESCHEDULED',
+    notification_version: '3',
+    logical_key: 'lifecycle_fran-nonprod-20260821-reservation-snap_CLINICIAN_RESCHEDULED_3',
+    created_at: '2026-08-27T16:20:00.000Z',
+    snapshot_start_at: '2026-08-27T20:00:00.000Z',
+    snapshot_patient_reschedule_count: '1',
+  }),
+]);
+runWorker(makeStore([snapBooking]), { outboxStore: snapOutbox });
+check(mailed.length === 2
+  && mailed.every((item) => item.subject === 'Tu sesión fue reagendada')
+  && mailed[0].body.includes('14:00') && !mailed[0].body.includes('16:00')
+  && mailed[1].body.includes('16:00')
+  && mailed.every((item) => item.body.includes('Cancelar:') && !item.body.includes('Reagendar:')),
+  'later clinician time does not rewrite the patient-reschedule snapshot; both events still send');
+
+mailed = []; mailCalls = 0;
+failOnce = true;
+const failLater = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-fail-later',
+  eventType: 'PATIENT_RESCHEDULED',
+  patient_reschedule_count: '1',
+  reschedule_capability_revoked_at: 'used',
+  notification_version: '2',
+});
+const failLaterStore = makeStore([failLater]);
+const failLaterOutbox = worker.memoryNotificationOutboxStore_([durableFromRecord(failLater, { eventType: 'PATIENT_RESCHEDULED' })]);
+const failedLaterRun = runWorker(failLaterStore, { outboxStore: failLaterOutbox, deliver: failDeliver });
+check(!failedLaterRun.results[0].ok && failLaterOutbox.records()[0].state === 'failed',
+  'delivery failure leaves the original event retryable');
+worker.enqueueLifecycleNotification_(makeSheet(failLater), enqueueSchema, failLater, 'CLINICIAN_RESCHEDULED', null, failLaterOutbox);
+check(failLaterOutbox.records().some((row) => row.event_type === 'PATIENT_RESCHEDULED' && row.state === 'failed')
+  && failLaterOutbox.records().some((row) => row.event_type === 'CLINICIAN_RESCHEDULED' && row.state === 'pending'),
+  'a later event is appended beside a failed prior event');
+mailed = [];
+const recovered = runWorker(failLaterStore, { outboxStore: failLaterOutbox });
+check(recovered.processed === 2 && recovered.results.every((item) => item.ok)
+  && failLaterOutbox.records().every((row) => row.state === 'sent') && mailed.length === 2,
+  'failed event retries independently and the later event still sends');
+
+const maxLater = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-max-later',
+  notification_patient_state: 'failed',
+  notification_attempt_count: String(phase.MAX_NOTIFICATION_ATTEMPTS),
+  notification_last_result: 'max_attempts',
+});
+maxLater.rowNumber = 2;
+const maxLaterOutbox = worker.memoryNotificationOutboxStore_([
+  durableFromRecord(maxLater, { last_result: 'max_attempts', state: 'failed' }),
+]);
+worker.enqueueLifecycleNotification_(makeSheet(maxLater), enqueueSchema, maxLater, 'PATIENT_RESCHEDULED', null, maxLaterOutbox);
+maxLater.patient_reschedule_count = '1';
+maxLater.reschedule_capability_revoked_at = 'used';
+mailed = [];
+const maxLaterRun = runWorker(makeStore([maxLater]), { outboxStore: maxLaterOutbox });
+check(maxLaterRun.processed === 1 && maxLaterRun.results[0].ok
+  && maxLaterOutbox.records().find((row) => row.event_type === 'BOOKING_CONFIRMED').state === 'failed'
+  && maxLaterOutbox.records().find((row) => row.event_type === 'PATIENT_RESCHEDULED').state === 'sent'
+  && mailed.length === 1 && mailed[0].subject === 'Tu sesión fue reagendada',
+  'max-attempt event stays failed and does not block a later logical send');
+
+mailed = [];
+const crash = makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-crash' });
+const crashOutbox = worker.memoryNotificationOutboxStore_([
+  durableFromRecord(crash, { state: 'claimed', attempt_count: '1', last_result: 'claimed' }),
+]);
+const crashRun = runWorker(makeStore([crash]), { outboxStore: crashOutbox });
+check(crashRun.results[0].ok && crashOutbox.records()[0].state === 'sent' && mailed.length === 1,
+  'claimed work is reclaimed after a crash between claim and complete');
+
+mailed = [];
+const cancelledBooking = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-already-cancelled',
+  booking_status: 'cancelled',
+  schedule_status: 'cancelled',
+  cancel_capability_revoked_at: 'now',
+});
+const cancelledRun = runWorker(makeStore([cancelledBooking]));
+check(cancelledRun.results[0].code === 'SUPERSEDED' && mailed.length === 0
+  && cancelledRun.outboxStore.records()[0].disposition_reason === 'booking_cancelled',
+  'already-cancelled booking supersedes an unsent non-cancel event without a send');
+
+let clobberCalls = 0;
+const raceEntry = durableFromRecord(makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-race' }));
+raceEntry.state = 'pending';
+const raceBooking = makeRecord({ reservation_id: raceEntry.reservation_id });
+const raceStore = makeStore([raceBooking]);
+const raceOutbox = {
+  records: () => [raceEntry],
+  loadByLogicalKey: () => ({ ...raceEntry, state: 'superseded', last_result: 'superseded', disposition_reason: 'later_same_type' }),
+  update: (entry, fields) => {
+    clobberCalls += 1;
+    return Object.assign(entry, fields);
+  },
+};
+mailed = [];
+const raceRun = worker.processLifecycleNotificationOutbox_({
+  config: phase.readCapabilityConfig_(), store: raceStore, outboxStore: raceOutbox, resources: { sheet: null },
+  schema: enqueueSchema, requireCapabilitySecret_: () => secret, now: Date.parse('2026-08-23T12:10:00Z'),
+});
+check(raceRun.results[0].code === 'SUPERSEDED' && mailed.length === 0 && clobberCalls === 0,
+  'claim persist must not clobber a concurrently superseded outbox row or send it');
+
+const staleReschedule = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-stale-r',
+  eventType: 'PATIENT_RESCHEDULED',
+  patient_reschedule_count: '1',
+  reschedule_capability_revoked_at: 'used',
+});
+const staleToken = phase.createCapability_('RESCHEDULE', { secret, now: Date.parse('2026-08-23T11:00:00Z') });
+check(!phase.verifyCapability_(staleToken.token, 'RESCHEDULE', phase.capabilityFromRecord_(staleReschedule, 'RESCHEDULE'), {
+  secret, now: Date.parse('2026-08-23T12:10:00Z'),
+}), 'stale RESCHEDULE after quota=1 does not verify against the revoked stored capability');
+
+const staleCancel = makeRecord({
+  reservation_id: 'fran-nonprod-20260821-reservation-stale-c',
+  booking_status: 'cancelled',
+  schedule_status: 'cancelled',
+  cancel_capability_revoked_at: 'now',
+});
+const staleCancelToken = phase.createCapability_('CANCEL', { secret, now: Date.parse('2026-08-23T11:00:00Z') });
+check(!phase.verifyCapability_(staleCancelToken.token, 'CANCEL', phase.capabilityFromRecord_(staleCancel, 'CANCEL'), {
+  secret, now: Date.parse('2026-08-23T12:10:00Z'),
+}), 'stale CANCEL after terminal cancel does not verify');
+mailed = [];
+const cancelOutbox = worker.memoryNotificationOutboxStore_([
+  durableFromRecord(staleCancel, { eventType: 'PATIENT_CANCELLED', state: 'pending' }),
+]);
+runWorker(makeStore([staleCancel]), { outboxStore: cancelOutbox });
+check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue cancelada'
+  && !mailed[0].body.includes('Reagendar:') && !mailed[0].body.includes('Cancelar:')
+  && !mailed[0].body.includes('Meet:'),
+  'terminal cancellation still sends independently without resurrecting capabilities or CTAs');
+const hashesAfter = JSON.stringify(staleCancel);
+worker.enqueueLifecycleNotification_(makeSheet(staleCancel), enqueueSchema, staleCancel, 'PATIENT_CANCELLED', null, cancelOutbox);
+check(cancelOutbox.records().filter((row) => row.event_type === 'PATIENT_CANCELLED').length === 1
+  && cancelOutbox.records()[0].state === 'sent'
+  && JSON.stringify(staleCancel) === hashesAfter,
+  'terminal cancel replay does not duplicate or resurrect capability hashes');
 
 // 19 + 20 + 21. installer does not duplicate; targets handler; interval = 5
 projectTriggers.length = 0;

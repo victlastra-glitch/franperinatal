@@ -18,7 +18,7 @@ Refund no bloquea la liberación de agenda. Repetir la acción devuelve replay y
 
 ## Notifications
 
-Cada evento lógico (`BOOKING_CONFIRMED`, `PATIENT_RESCHEDULED`, `CLINICIAN_RESCHEDULED`, `PATIENT_CANCELLED`, …) tiene clave de outbox propia. Un `sent` de un evento anterior no suprime el siguiente. El replay del mismo evento no reenvía. La cancelación terminal no incluye Meet ni CTA.
+Cada evento lógico (`BOOKING_CONFIRMED`, `PATIENT_RESCHEDULED`, `CLINICIAN_RESCHEDULED`, `PATIENT_CANCELLED`, …) tiene una fila durable propia en `notification_outbox_nonprod`. El worker procesa esas filas, no el puntero de 57 columnas de la reserva. Un `sent` de un evento anterior no suprime el siguiente. El replay del mismo tipo + mismo `snapshot_start_at` no duplica ni reenvía. Un evento no enviado se marca `superseded` con motivo explícito; no se pierde por overwrite. La cancelación terminal no incluye Meet ni CTA. Vaciar el outbox entre mutaciones no es requisito de corrección.
 
 ## Clinician reconciliation
 

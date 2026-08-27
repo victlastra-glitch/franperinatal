@@ -7,6 +7,7 @@ const NONPROD = Object.freeze({
   appEnv: 'nonprod', flowBaseUrl: 'https://sandbox.flow.cl/api', flowHost: 'sandbox.flow.cl',
   bookingStoreFingerprint: '390f55363168', calendarFingerprint: '6c0535f4450c',
   idempotencyNamespace: 'fran-nonprod-20260821', sheetName: 'reservations_nonprod',
+  notificationOutboxSheetName: 'notification_outbox_nonprod',
   backendVersion: 'nonprod-hardened-20260822', statusTokenTtlMs: 7200000,
 });
 
@@ -72,6 +73,15 @@ var RESERVATION_HEADERS = Object.freeze([
   'notification_attempt_count', 'notification_last_attempt_at', 'notification_last_result',
   'last_patient_notification_at', 'reconciliation_state', 'last_operation_id', 'created_at', 'updated_at',
 ]);
+var NOTIFICATION_OUTBOX_HEADERS = Object.freeze([
+  'logical_key', 'reservation_id', 'event_type', 'notification_version', 'state',
+  'attempt_count', 'created_at', 'last_attempt_at', 'last_result', 'disposition_reason',
+  'snapshot_service_type', 'snapshot_modality', 'snapshot_start_at', 'snapshot_end_at',
+  'snapshot_meet_url', 'snapshot_meet_status', 'snapshot_booking_status', 'snapshot_schedule_status',
+  'snapshot_patient_reschedule_count',
+]);
+var NOTIFICATION_OUTBOX_RETRYABLE_STATES = Object.freeze(['pending', 'failed', 'claimed']);
+var NOTIFICATION_OUTBOX_TERMINAL_STATES = Object.freeze(['sent', 'superseded']);
 const CREATE_FLOW_FIELDS = Object.freeze([
   'idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone',
   'patientRut', 'reason', 'message',
@@ -180,11 +190,17 @@ function assertResources_(config) {
 // Guarded and idempotent. It is intentionally not invoked during this mission.
 function bootstrapNonprodSchema_() {
   const resources = assertResources_(readConfig_());
+  let initialized = false;
   if (resources.sheet.getLastRow() === 0) {
     resources.sheet.getRange(1, 1, 1, RESERVATION_HEADERS.length).setValues([RESERVATION_HEADERS]);
-    return { ok: true, initialized: true };
+    initialized = true;
   }
-  return { ok: true, initialized: false, schema: assertSchema_(resources.sheet).headers.length };
+  const outboxSheet = ensureNotificationOutboxSheet_(resources.spreadsheet);
+  if (outboxSheet.getLastRow() === 1 && outboxSheet.getLastColumn() === NOTIFICATION_OUTBOX_HEADERS.length) {
+    initialized = initialized || false;
+  }
+  return { ok: true, initialized: initialized, schema: assertSchema_(resources.sheet).headers.length,
+    outboxSchema: assertNotificationOutboxSchema_(outboxSheet).headers.length };
 }
 
 function assertSchema_(sheet) {
@@ -195,6 +211,29 @@ function assertSchema_(sheet) {
   if (actual.some(function(value, index) { return value !== RESERVATION_HEADERS[index]; })) fail_('SCHEMA_MISMATCH');
   const columns = {}; RESERVATION_HEADERS.forEach(function(header, index) { columns[header] = index + 1; });
   return { headers: RESERVATION_HEADERS, columns: columns };
+}
+
+function ensureNotificationOutboxSheet_(spreadsheet) {
+  if (!spreadsheet || typeof spreadsheet.getSheetByName !== 'function') fail_('CONFIGURATION_INCOMPLETE');
+  let sheet = spreadsheet.getSheetByName(NONPROD.notificationOutboxSheetName);
+  if (!sheet) {
+    if (typeof spreadsheet.insertSheet !== 'function') fail_('CONFIGURATION_INCOMPLETE');
+    sheet = spreadsheet.insertSheet(NONPROD.notificationOutboxSheetName);
+  }
+  if (sheet.getLastRow() === 0) {
+    sheet.getRange(1, 1, 1, NOTIFICATION_OUTBOX_HEADERS.length).setValues([NOTIFICATION_OUTBOX_HEADERS]);
+  }
+  return sheet;
+}
+
+function assertNotificationOutboxSchema_(sheet) {
+  if (!sheet || sheet.getLastRow() === 0) fail_('SCHEMA_NOT_READY');
+  if (new Set(NOTIFICATION_OUTBOX_HEADERS).size !== NOTIFICATION_OUTBOX_HEADERS.length) fail_('SCHEMA_MISMATCH');
+  if (sheet.getLastColumn() !== NOTIFICATION_OUTBOX_HEADERS.length) fail_('SCHEMA_MISMATCH');
+  const actual = sheet.getRange(1, 1, 1, NOTIFICATION_OUTBOX_HEADERS.length).getDisplayValues()[0].map(String);
+  if (actual.some(function(value, index) { return value !== NOTIFICATION_OUTBOX_HEADERS[index]; })) fail_('SCHEMA_MISMATCH');
+  const columns = {}; NOTIFICATION_OUTBOX_HEADERS.forEach(function(header, index) { columns[header] = index + 1; });
+  return { headers: NOTIFICATION_OUTBOX_HEADERS, columns: columns };
 }
 
 function availability_(e) {
@@ -713,40 +752,156 @@ function patientFacingModalityLabel_(modality) {
   return value;
 }
 
-function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTokens) {
-  const version = nextLifecycleNotificationVersion_(record, type);
+function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTokens, outboxStore) {
+  const snapshot = notificationSnapshotFromRecord_(record);
+  const store = outboxStore || notificationOutboxStoreFromSheet_(sheet);
+  const existing = store.records();
+  const replay = findDurableNotificationReplay_(existing, record.reservation_id, type, snapshot.snapshot_start_at);
+  if (replay) {
+    syncBookingNotificationAudit_(sheet, schema, record, replay);
+    const notification = makeLifecycleNotification_(type, Object.assign({}, record, {
+      notification_version: replay.notification_version,
+    }), { now: replay.created_at });
+    if (capabilityTokens) notification.capabilityTokens = capabilityTokens;
+    notification.logicalKey = replay.logical_key;
+    return notification;
+  }
+  pendingSameTypeNotification_(existing, record.reservation_id, type).forEach(function(entry) {
+    store.update(entry, { state: 'superseded', last_result: 'superseded', disposition_reason: 'later_same_type' });
+  });
+  const version = nextDurableNotificationVersion_(store.records(), record.reservation_id);
   const notification = makeLifecycleNotification_(type, Object.assign({}, record, { notification_version: version }), {
     now: new Date().toISOString(),
   });
   if (capabilityTokens) notification.capabilityTokens = capabilityTokens;
   const stateField = lifecycleNotificationStateField_(notification);
-  const currentKey = String(record.notification_outbox_key || '');
-  const currentState = String(record[stateField] || '');
-  if (currentKey === notification.logicalKey
-    && (currentState === 'sent' || currentState === 'claimed' || currentState === 'pending' || currentState === 'failed')) {
-    return notification;
-  }
-  const otherField = stateField === 'notification_patient_state'
-    ? 'notification_internal_state'
-    : 'notification_patient_state';
-  const fields = {
+  store.append(Object.assign({
+    logical_key: notification.logicalKey,
+    reservation_id: String(record.reservation_id || ''),
+    event_type: type,
+    notification_version: version,
+    state: 'pending',
+    attempt_count: '0',
+    created_at: notification.createdAt,
+    last_attempt_at: '',
+    last_result: type,
+    disposition_reason: '',
+  }, snapshot));
+  const audit = {
     notification_outbox_key: notification.logicalKey,
-    notification_version: notification.version,
+    notification_version: version,
     [stateField]: 'pending',
     notification_attempt_count: '0',
     notification_last_attempt_at: '',
-    notification_last_result: notification.eventType,
+    notification_last_result: type,
   };
-  const otherState = String(record[otherField] || '');
-  if (otherState === 'pending' || otherState === 'failed' || otherState === 'claimed') fields[otherField] = '';
   const recon = String(record.reconciliation_state || '');
   if (recon === 'notification_max_attempts' || recon === 'notification_event_type_invalid'
     || recon === 'notification_reschedule_retry' || recon === 'notification_cancel_retry') {
-    fields.reconciliation_state = '';
+    audit.reconciliation_state = '';
   }
-  updateRecord_(sheet, schema, record.rowNumber, fields);
-  Object.assign(record, fields);
+  if (record.rowNumber && schema) updateRecord_(sheet, schema, record.rowNumber, audit);
+  Object.assign(record, audit);
   return notification;
+}
+
+function syncBookingNotificationAudit_(sheet, schema, record, entry) {
+  if (!record || !record.rowNumber || !schema) return;
+  const audit = {
+    notification_outbox_key: String(entry.logical_key || ''),
+    notification_version: String(entry.notification_version || ''),
+    notification_attempt_count: String(entry.attempt_count || '0'),
+    notification_last_attempt_at: String(entry.last_attempt_at || ''),
+    notification_last_result: String(entry.last_result || ''),
+  };
+  updateRecord_(sheet, schema, record.rowNumber, audit);
+  Object.assign(record, audit);
+}
+
+function notificationOutboxStoreFromSheet_(sheet) {
+  const spreadsheet = sheet && typeof sheet.getParent === 'function' ? sheet.getParent() : null;
+  return sheetNotificationOutboxStore_(ensureNotificationOutboxSheet_(spreadsheet));
+}
+
+function outboxRecordFromRow_(row, schema, rowNumber) {
+  const record = { rowNumber: rowNumber };
+  NOTIFICATION_OUTBOX_HEADERS.forEach(function(header) {
+    record[header] = row[schema.columns[header] - 1] == null ? '' : String(row[schema.columns[header] - 1]);
+  });
+  return record;
+}
+
+function updateOutboxRecord_(sheet, schema, rowNumber, updates) {
+  Object.keys(updates).forEach(function(field) {
+    if (!Object.prototype.hasOwnProperty.call(schema.columns, field)) fail_('SCHEMA_MISMATCH');
+    sheet.getRange(rowNumber, schema.columns[field]).setValue(updates[field]);
+  });
+}
+
+function sheetNotificationOutboxStore_(sheet) {
+  const schema = assertNotificationOutboxSchema_(sheet);
+  const readAll = function() {
+    const values = sheet.getDataRange().getValues();
+    return values.slice(1).map(function(row, index) {
+      return outboxRecordFromRow_(row, schema, index + 2);
+    }).filter(function(entry) { return String(entry.logical_key || '') !== ''; });
+  };
+  return {
+    records: readAll,
+    loadByLogicalKey: function(key) {
+      return readAll().find(function(entry) { return entry.logical_key === String(key); }) || null;
+    },
+    append: function(fields) {
+      const row = NOTIFICATION_OUTBOX_HEADERS.map(function(header) {
+        return fields[header] == null ? '' : String(fields[header]);
+      });
+      sheet.appendRow(row);
+      return outboxRecordFromRow_(row, schema, sheet.getLastRow());
+    },
+    update: function(entry, fields) {
+      updateOutboxRecord_(sheet, schema, entry.rowNumber, fields);
+      return Object.assign(entry, fields);
+    },
+  };
+}
+
+function memoryNotificationOutboxStore_(seed) {
+  const entries = Array.isArray(seed) ? seed.slice() : [];
+  let nextRow = 2;
+  entries.forEach(function(entry) {
+    if (Number(entry.rowNumber) >= nextRow) nextRow = Number(entry.rowNumber) + 1;
+  });
+  return {
+    records: function() { return entries.slice(); },
+    loadByLogicalKey: function(key) {
+      return entries.find(function(entry) { return entry.logical_key === String(key); }) || null;
+    },
+    append: function(fields) {
+      const entry = { rowNumber: nextRow };
+      nextRow += 1;
+      NOTIFICATION_OUTBOX_HEADERS.forEach(function(header) {
+        entry[header] = fields[header] == null ? '' : String(fields[header]);
+      });
+      entries.push(entry);
+      return entry;
+    },
+    update: function(entry, fields) {
+      Object.assign(entry, fields);
+      return entry;
+    },
+  };
+}
+
+function notificationOutboxClaimView_(entry) {
+  return {
+    key: String(entry.logical_key || ''),
+    version: String(entry.notification_version || '1'),
+    state: String(entry.state || ''),
+    attemptCount: Number(entry.attempt_count || 0) || 0,
+    lastAttemptAt: entry.last_attempt_at || null,
+    lastResult: entry.last_result || null,
+    claimedAt: null,
+  };
 }
 
 function previewOriginFromConfig_(config) {
@@ -833,12 +988,55 @@ function notificationOutboxEntryFromRecord_(record, stateField) {
   };
 }
 
-function persistNotificationOutboxRecord_(deps, record, fields) {
-  if (deps && deps.store && typeof deps.store.update === 'function') {
-    return deps.store.update(record, fields) || Object.assign(record, fields);
+function persistDurableOutbox_(deps, entry, fields) {
+  if (deps && deps.outboxStore && typeof deps.outboxStore.loadByLogicalKey === 'function'
+    && entry && entry.logical_key) {
+    const current = deps.outboxStore.loadByLogicalKey(entry.logical_key);
+    if (current && (current.state === 'superseded' || current.state === 'sent')) {
+      const next = fields && fields.state;
+      if (next && next !== current.state && (next === 'claimed' || next === 'pending' || next === 'failed')) {
+        Object.assign(entry, current);
+        return current;
+      }
+    }
   }
-  updateRecord_(deps.sheet, deps.schema, record.rowNumber, fields);
-  return Object.assign(record, fields);
+  if (deps && deps.outboxStore && typeof deps.outboxStore.update === 'function') {
+    return deps.outboxStore.update(entry, fields) || Object.assign(entry, fields);
+  }
+  return Object.assign(entry, fields);
+}
+
+function auditBookingFromOutbox_(deps, booking, entry) {
+  if (!booking) return;
+  const cancelOrRefund = isCancelOrRefundNotification_(String(entry.event_type || ''));
+  const stateField = cancelOrRefund ? 'notification_internal_state' : 'notification_patient_state';
+  const fields = {
+    notification_outbox_key: String(entry.logical_key || ''),
+    notification_version: String(entry.notification_version || ''),
+    notification_attempt_count: String(entry.attempt_count || '0'),
+    notification_last_attempt_at: String(entry.last_attempt_at || ''),
+    notification_last_result: String(entry.last_result || ''),
+  };
+  fields[stateField] = String(entry.state || '');
+  if (entry.last_result === 'max_attempts') fields.reconciliation_state = 'notification_max_attempts';
+  if (entry.last_result === 'event_type_invalid') fields.reconciliation_state = 'notification_event_type_invalid';
+  if (stateField === 'notification_patient_state' && entry.state === 'sent') {
+    fields.last_patient_notification_at = String(entry.last_attempt_at || '');
+  }
+  if (deps && deps.store && typeof deps.store.update === 'function') deps.store.update(booking, fields);
+  else if (deps && deps.sheet && deps.schema && booking.rowNumber) updateRecord_(deps.sheet, deps.schema, booking.rowNumber, fields);
+  Object.assign(booking, fields);
+}
+
+function snapshotRenderRecord_(booking, entry) {
+  return Object.assign({}, booking, {
+    service_type: entry.snapshot_service_type || booking.service_type,
+    modality: entry.snapshot_modality || booking.modality,
+    current_start_at: entry.snapshot_start_at || booking.current_start_at,
+    current_end_at: entry.snapshot_end_at || booking.current_end_at,
+    meet_url: entry.snapshot_meet_url || '',
+    meet_status: entry.snapshot_meet_status || '',
+  });
 }
 
 function notificationWorkerResultSafe_(result) {
@@ -853,42 +1051,71 @@ function notificationWorkerResultSafe_(result) {
 }
 
 function processOneLifecycleNotificationOutbox_(deps) {
-  const record = deps.record;
-  const stateField = deps.stateField;
+  const entry = deps.entry || deps.record;
   const nowIso = new Date(Number(deps.now || Date.now())).toISOString();
-  const reservationId = String(record.reservation_id || '');
-  const attempts = Number(record.notification_attempt_count || 0) || 0;
-  const eventType = reconstructLifecycleEventType_(record);
+  const reservationId = String(entry.reservation_id || '');
+  const attempts = Number(entry.attempt_count || 0) || 0;
+  const eventType = reconstructLifecycleEventTypeFromEntry_(entry);
+  const booking = deps.store && typeof deps.store.loadByReservationId === 'function'
+    ? deps.store.loadByReservationId(reservationId)
+    : null;
+  const persist = function(fields) {
+    persistDurableOutbox_(deps, entry, fields);
+    auditBookingFromOutbox_(deps, booking, entry);
+    return entry;
+  };
   if (!eventType) {
-    persistNotificationOutboxRecord_(deps, record, {
-      reconciliation_state: 'notification_event_type_invalid',
-      notification_last_result: 'event_type_invalid',
-      notification_last_attempt_at: nowIso,
+    persist({
+      state: 'failed',
+      last_result: 'event_type_invalid',
+      last_attempt_at: nowIso,
+      disposition_reason: 'event_type_invalid',
     });
-    return { ok: false, code: 'NOTIFICATION_EVENT_TYPE_INVALID', reservationId: reservationId, state: record[stateField], attemptCount: attempts };
+    return { ok: false, code: 'NOTIFICATION_EVENT_TYPE_INVALID', reservationId: reservationId, state: entry.state, attemptCount: attempts };
+  }
+  const decided = notificationEventDisposition_(entry, booking);
+  if (decided.disposition === 'failed' && decided.reason === 'booking_missing') {
+    persist({
+      state: 'failed', last_result: 'booking_missing', last_attempt_at: nowIso, disposition_reason: 'booking_missing',
+    });
+    return { ok: false, code: 'NOTIFICATION_RECORD_MISSING', reservationId: reservationId, eventType: eventType,
+      state: 'failed', attemptCount: attempts };
+  }
+  if (decided.disposition === 'superseded') {
+    persist({
+      state: 'superseded', last_result: 'superseded', last_attempt_at: nowIso, disposition_reason: decided.reason,
+    });
+    return { ok: true, code: 'SUPERSEDED', reservationId: reservationId, eventType: eventType,
+      state: 'superseded', attemptCount: attempts };
   }
   if (attempts >= MAX_NOTIFICATION_ATTEMPTS) {
-    persistNotificationOutboxRecord_(deps, record, {
-      reconciliation_state: 'notification_max_attempts',
-      notification_last_result: 'max_attempts',
-      notification_last_attempt_at: nowIso,
+    persist({
+      last_result: 'max_attempts', last_attempt_at: nowIso, disposition_reason: 'max_attempts',
     });
     return { ok: false, code: 'NOTIFICATION_MAX_ATTEMPTS', reservationId: reservationId, eventType: eventType,
-      state: record[stateField], attemptCount: attempts };
+      state: entry.state, attemptCount: attempts };
   }
 
-  const entry = notificationOutboxEntryFromRecord_(record, stateField);
-  const claim = claimNotificationOutbox_(entry, nowIso);
+  const claimView = notificationOutboxClaimView_(entry);
+  const claim = claimNotificationOutbox_(claimView, nowIso);
   if (!claim.ok) {
     return { ok: false, code: claim.code || 'NOTIFICATION_CLAIM_REJECTED', reservationId: reservationId, eventType: eventType,
-      state: entry.state, attemptCount: entry.attemptCount };
+      state: claimView.state, attemptCount: claimView.attemptCount };
   }
-  persistNotificationOutboxRecord_(deps, record, {
-    [stateField]: entry.state,
-    notification_attempt_count: String(entry.attemptCount),
-    notification_last_attempt_at: entry.lastAttemptAt,
-    notification_last_result: 'claimed',
+  persist({
+    state: claimView.state,
+    attempt_count: String(claimView.attemptCount),
+    last_attempt_at: claimView.lastAttemptAt,
+    last_result: 'claimed',
   });
+  if (entry.state === 'superseded' || entry.state === 'sent') {
+    return { ok: true, code: entry.state === 'sent' ? 'SENT' : 'SUPERSEDED', reservationId: reservationId,
+      eventType: eventType, state: entry.state, attemptCount: Number(entry.attempt_count || attempts) || attempts };
+  }
+  if (entry.state !== 'claimed') {
+    return { ok: false, code: 'NOTIFICATION_CLAIM_REJECTED', reservationId: reservationId, eventType: eventType,
+      state: entry.state, attemptCount: Number(entry.attempt_count || attempts) || attempts };
+  }
 
   let capabilityTokens = {};
   let notification;
@@ -902,93 +1129,113 @@ function processOneLifecycleNotificationOutbox_(deps) {
       requireCapabilitySecret_: deps.requireCapabilitySecret_ || requireCapabilitySecret_,
     });
     if (!retry || !retry.ok) {
-      completeNotificationOutbox_(entry, { ok: false });
-      persistNotificationOutboxRecord_(deps, record, {
-        [stateField]: entry.state,
-        notification_attempt_count: String(entry.attemptCount),
-        notification_last_attempt_at: nowIso,
-        notification_last_result: 'failed',
+      completeNotificationOutbox_(claimView, { ok: false });
+      persist({
+        state: claimView.state,
+        attempt_count: String(claimView.attemptCount),
+        last_attempt_at: nowIso,
+        last_result: 'failed',
       });
       return { ok: false, code: (retry && retry.code) || 'NOTIFICATION_RETRY_FAILED', reservationId: reservationId,
-        eventType: eventType, state: entry.state, attemptCount: entry.attemptCount };
+        eventType: eventType, state: claimView.state, attemptCount: claimView.attemptCount };
     }
     notification = retry.notification;
     capabilityTokens = retry.capabilityTokens || {};
-    if (retry.record) Object.assign(record, retry.record);
   } catch (error) {
-    completeNotificationOutbox_(entry, { ok: false });
-    persistNotificationOutboxRecord_(deps, record, {
-      [stateField]: entry.state,
-      notification_attempt_count: String(entry.attemptCount),
-      notification_last_attempt_at: nowIso,
-      notification_last_result: 'failed',
+    completeNotificationOutbox_(claimView, { ok: false });
+    persist({
+      state: claimView.state,
+      attempt_count: String(claimView.attemptCount),
+      last_attempt_at: nowIso,
+      last_result: 'failed',
     });
     return { ok: false, code: safeCode_(error), reservationId: reservationId, eventType: eventType,
-      state: entry.state, attemptCount: entry.attemptCount };
+      state: claimView.state, attemptCount: claimView.attemptCount };
   }
 
+  notification.meet = lifecycleNotificationShowsMeet_(eventType) && entry.snapshot_meet_url
+    ? { meetUrl: String(entry.snapshot_meet_url), meetStatus: String(entry.snapshot_meet_status || '') }
+    : null;
   const previewOrigin = previewOriginFromConfig_(deps.config);
   const rendered = renderLifecycleNotificationEmail_({
-    notification: notification, record: record, capabilityTokens: capabilityTokens, previewOrigin: previewOrigin,
+    notification: notification,
+    record: snapshotRenderRecord_(booking, entry),
+    capabilityTokens: capabilityTokens,
+    previewOrigin: previewOrigin,
   });
   const deliver = deps.deliver || deliverLifecycleNotification_;
   let delivered = false;
   try {
     const delivery = deliver({
       config: deps.config,
-      to: record.patient_email,
+      to: booking.patient_email,
       subject: rendered.subject,
       body: rendered.body,
     });
     delivered = Boolean(delivery && delivery.ok);
   } catch (error) {
-    delivered = false;
-    completeNotificationOutbox_(entry, { ok: false });
+    completeNotificationOutbox_(claimView, { ok: false });
     const failedFields = {
-      [stateField]: entry.state,
-      notification_attempt_count: String(entry.attemptCount),
-      notification_last_attempt_at: nowIso,
-      notification_last_result: 'failed',
+      state: claimView.state,
+      attempt_count: String(claimView.attemptCount),
+      last_attempt_at: nowIso,
+      last_result: claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS ? 'max_attempts' : 'failed',
     };
-    if (entry.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) {
-      failedFields.reconciliation_state = 'notification_max_attempts';
-      failedFields.notification_last_result = 'max_attempts';
-    }
-    persistNotificationOutboxRecord_(deps, record, failedFields);
+    if (claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) failedFields.disposition_reason = 'max_attempts';
+    persist(failedFields);
     return { ok: false, code: safeCode_(error) === 'REQUEST_REJECTED' ? 'NOTIFICATION_DELIVERY_FAILED' : safeCode_(error),
-      reservationId: reservationId, eventType: eventType, state: entry.state, attemptCount: entry.attemptCount };
+      reservationId: reservationId, eventType: eventType, state: claimView.state, attemptCount: claimView.attemptCount };
   }
 
-  completeNotificationOutbox_(entry, { ok: delivered });
+  completeNotificationOutbox_(claimView, { ok: delivered });
   if (delivered) {
-    const sentFields = {
-      [stateField]: entry.state,
-      notification_attempt_count: String(entry.attemptCount),
-      notification_last_attempt_at: nowIso,
-      notification_last_result: 'sent',
-    };
-    if (stateField === 'notification_patient_state') sentFields.last_patient_notification_at = nowIso;
-    persistNotificationOutboxRecord_(deps, record, sentFields);
+    persist({
+      state: claimView.state,
+      attempt_count: String(claimView.attemptCount),
+      last_attempt_at: nowIso,
+      last_result: 'sent',
+    });
+    if (deps.sheet && deps.schema && booking && booking.rowNumber) {
+      const audit = {
+        notification_outbox_key: entry.logical_key,
+        notification_version: entry.notification_version,
+        notification_attempt_count: String(claimView.attemptCount),
+        notification_last_attempt_at: nowIso,
+        notification_last_result: 'sent',
+      };
+      if (lifecycleNotificationStateField_(notification) === 'notification_patient_state') {
+        audit.notification_patient_state = 'sent';
+        audit.last_patient_notification_at = nowIso;
+      } else {
+        audit.notification_internal_state = 'sent';
+      }
+      updateRecord_(deps.sheet, deps.schema, booking.rowNumber, audit);
+      Object.assign(booking, audit);
+    }
     return { ok: true, code: 'SENT', reservationId: reservationId, eventType: eventType,
-      state: entry.state, attemptCount: entry.attemptCount };
+      state: claimView.state, attemptCount: claimView.attemptCount };
   }
 
   const failedFields = {
-    [stateField]: entry.state,
-    notification_attempt_count: String(entry.attemptCount),
-    notification_last_attempt_at: nowIso,
-    notification_last_result: 'failed',
+    state: claimView.state,
+    attempt_count: String(claimView.attemptCount),
+    last_attempt_at: nowIso,
+    last_result: claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS ? 'max_attempts' : 'failed',
   };
-  if (entry.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) {
-    failedFields.reconciliation_state = 'notification_max_attempts';
-    failedFields.notification_last_result = 'max_attempts';
-  }
-  persistNotificationOutboxRecord_(deps, record, failedFields);
+  if (claimView.attemptCount >= MAX_NOTIFICATION_ATTEMPTS) failedFields.disposition_reason = 'max_attempts';
+  persist(failedFields);
   return { ok: false, code: 'NOTIFICATION_DELIVERY_FAILED', reservationId: reservationId, eventType: eventType,
-    state: entry.state, attemptCount: entry.attemptCount };
+    state: claimView.state, attemptCount: claimView.attemptCount };
 }
 
-// Time-driven NONPROD outbox worker. Source only: do not install/run in this mission.
+function resolveNotificationOutboxStore_(deps, resources) {
+  if (deps && deps.outboxStore) return deps.outboxStore;
+  const spreadsheet = resources && resources.spreadsheet
+    || (resources && resources.sheet && typeof resources.sheet.getParent === 'function' && resources.sheet.getParent())
+    || (deps && deps.sheet && typeof deps.sheet.getParent === 'function' && deps.sheet.getParent());
+  return sheetNotificationOutboxStore_(ensureNotificationOutboxSheet_(spreadsheet));
+}
+
 function processLifecycleNotificationOutbox_(opt) {
   const deps = opt || {};
   const config = deps.config || readCapabilityConfig_();
@@ -998,8 +1245,9 @@ function processLifecycleNotificationOutbox_(opt) {
     const resources = deps.resources || assertResources_(config);
     const schema = deps.schema || assertSchema_(resources.sheet);
     const store = deps.store || sheetReservationStore_(resources, schema);
+    const outboxStore = resolveNotificationOutboxStore_(deps, resources);
     const batch = selectRetryableNotificationWork_(
-      typeof store.records === 'function' ? store.records() : [],
+      typeof outboxStore.records === 'function' ? outboxStore.records() : [],
       deps.batchSize || MAX_NOTIFICATION_OUTBOX_BATCH
     );
     const results = [];
@@ -1007,8 +1255,8 @@ function processLifecycleNotificationOutbox_(opt) {
       const item = batch[i];
       try {
         results.push(processOneLifecycleNotificationOutbox_({
-          record: item.record,
-          stateField: item.stateField,
+          entry: item.entry,
+          outboxStore: outboxStore,
           store: store,
           sheet: resources && resources.sheet,
           schema: schema,
@@ -1025,8 +1273,9 @@ function processLifecycleNotificationOutbox_(opt) {
           throw error;
         }
         results.push({
-          ok: false, code: code, reservationId: String(item.record && item.record.reservation_id || ''),
-          state: String(item.record && item.record[item.stateField] || ''), attemptCount: Number(item.record && item.record.notification_attempt_count || 0) || 0,
+          ok: false, code: code, reservationId: String(item.entry && item.entry.reservation_id || ''),
+          state: String(item.entry && item.entry.state || ''),
+          attemptCount: Number(item.entry && item.entry.attempt_count || 0) || 0,
         });
       }
     }
@@ -1035,6 +1284,7 @@ function processLifecycleNotificationOutbox_(opt) {
     lock.releaseLock();
   }
 }
+
 
 var NONPROD_NOTIFICATION_RETRY_HANDLER = 'processLifecycleNotificationOutbox_';
 var NONPROD_NOTIFICATION_RETRY_INTERVAL_MINUTES = 5;
@@ -1162,4 +1412,8 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   patientFacingServiceLabel_: patientFacingServiceLabel_,
   patientFacingModalityLabel_: patientFacingModalityLabel_,
   PATIENT_EMAIL_TIME_ZONE: PATIENT_EMAIL_TIME_ZONE,
+  ensureNotificationOutboxSheet_: ensureNotificationOutboxSheet_,
+  sheetNotificationOutboxStore_: sheetNotificationOutboxStore_,
+  memoryNotificationOutboxStore_: memoryNotificationOutboxStore_,
+  notificationOutboxStoreFromSheet_: notificationOutboxStoreFromSheet_,
 });

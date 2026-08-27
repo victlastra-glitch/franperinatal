@@ -3,17 +3,20 @@
 ## Tests locales no-network
 
 node backend/appsscript/booking/test/phase-a.test.mjs
-NO_NETWORK_TESTS=PASS count=111
+NO_NETWORK_TESTS=PASS count=113
 
 node backend/appsscript/booking/test/lifecycle.test.mjs
 ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=62
 PROVIDER_CONTRACT_TESTS=PASS count=13
 
 node backend/appsscript/booking/test/notification-outbox-worker.test.mjs
-OUTBOX_TRIGGER_TESTS=PASS assertions=44
+OUTBOX_TRIGGER_TESTS=PASS assertions=58
 
 node backend/appsscript/booking/test/sequential-notification-harness.test.mjs
 SEQUENTIAL_NOTIFICATION_HARNESS_TESTS=PASS
+
+node backend/appsscript/booking/test/no-drain-notification-harness.test.mjs
+NO_DRAIN_NOTIFICATION_HARNESS_TESTS=PASS
 
 node backend/appsscript/booking/test/pre-transaction-contract.test.mjs
 PRE_TRANSACTION_CONTRACT_TESTS=PASS
@@ -42,11 +45,12 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 12. Flow refund verb/signature fidelity, ambiguous create manual review y callback replay.
 13. Durable CTA retry por rotación de capability y contrato frontend `code`.
 14. Linkage privado sin PII y Worker management response sin PII.
-15. Outbox worker: batch acotado, allowlist, CTA matrix, rotación, max attempts, lock, installer/removal idempotente sin crear triggers reales.
+15. Outbox worker: batch acotado sobre `notification_outbox_nonprod`, allowlist, CTA matrix, rotación, max attempts, lock, installer/removal idempotente sin crear triggers reales, supersession explícita y reclaim de `claimed`.
 16. Pre-transaction: runtime Meet request, preservación de conferencia en reschedule, validación server-side de slot, FreeBusy bajo lock, `SLOT_TAKEN` sin fila ni Flow.
 17. Flow create: commerceOrder defensive bound, amount=500 (≥ Flow FAQ minimum >350), signature/form contract, safe failure classes, hold release, idempotent replay, operator abandon.
 18. High-level lifecycle harness: create → confirm → Meet/outbox → reschedule → clinician move → cancel → refund → notification retry.
 19. Sequential notification harness: confirmed+paid → confirmation send/replay → patient reschedule send/replay (CANCEL-only) → clinician reschedule send/replay (CANCEL-only) → cancel send/replay (no Meet, no CTA) → max-attempt event does not poison a later logical event. Patient-facing times are America/Santiago and independent of machine timezone.
+20. No-drain notification harness: confirm → reschedule → clinician move → cancel without a worker run between mutations; four durable identities survive; unsent non-cancel events are explicitly superseded; cancellation still sends. Snapshot render keeps the patient-reschedule local time after a later clinician move.
 
 ## Worker y artefacto
 
@@ -60,4 +64,4 @@ Los handlers permitidos para upstream son availability, payment create, flow con
 
 No se declara PASS para Calendar real, Meet persistence, Flow Sandbox, email runtime, schema bootstrap, Preview, Web App runtime, Browser E2E, instalación real del trigger de outbox ni producción. Esos son requisitos del NONPROD ACTIVATION & E2E posterior.
 
-La suite de provider contract usa fakes que rechazan `Events.update(calendarId, eventId, resource)`, `Events.delete` y `refund/getStatus` por POST. El schema final conserva 57 headers y no agregó campos: el outbox no almacena bearers; cada retry rota la capability hash-at-rest bajo lock y retorna el bearer sólo al dispatcher. La persistencia de cursor también falla cerrado si `syncState.set` no completa. El installer `installNonprodNotificationRetryTrigger_` queda en source only (`everyMinutes(5)` → `processLifecycleNotificationOutbox_`) y no se ejecutó.
+La suite de provider contract usa fakes que rechazan `Events.update(calendarId, eventId, resource)`, `Events.delete` y `refund/getStatus` por POST. El schema de reserva conserva 57 headers y no agregó campos; la cola durable vive en `notification_outbox_nonprod` (19 columnas, sin bearers ni PII). Cada retry rota la capability hash-at-rest bajo lock y retorna el bearer sólo al dispatcher. Vaciar el outbox entre mutaciones no es requisito de corrección. La persistencia de cursor también falla cerrado si `syncState.set` no completa. El installer `installNonprodNotificationRetryTrigger_` queda en source only (`everyMinutes(5)` → `processLifecycleNotificationOutbox_`) y no se ejecutó.

@@ -494,6 +494,98 @@ function nextLifecycleNotificationVersion_(record, eventType) {
   return String((Number.isFinite(parsed) ? parsed : 0) + 1);
 }
 
+function nextDurableNotificationVersion_(entries, reservationId) {
+  let max = 0;
+  const list = Array.isArray(entries) ? entries : [];
+  for (let i = 0; i < list.length; i += 1) {
+    if (String(list[i].reservation_id || '') !== String(reservationId || '')) continue;
+    const parsed = Number(list[i].notification_version || 0);
+    if (Number.isFinite(parsed) && parsed > max) max = parsed;
+  }
+  return String(max + 1);
+}
+
+function notificationSnapshotFromRecord_(record) {
+  return {
+    snapshot_service_type: String(record && record.service_type || ''),
+    snapshot_modality: String(record && record.modality || ''),
+    snapshot_start_at: String(record && record.current_start_at || ''),
+    snapshot_end_at: String(record && record.current_end_at || ''),
+    snapshot_meet_url: String(record && record.meet_url || ''),
+    snapshot_meet_status: String(record && record.meet_status || ''),
+    snapshot_booking_status: String(record && record.booking_status || ''),
+    snapshot_schedule_status: String(record && record.schedule_status || ''),
+    snapshot_patient_reschedule_count: String(record && record.patient_reschedule_count || '0'),
+  };
+}
+
+function isCancelOrRefundNotification_(eventType) {
+  return eventType === LIFECYCLE_NOTIFICATION_TYPE.PATIENT_CANCELLED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.CLINICIAN_CANCELLED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_REQUESTED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_COMPLETED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW;
+}
+
+function notificationEventDisposition_(entry, record) {
+  const eventType = String(entry && entry.event_type || '');
+  if (!record) return { disposition: 'failed', reason: 'booking_missing' };
+  const cancelled = record.booking_status === LIFECYCLE.BOOKING_STATUS.CANCELLED
+    || record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.CANCELLED;
+  if (cancelled && !isCancelOrRefundNotification_(eventType)) {
+    return { disposition: 'superseded', reason: 'booking_cancelled' };
+  }
+  if (eventType === LIFECYCLE_NOTIFICATION_TYPE.BOOKING_CONFIRMED) {
+    if (String(record.patient_reschedule_count || '0') !== '0') {
+      return { disposition: 'superseded', reason: 'schedule_changed' };
+    }
+    if (String(record.current_start_at || '') !== String(entry.snapshot_start_at || '')) {
+      return { disposition: 'superseded', reason: 'schedule_changed' };
+    }
+  }
+  return { disposition: 'deliver', reason: '' };
+}
+
+function findDurableNotificationReplay_(entries, reservationId, eventType, snapshotStartAt) {
+  const list = Array.isArray(entries) ? entries : [];
+  for (let i = 0; i < list.length; i += 1) {
+    const entry = list[i];
+    if (String(entry.reservation_id || '') !== String(reservationId || '')) continue;
+    if (String(entry.event_type || '') !== String(eventType || '')) continue;
+    if (String(entry.snapshot_start_at || '') !== String(snapshotStartAt || '')) continue;
+    if (String(entry.state || '') === 'superseded') continue;
+    return entry;
+  }
+  return null;
+}
+
+function pendingSameTypeNotification_(entries, reservationId, eventType) {
+  const list = Array.isArray(entries) ? entries : [];
+  const found = [];
+  for (let i = 0; i < list.length; i += 1) {
+    const entry = list[i];
+    if (String(entry.reservation_id || '') !== String(reservationId || '')) continue;
+    if (String(entry.event_type || '') !== String(eventType || '')) continue;
+    if (NOTIFICATION_OUTBOX_RETRYABLE_STATES.indexOf(String(entry.state || '')) === -1) continue;
+    found.push(entry);
+  }
+  return found;
+}
+
+function reconstructLifecycleEventTypeFromEntry_(entry) {
+  const eventType = String(entry && entry.event_type || '');
+  if (LIFECYCLE_NOTIFICATION_TYPE[eventType]) return eventType;
+  return reconstructLifecycleEventType_({
+    notification_outbox_key: entry && entry.logical_key,
+    reservation_id: entry && entry.reservation_id,
+    notification_version: entry && entry.notification_version,
+  });
+}
+
+function isRetryableNotificationState_(state) {
+  return NOTIFICATION_OUTBOX_RETRYABLE_STATES.indexOf(String(state || '')) !== -1;
+}
+
 function makeLifecycleNotification_(eventType, record, options) {
   if (!LIFECYCLE_NOTIFICATION_TYPE[eventType]) fail_('NOTIFICATION_TYPE_INVALID');
   if (!record || !record.reservation_id || !record.notification_version) fail_('NOTIFICATION_RECORD_INVALID');
@@ -531,15 +623,23 @@ function notificationRetryStateField_(record) {
   return null;
 }
 
-function selectRetryableNotificationWork_(records, limit) {
+function selectRetryableNotificationWork_(entries, limit) {
   const max = Math.max(1, Number(limit) || MAX_NOTIFICATION_OUTBOX_BATCH);
+  const list = Array.isArray(entries) ? entries.slice() : [];
+  list.sort(function(a, b) {
+    const created = String(a.created_at || a.createdAt || '').localeCompare(String(b.created_at || b.createdAt || ''));
+    if (created) return created;
+    const versionA = Number(a.notification_version || a.version || 0);
+    const versionB = Number(b.notification_version || b.version || 0);
+    if (versionA !== versionB) return versionA - versionB;
+    return Number(a.rowNumber || 0) - Number(b.rowNumber || 0);
+  });
   const selected = [];
-  const list = Array.isArray(records) ? records : [];
   for (let i = 0; i < list.length && selected.length < max; i += 1) {
-    const record = list[i];
-    const stateField = notificationRetryStateField_(record);
-    if (!stateField) continue;
-    selected.push({ record: record, stateField: stateField });
+    const entry = list[i];
+    if (!isRetryableNotificationState_(entry.state)) continue;
+    if (entry.last_result === 'max_attempts' || entry.last_result === 'event_type_invalid') continue;
+    selected.push({ entry: entry, record: entry });
   }
   return selected;
 }
@@ -570,8 +670,8 @@ function retryLifecycleNotification_(input) {
 }
 
 function claimNotificationOutbox_(entry, now) {
-  if (!entry || !entry.key || entry.state === 'sent') return { ok: false, code: 'NOTIFICATION_ALREADY_SENT' };
-  if (entry.state === 'claimed') return { ok: false, code: 'NOTIFICATION_CLAIMED' };
+  if (!entry || !entry.key) return { ok: false, code: 'NOTIFICATION_CLAIM_REJECTED' };
+  if (entry.state === 'sent' || entry.state === 'superseded') return { ok: false, code: 'NOTIFICATION_ALREADY_SENT' };
   entry.state = 'claimed'; entry.attemptCount += 1; entry.claimedAt = String(now || new Date().toISOString());
   entry.lastAttemptAt = entry.claimedAt; return { ok: true, entry: entry };
 }
@@ -590,6 +690,7 @@ function notificationLogSafe_(entry) {
 var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   LIFECYCLE: LIFECYCLE,
   HEADERS: RESERVATION_HEADERS,
+  OUTBOX_HEADERS: NOTIFICATION_OUTBOX_HEADERS,
   TRANSITIONS: LIFECYCLE_TRANSITIONS,
   CAPABILITY_RANDOM_UUID_COUNT: CAPABILITY_RANDOM_UUID_COUNT,
   CAPABILITY_SECRET_MIN_LENGTH: CAPABILITY_SECRET_MIN_LENGTH,
@@ -610,6 +711,13 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   lifecycleNotificationShowsMeet_: lifecycleNotificationShowsMeet_,
   lifecycleNotificationStateField_: lifecycleNotificationStateField_,
   nextLifecycleNotificationVersion_: nextLifecycleNotificationVersion_,
+  nextDurableNotificationVersion_: nextDurableNotificationVersion_,
+  notificationSnapshotFromRecord_: notificationSnapshotFromRecord_,
+  notificationEventDisposition_: notificationEventDisposition_,
+  findDurableNotificationReplay_: findDurableNotificationReplay_,
+  pendingSameTypeNotification_: pendingSameTypeNotification_,
+  reconstructLifecycleEventTypeFromEntry_: reconstructLifecycleEventTypeFromEntry_,
+  isRetryableNotificationState_: isRetryableNotificationState_,
   retryLifecycleNotification_: retryLifecycleNotification_, assertCancellationTransition_: assertCancellationTransition_, atomicCancellationTransitionFields_: atomicCancellationTransitionFields_,
   patientRescheduleTransaction_: patientRescheduleTransaction_, patientCancelTransaction_: patientCancelTransaction_,
   withLifecycleLock_: withLifecycleLock_,
@@ -617,6 +725,8 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   notificationRetryStateField_: notificationRetryStateField_, selectRetryableNotificationWork_: selectRetryableNotificationWork_,
   MAX_NOTIFICATION_ATTEMPTS: MAX_NOTIFICATION_ATTEMPTS, MAX_NOTIFICATION_OUTBOX_BATCH: MAX_NOTIFICATION_OUTBOX_BATCH,
   LIFECYCLE_NOTIFICATION_TYPE: LIFECYCLE_NOTIFICATION_TYPE,
+  NOTIFICATION_OUTBOX_RETRYABLE_STATES: NOTIFICATION_OUTBOX_RETRYABLE_STATES,
+  NOTIFICATION_OUTBOX_TERMINAL_STATES: NOTIFICATION_OUTBOX_TERMINAL_STATES,
   transitionBooking_: transitionBooking_,
   transitionPayment_: transitionPayment_, transitionRefund_: transitionRefund_, transitionSchedule_: transitionSchedule_,
   validIdempotencyKey_: validIdempotencyKey_, makeOpaqueId_: makeOpaqueId_,
@@ -626,4 +736,5 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   patientFacingServiceLabel_: patientFacingServiceLabel_,
   patientFacingModalityLabel_: patientFacingModalityLabel_,
   PATIENT_EMAIL_TIME_ZONE: PATIENT_EMAIL_TIME_ZONE,
+  memoryNotificationOutboxStore_: memoryNotificationOutboxStore_,
 });

@@ -37,18 +37,33 @@ let networkCalls = 0;
 let eventStore = null;
 
 function currentRows() { return [...byReservation.values()]; }
+const outboxRows = [];
+let outboxHeaders = [];
+let spreadsheet = null;
+function makeRange(targetHeaders, getRow, setCell) {
+  return function(row, col, numRows, numCols) {
+    return {
+      getDisplayValues: () => [targetHeaders],
+      setValue: (value) => setCell(row, col, value),
+      setValues: (values) => {
+        if (row === 1 && values && values[0]) {
+          if (targetHeaders === outboxHeaders) {
+            outboxHeaders.splice(0, outboxHeaders.length, ...values[0].map(String));
+          }
+        }
+      },
+    };
+  };
+}
 const sheet = {
   getLastRow: () => 1 + byReservation.size,
   getLastColumn: () => headers.length,
-  getRange: (row, col) => ({
-    getDisplayValues: () => [headers],
-    setValue: (value) => {
-      if (row < 2) return;
-      const current = currentRows()[row - 2];
-      if (!current) return;
-      current[headers[col - 1]] = String(value == null ? '' : value);
-      byReservation.set(current.reservation_id, current);
-    },
+  getRange: makeRange(headers, () => currentRows(), (row, col, value) => {
+    if (row < 2) return;
+    const current = currentRows()[row - 2];
+    if (!current) return;
+    current[headers[col - 1]] = String(value == null ? '' : value);
+    byReservation.set(current.reservation_id, current);
   }),
   getDataRange: () => ({
     getValues: () => [headers, ...currentRows().map((row) => headers.map((header) => row[header] ?? ''))],
@@ -58,7 +73,40 @@ const sheet = {
     headers.forEach((header, index) => { created[header] = row[index] == null ? '' : String(row[index]); });
     byReservation.set(created.reservation_id, created);
   },
+  getParent: () => spreadsheet,
 };
+const outboxSheet = {
+  getLastRow: () => (outboxHeaders.length && (outboxRows.length || true) ? 1 + outboxRows.length : 0),
+  getLastColumn: () => outboxHeaders.length,
+  getRange: makeRange(outboxHeaders, () => outboxRows, (row, col, value) => {
+    if (row < 2) return;
+    const current = outboxRows[row - 2];
+    if (!current) return;
+    current[outboxHeaders[col - 1]] = String(value == null ? '' : value);
+  }),
+  getDataRange: () => ({
+    getValues: () => [outboxHeaders, ...outboxRows.map((row) => outboxHeaders.map((header) => row[header] ?? ''))],
+  }),
+  appendRow: (row) => {
+    const created = { rowNumber: outboxRows.length + 2 };
+    outboxHeaders.forEach((header, index) => { created[header] = row[index] == null ? '' : String(row[index]); });
+    outboxRows.push(created);
+  },
+  getParent: () => spreadsheet,
+};
+spreadsheet = {
+  getId: () => 'synthetic-store',
+  getSheetByName: (name) => {
+    if (name === 'reservations_nonprod') return sheet;
+    if (name === 'notification_outbox_nonprod') return outboxHeaders.length || outboxRows.length ? outboxSheet : null;
+    return null;
+  },
+  insertSheet: (name) => {
+    if (name === 'notification_outbox_nonprod') return outboxSheet;
+    return sheet;
+  },
+};
+outboxSheet.getLastRow = () => outboxHeaders.length ? 1 + outboxRows.length : 0;
 
 const context = {
   console, Date, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
@@ -74,7 +122,7 @@ const context = {
       setProperty: (key, value) => { propertyValues[key] = String(value); },
     }),
   },
-  SpreadsheetApp: { openById: () => ({ getId: () => 'synthetic-store', getSheetByName: () => sheet }) },
+  SpreadsheetApp: { openById: () => spreadsheet },
   CalendarApp: { getCalendarById: (id) => ({ getId: () => id }) },
   Calendar: {
     Freebusy: { query: () => ({ calendars: { 'synthetic-calendar': { busy: [] } } }) },
@@ -129,6 +177,7 @@ vm.createContext(context);
 for (const source of sources) vm.runInContext(source, context);
 headers = [...context.RESERVATION_HEADERS];
 const phase = context.__PHASE_A_TEST_EXPORTS__;
+outboxHeaders.splice(0, outboxHeaders.length, ...phase.OUTBOX_HEADERS);
 const worker = context.__NOTIFICATION_OUTBOX_TEST_EXPORTS__;
 const reconciliation = context.__RECONCILIATION_TEST_EXPORTS__;
 
@@ -359,7 +408,8 @@ const poisonStore = {
   loadByReservationId: (id) => String(id) === poison.reservation_id ? poison : null,
   update: (current, fields) => Object.assign(current, fields),
 };
-worker.enqueueLifecycleNotification_(poisonSheet, schema(), poison, 'PATIENT_RESCHEDULED');
+const poisonOutbox = worker.memoryNotificationOutboxStore_();
+worker.enqueueLifecycleNotification_(poisonSheet, schema(), poison, 'PATIENT_RESCHEDULED', null, poisonOutbox);
 check(String(poison.notification_outbox_key).includes('PATIENT_RESCHEDULED')
   && poison.notification_patient_state === 'pending'
   && String(poison.notification_attempt_count) === '0'
@@ -367,7 +417,8 @@ check(String(poison.notification_outbox_key).includes('PATIENT_RESCHEDULED')
   'prior max-attempt event does not poison a later logical event');
 mailBodies = [];
 const poisonRun = worker.processLifecycleNotificationOutbox_({
-  config: phase.readCapabilityConfig_(), store: poisonStore, resources: { sheet: poisonSheet }, schema: schema(),
+  config: phase.readCapabilityConfig_(), store: poisonStore, outboxStore: poisonOutbox,
+  resources: { sheet: poisonSheet }, schema: schema(),
   requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-27T16:30:00.000Z'),
 });
 check(poisonRun.ok && poisonRun.results[0].ok && poison.notification_patient_state === 'sent'

@@ -88,19 +88,42 @@ incorrectly applied to the channel field instead of that key.
 
 ## NOTIFICATION_SEQUENCE_FIX
 
-Event-scoped outbox idempotency. No schema expansion (still 57 headers).
+Event-scoped outbox idempotency on a dedicated append-only sheet.
+Reservation schema is unchanged (still 57 headers). Those columns are a
+last-pointer audit, not the queue.
 
-- Replay of the same logical key (`sent` / `claimed` / `pending` / `failed`) does not enqueue again
-- A different event type gets a new logical key, `pending`, and `notification_attempt_count=0`
-- `notification_version` increments only when the event type changes
-- Prior `sent` / `claimed` / max-attempt state cannot suppress a later logical event
-- Unused pending/failed/claimed channel state is cleared so the worker selects the new event
-- `notification_max_attempts` reconciliation is cleared for the new event only
+```
+NOTIFICATION_OUTBOX_STORAGE=notification_outbox_nonprod
+NOTIFICATION_EVENT_IDEMPOTENCY=logical_key + snapshot_start_at
+NOTIFICATION_ORDERING=created_at, then notification_version, then rowNumber
+NOTIFICATION_SNAPSHOT_POLICY=render time/service/Meet from enqueue snapshot; CTAs from live booking
+NOTIFICATION_SUPERSESSION_POLICY=process-time disposition, never overwrite
+NOTIFICATION_RETRY=pending|failed|claimed, max 5 per durable row
+NOTIFICATION_TERMINAL_DISPOSITION=sent|superseded
+OUTBOX_DRAIN_REQUIRED_FOR_CORRECTNESS=NO
+SINGLE_SLOT_EVENT_LOSS_RISK=ELIMINATED
+```
 
-Single active outbox slot per booking is unchanged. If a later lifecycle
-mutation happens before the worker drains a pending different event, the newer
-event supersedes the unsent previous one. The final macro-E2E must drain the
-outbox after each mutation.
+- Worker reads **outbox rows only**. Booking `notification_*` fields are audit.
+- Same event type + same `snapshot_start_at` is a replay of one durable row.
+- Same event type + different snapshot supersedes the previous retryable row
+  (`later_same_type`) and appends a new identity.
+- A later different event type appends; it does not delete or overwrite a
+  previous unsent row.
+- `BOOKING_CONFIRMED` is superseded with `schedule_changed` if the live
+  start time moved or `patient_reschedule_count !== 0`.
+- Non-cancel/refund events are superseded with `booking_cancelled` if the
+  booking/schedule is already cancelled.
+- `PATIENT_RESCHEDULED` / `CLINICIAN_RESCHEDULED` still send after a later
+  time change, using the snapshot taken at enqueue.
+- Cancel/refund events are never superseded.
+- Claim persist cannot clobber `sent` / `superseded`. Crashed `claimed` rows
+  are reclaimed.
+- Outbox stores no email, tokens, RUT, clinical text, or secrets. Recipient
+  is resolved from the booking row at send time.
+
+Correctness does **not** depend on draining between mutations. Drain remains
+an E2E observation aid so each mail can be inspected one at a time.
 
 ## CONFIRMATION_EMAIL
 
@@ -117,9 +140,10 @@ localized `initial` / `online` labels. Replay does not resend.
 PATIENT_RESCHEDULE_EMAIL_CONTRACT=PASS
 ```
 
-Subject: `Tu sesión fue reagendada`. New canonical Chile local time, current Meet,
-CANCEL CTA only, no Reagendar after quota=1. Worker rotates a surviving CANCEL
-capability without resurrecting RESCHEDULE.
+Subject: `Tu sesión fue reagendada`. Chile local time from the enqueue snapshot
+(not a later live booking time), current Meet from snapshot, CANCEL CTA only,
+no Reagendar after quota=1. Worker rotates a surviving CANCEL capability
+without resurrecting RESCHEDULE.
 
 ## CLINICIAN_RESCHEDULE_EMAIL
 
@@ -127,8 +151,9 @@ capability without resurrecting RESCHEDULE.
 CLINICIAN_RESCHEDULE_EMAIL_CONTRACT=PASS
 ```
 
-Same subject and CANCEL-only CTA matrix. Clinician-updated Chile local time,
-current Meet, patient_reschedule_count unchanged, no RESCHEDULE CTA.
+Same subject and CANCEL-only CTA matrix. Snapshot Chile local time at the
+clinician-move enqueue, current Meet from snapshot, patient_reschedule_count
+unchanged, no RESCHEDULE CTA.
 
 ## CANCELLATION_EMAIL
 
@@ -215,6 +240,7 @@ MAY REMAIN:
 - cancellation source/timestamp
 - `manual_review` refund state
 - notification audit metadata (`sent`, outbox key, attempt count)
+- durable `notification_outbox_nonprod` rows in `sent` / `superseded` / exhausted `failed`
 - provider references
 - reconciliation history where safe
 
@@ -233,7 +259,8 @@ READY_FOR_NONPROD_CLOSEOUT does **not** require:
 It **does** require:
 
 - zero P0 / zero P1
-- notification sequencing fixed (this source pass)
+- notification sequencing fixed on a durable per-event outbox (this source pass)
+- drain between mutations not required for correctness
 - one-time confirmation / patient reschedule / clinician reschedule /
   cancellation mail (prove on a fresh macro run)
 - correct CTA matrix
@@ -264,29 +291,30 @@ Required sequence after forcing Apps Script remote parity with branch tip:
 
 1. fresh free slot (new idempotency UUID)
 2. Flow Sandbox create 500 CLP → PAID
-3. confirmation email
-4. **drain notification outbox**
-5. patient reschedule → reschedule email (`Tu sesión fue reagendada`, CANCEL only)
-6. **drain notification outbox**
-7. clinician same-event move → clinician reschedule email
-8. **drain notification outbox**
-9. patient cancel → cancellation email (no Meet, no CTA)
-10. **drain notification outbox**
-11. terminal policy: cancelled, capacity free, payment paid, `manual_review`
-12. cleanup of orphan runtime resources only; keep audit row
-13. Production fingerprint still
+3. confirmation email queued
+4. patient reschedule → reschedule email queued (`Tu sesión fue reagendada`, CANCEL only)
+5. clinician same-event move → clinician reschedule email queued
+6. patient cancel → cancellation email queued (no Meet, no CTA)
+7. **one or more worker drains** (observation only; not required between mutations)
+8. terminal policy: cancelled, capacity free, payment paid, `manual_review`
+9. cleanup of orphan runtime resources only; keep audit row
+10. Production fingerprint still
     `5699a590f8ec9175129130fc5124b6c1af3ed99ffb8235b22979d338efa0fdb1`
 
-Drain the outbox after each mutation so the single-slot worker cannot supersede
-an unsent previous logical event.
+Drain may run after each mutation so each Gmail can be inspected in isolation.
+A single drain after all four mutations is also correct: unsent confirmation
+and reschedules become `superseded` / `booking_cancelled`, and cancellation
+still sends.
 
 ## P0 / P1 / P2 / P3
 
 ```
 P0=none
 P1=none
-P2=single-slot outbox can supersede an unsent previous logical event if the worker is not drained between mutations; operational drain is required in the final macro-E2E
+P2=none
 P3=presencial patient-facing modality label left as stored `presencial`; no in-person positioning invented
+OUTBOX_DRAIN_REQUIRED_FOR_CORRECTNESS=NO
+SINGLE_SLOT_EVENT_LOSS_RISK=ELIMINATED
 ```
 
 ## READY_FOR_FINAL_RUNTIME_CLOSEOUT

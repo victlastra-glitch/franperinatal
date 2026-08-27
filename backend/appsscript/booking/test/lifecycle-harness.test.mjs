@@ -37,18 +37,31 @@ let networkCalls = 0;
 let eventStore = null;
 
 function currentRows() { return [...byReservation.values()]; }
+const outboxRows = [];
+let outboxHeaders = [];
+let spreadsheet = null;
+function makeRange(targetHeaders, setCell) {
+  return function(row, col) {
+    return {
+      getDisplayValues: () => [targetHeaders],
+      setValue: (value) => setCell(row, col, value),
+      setValues: (values) => {
+        if (row === 1 && values && values[0] && targetHeaders === outboxHeaders) {
+          outboxHeaders.splice(0, outboxHeaders.length, ...values[0].map(String));
+        }
+      },
+    };
+  };
+}
 const sheet = {
   getLastRow: () => 1 + byReservation.size,
   getLastColumn: () => headers.length,
-  getRange: (row, col) => ({
-    getDisplayValues: () => [headers],
-    setValue: (value) => {
-      if (row < 2) return;
-      const record = currentRows()[row - 2];
-      if (!record) return;
-      record[headers[col - 1]] = String(value == null ? '' : value);
-      byReservation.set(record.reservation_id, record);
-    },
+  getRange: makeRange(headers, (row, col, value) => {
+    if (row < 2) return;
+    const record = currentRows()[row - 2];
+    if (!record) return;
+    record[headers[col - 1]] = String(value == null ? '' : value);
+    byReservation.set(record.reservation_id, record);
   }),
   getDataRange: () => ({
     getValues: () => [headers, ...currentRows().map((record) => headers.map((header) => record[header] ?? ''))],
@@ -58,6 +71,35 @@ const sheet = {
     headers.forEach((header, index) => { record[header] = row[index] == null ? '' : String(row[index]); });
     byReservation.set(record.reservation_id, record);
   },
+  getParent: () => spreadsheet,
+};
+const outboxSheet = {
+  getLastRow: () => outboxHeaders.length ? 1 + outboxRows.length : 0,
+  getLastColumn: () => outboxHeaders.length,
+  getRange: makeRange(outboxHeaders, (row, col, value) => {
+    if (row < 2) return;
+    const current = outboxRows[row - 2];
+    if (!current) return;
+    current[outboxHeaders[col - 1]] = String(value == null ? '' : value);
+  }),
+  getDataRange: () => ({
+    getValues: () => [outboxHeaders, ...outboxRows.map((row) => outboxHeaders.map((header) => row[header] ?? ''))],
+  }),
+  appendRow: (row) => {
+    const created = { rowNumber: outboxRows.length + 2 };
+    outboxHeaders.forEach((header, index) => { created[header] = row[index] == null ? '' : String(row[index]); });
+    outboxRows.push(created);
+  },
+  getParent: () => spreadsheet,
+};
+spreadsheet = {
+  getId: () => 'synthetic-store',
+  getSheetByName: (name) => {
+    if (name === 'reservations_nonprod') return sheet;
+    if (name === 'notification_outbox_nonprod') return outboxHeaders.length ? outboxSheet : null;
+    return null;
+  },
+  insertSheet: (name) => name === 'notification_outbox_nonprod' ? outboxSheet : sheet,
 };
 
 const context = {
@@ -74,7 +116,7 @@ const context = {
       setProperty: (key, value) => { propertyValues[key] = String(value); },
     }),
   },
-  SpreadsheetApp: { openById: () => ({ getId: () => 'synthetic-store', getSheetByName: () => sheet }) },
+  SpreadsheetApp: { openById: () => spreadsheet },
   CalendarApp: { getCalendarById: (id) => ({ getId: () => id }) },
   Calendar: {
     Freebusy: { query: () => ({ calendars: { 'synthetic-calendar': { busy: [] } } }) },
@@ -129,6 +171,7 @@ vm.createContext(context);
 for (const source of sources) vm.runInContext(source, context);
 headers = [...context.RESERVATION_HEADERS];
 const phase = context.__PHASE_A_TEST_EXPORTS__;
+outboxHeaders.splice(0, outboxHeaders.length, ...phase.OUTBOX_HEADERS);
 const worker = context.__NOTIFICATION_OUTBOX_TEST_EXPORTS__;
 const reconciliation = context.__RECONCILIATION_TEST_EXPORTS__;
 const refund = context.__REFUND_TEST_EXPORTS__;
@@ -259,8 +302,26 @@ const rotateStore = {
   update: (current, fields) => Object.assign(current, fields),
 };
 mailBodies = [];
+const rotateOutbox = worker.memoryNotificationOutboxStore_([{
+  logical_key: rotateRecord.notification_outbox_key,
+  reservation_id: rotateRecord.reservation_id,
+  event_type: 'BOOKING_CONFIRMED',
+  notification_version: '2',
+  state: 'failed',
+  attempt_count: '1',
+  created_at: '2026-08-28T15:00:00.000Z',
+  snapshot_service_type: 'initial',
+  snapshot_modality: 'online',
+  snapshot_start_at: rotateRecord.current_start_at,
+  snapshot_end_at: '',
+  snapshot_meet_url: rotateRecord.meet_url,
+  snapshot_meet_status: '',
+  snapshot_booking_status: 'confirmed',
+  snapshot_schedule_status: 'scheduled',
+  snapshot_patient_reschedule_count: '0',
+}]);
 const retry = worker.processLifecycleNotificationOutbox_({
-  config: phase.readCapabilityConfig_(), store: rotateStore, resources: { sheet },
+  config: phase.readCapabilityConfig_(), store: rotateStore, outboxStore: rotateOutbox, resources: { sheet },
   schema: { headers, columns: Object.fromEntries(headers.map((h, i) => [h, i + 1])) },
   requireCapabilitySecret_: () => capabilitySecret, now: Date.now(),
 });
