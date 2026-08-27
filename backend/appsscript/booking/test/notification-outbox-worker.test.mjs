@@ -36,7 +36,7 @@ const utilities = {
   computeHmacSha256Signature: (value, key) => bytes(createHmac('sha256', String(key)).update(String(value)).digest()),
 };
 const context = {
-  console, Date, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
+  console, Date, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
   Utilities: utilities,
   PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...propertyValues }) }) },
   SpreadsheetApp: { openById: () => { throw new Error('spreadsheet stub must not be called'); } },
@@ -310,6 +310,64 @@ const mixed = runWorker(makeStore([mixedBad, mixedGood]));
 check(mixed.processed === 2 && !mixed.results[0].ok && mixed.results[1].ok
   && mixedBad.notification_patient_state === 'failed' && mixedGood.notification_patient_state === 'sent',
   'one failed row does not corrupt another valid row');
+
+function makeSheet(record) {
+  return {
+    getRange: (_row, col) => ({
+      setValue: (value) => { record[phase.HEADERS[col - 1]] = String(value == null ? '' : value); },
+    }),
+  };
+}
+const enqueueSchema = { headers: phase.HEADERS, columns: Object.fromEntries(phase.HEADERS.map((h, i) => [h, i + 1])) };
+const sequential = makeRecord({ reservation_id: 'fran-nonprod-20260821-reservation-seq' });
+sequential.rowNumber = 2;
+runWorker(makeStore([sequential]));
+check(sequential.notification_patient_state === 'sent', 'sequential fixture confirmation is sent');
+const afterConfirmKey = sequential.notification_outbox_key;
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_RESCHEDULED');
+check(sequential.notification_patient_state === 'pending' && String(sequential.notification_attempt_count) === '0'
+  && String(sequential.notification_outbox_key).includes('PATIENT_RESCHEDULED')
+  && sequential.notification_outbox_key !== afterConfirmKey,
+  'sent confirmation does not suppress a later PATIENT_RESCHEDULED enqueue');
+mailed = [];
+sequential.patient_reschedule_count = '1';
+sequential.reschedule_capability_revoked_at = 'used';
+runWorker(makeStore([sequential]));
+check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue reagendada'
+  && mailed[0].body.includes('Cancelar:') && !mailed[0].body.includes('Reagendar:')
+  && mailed[0].body.includes('11:00') && !mailed[0].body.includes('.000Z'),
+  'patient reschedule email is Chile-local CANCEL-only');
+const afterRescheduleKey = sequential.notification_outbox_key;
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'CLINICIAN_RESCHEDULED');
+check(sequential.notification_patient_state === 'pending' && sequential.notification_outbox_key !== afterRescheduleKey
+  && String(sequential.notification_outbox_key).includes('CLINICIAN_RESCHEDULED'),
+  'sent patient-reschedule does not suppress CLINICIAN_RESCHEDULED');
+mailed = [];
+runWorker(makeStore([sequential]));
+check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue reagendada'
+  && mailed[0].body.includes('Cancelar:') && !mailed[0].body.includes('Reagendar:'),
+  'clinician reschedule email is CANCEL-only');
+sequential.booking_status = 'cancelled';
+sequential.schedule_status = 'cancelled';
+sequential.cancel_capability_revoked_at = 'now';
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_CANCELLED');
+check(sequential.notification_internal_state === 'pending'
+  && String(sequential.notification_outbox_key).includes('PATIENT_CANCELLED')
+  && String(sequential.notification_attempt_count) === '0',
+  'cancellation uses the internal channel and resets attempts');
+mailed = [];
+runWorker(makeStore([sequential]));
+check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue cancelada'
+  && mailed[0].body.includes('Confirmamos la cancelación')
+  && !mailed[0].body.includes('Meet:') && !/meet\.google\.com/i.test(mailed[0].body)
+  && !mailed[0].body.includes('Reagendar:') && !mailed[0].body.includes('Cancelar:')
+  && mailed[0].body.includes('11:00') && !mailed[0].body.includes('.000Z'),
+  'cancellation email has Chile local context and no Meet or CTAs');
+worker.enqueueLifecycleNotification_(makeSheet(sequential), enqueueSchema, sequential, 'PATIENT_CANCELLED');
+check(sequential.notification_internal_state === 'sent', 'cancellation replay enqueue does not reopen a sent event');
+
+const renderedTime = worker.formatPatientFacingDateTime_('2026-08-25T15:00:00.000Z');
+check(renderedTime === 'martes 25 de agosto de 2026, 11:00', 'outbox render clock is America/Santiago');
 
 // 19 + 20 + 21. installer does not duplicate; targets handler; interval = 5
 projectTriggers.length = 0;

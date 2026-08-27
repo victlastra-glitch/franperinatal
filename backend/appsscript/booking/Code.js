@@ -666,13 +666,86 @@ function refundConfirmation_(e) {
 
 function refundPolicy_() { return { decision: 'BUSINESS_POLICY_TBD', eligible: false }; }
 
+var PATIENT_EMAIL_TIME_ZONE = 'America/Santiago';
+var PATIENT_EMAIL_WEEKDAYS_ES = Object.freeze(['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']);
+var PATIENT_EMAIL_MONTHS_ES = Object.freeze([
+  'enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio',
+  'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre',
+]);
+
+function formatPatientFacingDateTime_(value) {
+  const ms = Date.parse(String(value || ''));
+  if (!Number.isFinite(ms)) return '';
+  try {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: PATIENT_EMAIL_TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+    const parts = {};
+    formatter.formatToParts(new Date(ms)).forEach(function(part) {
+      if (part.type !== 'literal') parts[part.type] = part.value;
+    });
+    const year = Number(parts.year);
+    const month = Number(parts.month);
+    const day = Number(parts.day);
+    if (!year || !month || !day) return '';
+    const hour = String(parts.hour == null ? '' : parts.hour).padStart(2, '0');
+    const minute = String(parts.minute == null ? '' : parts.minute).padStart(2, '0');
+    const weekday = PATIENT_EMAIL_WEEKDAYS_ES[new Date(Date.UTC(year, month - 1, day, 12, 0, 0)).getUTCDay()];
+    const monthName = PATIENT_EMAIL_MONTHS_ES[month - 1];
+    if (!weekday || !monthName) return '';
+    return weekday + ' ' + day + ' de ' + monthName + ' de ' + year + ', ' + hour + ':' + minute;
+  } catch (error) {
+    fail_('TIMEZONE_UNAVAILABLE');
+  }
+}
+
+function patientFacingServiceLabel_(serviceType) {
+  const value = String(serviceType || '');
+  if (value === 'initial') return 'Primera sesión / Evaluación';
+  if (value === 'followup') return 'Seguimiento';
+  return value;
+}
+
+function patientFacingModalityLabel_(modality) {
+  const value = String(modality || '');
+  if (value === 'online') return 'Online';
+  return value;
+}
+
 function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTokens) {
-  const notification = makeLifecycleNotification_(type, record, { now: new Date().toISOString() });
+  const version = nextLifecycleNotificationVersion_(record, type);
+  const notification = makeLifecycleNotification_(type, Object.assign({}, record, { notification_version: version }), {
+    now: new Date().toISOString(),
+  });
   if (capabilityTokens) notification.capabilityTokens = capabilityTokens;
-  const stateField = notification.ctas.length ? 'notification_patient_state' : 'notification_internal_state';
-  if (record[stateField] === 'sent' || record[stateField] === 'claimed') return notification;
-  updateRecord_(sheet, schema, record.rowNumber, { notification_outbox_key: notification.logicalKey, notification_version: notification.version,
-    [stateField]: 'pending', notification_last_result: notification.eventType });
+  const stateField = lifecycleNotificationStateField_(notification);
+  const currentKey = String(record.notification_outbox_key || '');
+  const currentState = String(record[stateField] || '');
+  if (currentKey === notification.logicalKey
+    && (currentState === 'sent' || currentState === 'claimed' || currentState === 'pending' || currentState === 'failed')) {
+    return notification;
+  }
+  const otherField = stateField === 'notification_patient_state'
+    ? 'notification_internal_state'
+    : 'notification_patient_state';
+  const fields = {
+    notification_outbox_key: notification.logicalKey,
+    notification_version: notification.version,
+    [stateField]: 'pending',
+    notification_attempt_count: '0',
+    notification_last_attempt_at: '',
+    notification_last_result: notification.eventType,
+  };
+  const otherState = String(record[otherField] || '');
+  if (otherState === 'pending' || otherState === 'failed' || otherState === 'claimed') fields[otherField] = '';
+  const recon = String(record.reconciliation_state || '');
+  if (recon === 'notification_max_attempts' || recon === 'notification_event_type_invalid'
+    || recon === 'notification_reschedule_retry' || recon === 'notification_cancel_retry') {
+    fields.reconciliation_state = '';
+  }
+  updateRecord_(sheet, schema, record.rowNumber, fields);
+  Object.assign(record, fields);
   return notification;
 }
 
@@ -711,15 +784,25 @@ function renderLifecycleNotificationEmail_(input) {
   const notification = input.notification;
   const record = input.record;
   const tokens = input.capabilityTokens || {};
-  const lines = ['Hola,', '', 'Te escribimos con una actualización operativa de tu reserva.'];
-  lines.push('Servicio: ' + String(record.service_type || ''));
-  lines.push('Modalidad: ' + String(record.modality || ''));
-  lines.push('Fecha y hora: ' + String(record.current_start_at || ''));
-  if (notification.meet && notification.meet.meetUrl) lines.push('Meet: ' + String(notification.meet.meetUrl));
-  if (tokens.RESCHEDULE) {
+  const cancelled = notification.eventType === LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED
+    || notification.eventType === LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_CANCELLED;
+  const lines = cancelled
+    ? ['Hola,', '', 'Confirmamos la cancelación de tu sesión.']
+    : ['Hola,', '', 'Te escribimos con una actualización operativa de tu reserva.'];
+  const serviceLabel = patientFacingServiceLabel_(record.service_type);
+  const modalityLabel = patientFacingModalityLabel_(record.modality);
+  if (serviceLabel) lines.push('Servicio: ' + serviceLabel);
+  if (modalityLabel) lines.push('Modalidad: ' + modalityLabel);
+  const when = formatPatientFacingDateTime_(record.current_start_at);
+  if (when) lines.push('Fecha y hora: ' + when);
+  if (!cancelled && lifecycleNotificationShowsMeet_(notification.eventType)
+    && notification.meet && notification.meet.meetUrl) {
+    lines.push('Meet: ' + String(notification.meet.meetUrl));
+  }
+  if (!cancelled && tokens.RESCHEDULE) {
     lines.push('Reagendar: ' + managementPageUrl_(input.previewOrigin, tokens.RESCHEDULE, 'reschedule'));
   }
-  if (tokens.CANCEL) {
+  if (!cancelled && tokens.CANCEL) {
     lines.push('Cancelar: ' + managementPageUrl_(input.previewOrigin, tokens.CANCEL, 'cancel'));
   }
   lines.push('', 'Francisca Bustos — Psicología Perinatal');
@@ -1075,4 +1158,8 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   isTestRecipient_: isTestRecipient_,
   enqueueLifecycleNotification_: enqueueLifecycleNotification_,
   abandonFailedNonprodCheckout_: abandonFailedNonprodCheckout_,
+  formatPatientFacingDateTime_: formatPatientFacingDateTime_,
+  patientFacingServiceLabel_: patientFacingServiceLabel_,
+  patientFacingModalityLabel_: patientFacingModalityLabel_,
+  PATIENT_EMAIL_TIME_ZONE: PATIENT_EMAIL_TIME_ZONE,
 });

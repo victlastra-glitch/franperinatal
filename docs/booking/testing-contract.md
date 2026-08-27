@@ -3,14 +3,17 @@
 ## Tests locales no-network
 
 node backend/appsscript/booking/test/phase-a.test.mjs
-NO_NETWORK_TESTS=PASS count=109
+NO_NETWORK_TESTS=PASS count=111
 
 node backend/appsscript/booking/test/lifecycle.test.mjs
-ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=51
+ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=62
 PROVIDER_CONTRACT_TESTS=PASS count=13
 
 node backend/appsscript/booking/test/notification-outbox-worker.test.mjs
-OUTBOX_TRIGGER_TESTS=PASS assertions=35
+OUTBOX_TRIGGER_TESTS=PASS assertions=44
+
+node backend/appsscript/booking/test/sequential-notification-harness.test.mjs
+SEQUENTIAL_NOTIFICATION_HARNESS_TESTS=PASS
 
 node backend/appsscript/booking/test/pre-transaction-contract.test.mjs
 PRE_TRANSACTION_CONTRACT_TESTS=PASS
@@ -43,6 +46,7 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 16. Pre-transaction: runtime Meet request, preservación de conferencia en reschedule, validación server-side de slot, FreeBusy bajo lock, `SLOT_TAKEN` sin fila ni Flow.
 17. Flow create: commerceOrder defensive bound, amount=500 (≥ Flow FAQ minimum >350), signature/form contract, safe failure classes, hold release, idempotent replay, operator abandon.
 18. High-level lifecycle harness: create → confirm → Meet/outbox → reschedule → clinician move → cancel → refund → notification retry.
+19. Sequential notification harness: confirmed+paid → confirmation send/replay → patient reschedule send/replay (CANCEL-only) → clinician reschedule send/replay (CANCEL-only) → cancel send/replay (no Meet, no CTA) → max-attempt event does not poison a later logical event. Patient-facing times are America/Santiago and independent of machine timezone.
 
 ## Worker y artefacto
 

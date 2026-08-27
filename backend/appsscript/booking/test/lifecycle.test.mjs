@@ -35,7 +35,7 @@ const sheet = {
 };
 const calendarApp = { getCalendarById: (id) => ({ getId: () => id }) };
 const context = {
-  console, Date, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
+  console, Date, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
   Utilities: utilities,
   PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...propertyValues }) }) },
   SpreadsheetApp: { openById: () => ({ getId: () => 'synthetic-store', getSheetByName: () => sheet }) },
@@ -385,6 +385,12 @@ const rescheduledNotification = phase.makeLifecycleNotification_('PATIENT_RESCHE
   reschedule_capability_hash: 'a'.repeat(64), reschedule_capability_revoked_at: 'now', cancel_capability_hash: 'b'.repeat(64) }, { now: '2026-08-23T12:00:00Z' });
 check(JSON.stringify(confirmedNotification.ctas) === JSON.stringify(['RESCHEDULE', 'CANCEL']), 'initial confirmation CTA matrix is server-derived');
 check(JSON.stringify(rescheduledNotification.ctas) === JSON.stringify(['CANCEL']) && !rescheduledNotification.ctas.includes('RESCHEDULE'), 'post-reschedule notification is CANCEL-only');
+check(confirmedNotification.logicalKey !== rescheduledNotification.logicalKey, 'logical keys differ across notification event types');
+const cancelledNotification = phase.makeLifecycleNotification_('PATIENT_CANCELLED', { reservation_id: 'opaque', notification_version: '3', booking_status: 'cancelled', schedule_status: 'cancelled', patient_reschedule_count: '1',
+  meet_url: 'https://meet.google.com/opaque-stale', cancel_capability_hash: 'b'.repeat(64), cancel_capability_revoked_at: 'now' }, { now: '2026-08-23T12:00:00Z' });
+check(!cancelledNotification.meet && cancelledNotification.ctas.length === 0, 'terminal cancellation notification omits Meet and CTAs');
+check(phase.formatPatientFacingDateTime_('2026-08-27T17:00:00.000Z') === 'jueves 27 de agosto de 2026, 13:00',
+  'patient-facing formatter is America/Santiago and independent of machine timezone');
 
 check(networkCalls === 0, 'lifecycle adversarial harness made no network calls');
 console.log(`ADVERSARIAL_LIFECYCLE_TESTS=PASS cases=49 assertions=${assertions}`);

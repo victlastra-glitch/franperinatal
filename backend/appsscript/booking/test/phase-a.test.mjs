@@ -20,6 +20,7 @@ const properties = { getProperties: () => ({}) };
 const context = {
   console,
   Date,
+  Intl,
   Set,
   Number,
   String,
@@ -207,8 +208,14 @@ const flowCommerceOrder = api.makeFlowCommerceOrder_(paymentIdempotencyKey);
 check(flowCommerceOrder === api.makeFlowCommerceOrder_(paymentIdempotencyKey)
   && flowCommerceOrder.length <= api.FLOW_COMMERCE_ORDER_MAX_LENGTH
   && /^npo-[0-9a-f]{40}$/i.test(flowCommerceOrder), 'Flow commerceOrder is deterministic and bounded to 45 chars');
-const calendarLinkKey = api.makeCalendarLinkKey_(paymentIdempotencyKey);
-check(calendarLinkKey.startsWith('fran-nonprod-20260821-calendar-link-') && !calendarLinkKey.includes('123e4567'), 'Calendar link identifier is opaque');
+check(api.makeCalendarLinkKey_(paymentIdempotencyKey).startsWith('fran-nonprod-20260821-calendar-link-') && !api.makeCalendarLinkKey_(paymentIdempotencyKey).includes('123e4567'), 'Calendar link identifier is opaque');
+check(api.formatPatientFacingDateTime_('2026-08-27T17:00:00.000Z') === 'jueves 27 de agosto de 2026, 13:00',
+  'Phase A patient-facing time is America/Santiago without raw UTC');
+check(api.patientFacingServiceLabel_('initial') === 'Primera sesión / Evaluación'
+  && api.patientFacingServiceLabel_('followup') === 'Seguimiento'
+  && api.patientFacingModalityLabel_('online') === 'Online'
+  && api.patientFacingModalityLabel_('presencial') === 'presencial',
+  'patient-facing labels localize known codes without inventing presencial copy');
 
 check(networkCalls === 0 && mailCalls === 0, 'no-network harness made no external calls');
 console.log(`NO_NETWORK_TESTS=PASS count=${assertions}`);

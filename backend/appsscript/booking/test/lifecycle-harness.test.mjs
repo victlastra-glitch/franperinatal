@@ -198,6 +198,10 @@ check(reschedule.ok && record().patient_reschedule_count === '1'
   && record().calendar_event_id === 'event-lifecycle-1'
   && record().meet_url === 'https://meet.google.com/opaque-meet'
   && record().payment_status === 'paid', 'patient reschedule keeps same event/Meet/payment and count=1');
+check(record().notification_patient_state === 'pending'
+  && String(record().notification_outbox_key).includes('PATIENT_RESCHEDULED')
+  && String(record().notification_attempt_count) === '0',
+  'patient reschedule queues despite prior sent confirmation');
 const secondReschedule = context.patientReschedule_({
   postData: { contents: JSON.stringify({ token: rescheduleToken, fecha: '2026-08-27', hora: '13:00' }) },
 });
@@ -214,6 +218,10 @@ const move = reconciliation.reconcileCalendarChange_({
 });
 check(move.ok && move.changed && record().patient_reschedule_count === '1' && record().payment_status === 'paid',
   'clinician move preserves payment and patient reschedule count');
+check(record().notification_patient_state === 'pending'
+  && String(record().notification_outbox_key).includes('CLINICIAN_RESCHEDULED')
+  && String(record().notification_attempt_count) === '0',
+  'clinician reschedule queues despite prior patient-reschedule notification');
 
 // cancel + capacity release
 const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: cancelToken }) } });

@@ -474,11 +474,33 @@ function lifecycleCtas_(eventType, record) {
   });
 }
 
+function lifecycleNotificationShowsMeet_(eventType) {
+  return eventType === LIFECYCLE_NOTIFICATION_TYPE.BOOKING_CONFIRMED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.PATIENT_RESCHEDULED
+    || eventType === LIFECYCLE_NOTIFICATION_TYPE.CLINICIAN_RESCHEDULED;
+}
+
+function lifecycleNotificationStateField_(notification) {
+  return notification && notification.ctas && notification.ctas.length
+    ? 'notification_patient_state'
+    : 'notification_internal_state';
+}
+
+function nextLifecycleNotificationVersion_(record, eventType) {
+  const currentVersion = String(record && record.notification_version || '1');
+  const currentType = reconstructLifecycleEventType_(record);
+  if (!currentType || currentType === eventType) return currentVersion;
+  const parsed = Number(currentVersion);
+  return String((Number.isFinite(parsed) ? parsed : 0) + 1);
+}
+
 function makeLifecycleNotification_(eventType, record, options) {
   if (!LIFECYCLE_NOTIFICATION_TYPE[eventType]) fail_('NOTIFICATION_TYPE_INVALID');
   if (!record || !record.reservation_id || !record.notification_version) fail_('NOTIFICATION_RECORD_INVALID');
   const key = 'lifecycle_' + String(record.reservation_id) + '_' + eventType + '_' + String(record.notification_version);
-  const meet = record.meet_url ? { meetUrl: String(record.meet_url), meetStatus: String(record.meet_status || '') } : null;
+  const meet = lifecycleNotificationShowsMeet_(eventType) && record.meet_url
+    ? { meetUrl: String(record.meet_url), meetStatus: String(record.meet_status || '') }
+    : null;
   return { eventType: eventType, logicalKey: key, version: String(record.notification_version), ctas: lifecycleCtas_(eventType, record),
     meet: meet, createdAt: String(options && options.now || new Date().toISOString()),
     status: record.booking_status, scheduleStatus: record.schedule_status };
@@ -585,6 +607,9 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   makeNotificationLogicalKey_: makeNotificationLogicalKey_, createNotificationOutbox_: createNotificationOutbox_,
   claimNotificationOutbox_: claimNotificationOutbox_, completeNotificationOutbox_: completeNotificationOutbox_,
   makeLifecycleNotification_: makeLifecycleNotification_, lifecycleCtas_: lifecycleCtas_,
+  lifecycleNotificationShowsMeet_: lifecycleNotificationShowsMeet_,
+  lifecycleNotificationStateField_: lifecycleNotificationStateField_,
+  nextLifecycleNotificationVersion_: nextLifecycleNotificationVersion_,
   retryLifecycleNotification_: retryLifecycleNotification_, assertCancellationTransition_: assertCancellationTransition_, atomicCancellationTransitionFields_: atomicCancellationTransitionFields_,
   patientRescheduleTransaction_: patientRescheduleTransaction_, patientCancelTransaction_: patientCancelTransaction_,
   withLifecycleLock_: withLifecycleLock_,
@@ -597,4 +622,8 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   validIdempotencyKey_: validIdempotencyKey_, makeOpaqueId_: makeOpaqueId_,
   makeFlowCommerceOrder_: makeFlowCommerceOrder_, FLOW_COMMERCE_ORDER_MAX_LENGTH: FLOW_COMMERCE_ORDER_MAX_LENGTH,
   startAt_: startAt_,
+  formatPatientFacingDateTime_: formatPatientFacingDateTime_,
+  patientFacingServiceLabel_: patientFacingServiceLabel_,
+  patientFacingModalityLabel_: patientFacingModalityLabel_,
+  PATIENT_EMAIL_TIME_ZONE: PATIENT_EMAIL_TIME_ZONE,
 });

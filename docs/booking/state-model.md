@@ -16,6 +16,10 @@ LockService -> fresh load -> already cancelled replay o verify CANCEL -> idempot
 
 Refund no bloquea la liberación de agenda. Repetir la acción devuelve replay y no repite Calendar, refund ni notificación destructiva.
 
+## Notifications
+
+Cada evento lógico (`BOOKING_CONFIRMED`, `PATIENT_RESCHEDULED`, `CLINICIAN_RESCHEDULED`, `PATIENT_CANCELLED`, …) tiene clave de outbox propia. Un `sent` de un evento anterior no suprime el siguiente. El replay del mismo evento no reenvía. La cancelación terminal no incluye Meet ni CTA.
+
 ## Clinician reconciliation
 
 Un cambio del mismo event id con ETag/hash nuevo actualiza current_start_at/current_end_at, marca calendar_change_source=clinician y conserva patient_reschedule_count. Delete/cancel marca booking/schedule cancelled y encola el flujo de refund según BUSINESS_POLICY_TBD.
