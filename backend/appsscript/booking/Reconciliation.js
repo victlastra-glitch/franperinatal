@@ -21,6 +21,22 @@ function reconcileCalendarChange_(input) {
   if (!record) return { ok: true, ignored: true, reason: 'linked_record_missing' };
   const hash = calendarSyncHash_(event);
   if (String(record.calendar_sync_hash || '') === hash && String(record.calendar_event_etag || '') === String(event.etag || '')) {
+    if (record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED
+      || record.reconciliation_state) {
+      const interval = eventInterval_(event);
+      if (!interval) {
+        input.store.update(record, { reconciliation_state: 'calendar_bad_interval' });
+        return { ok: false, code: 'CALENDAR_BAD_INTERVAL' };
+      }
+      const recovered = input.store.update(record, Object.assign({}, calendarEventFields_(calendarEventResult_(event)), {
+        current_start_at: interval.start,
+        current_end_at: interval.end,
+        schedule_status: LIFECYCLE.SCHEDULE_STATUS.SCHEDULED,
+        reconciliation_state: '',
+      }));
+      return { ok: true, changed: true, recovered: true, source: 'reconciliation',
+        patientRescheduleCount: String(recovered.patient_reschedule_count) };
+    }
     return { ok: true, noop: true, reason: 'system_or_duplicate_event' };
   }
   if (record.calendar_event_updated_at && event.updated && Date.parse(String(event.updated)) < Date.parse(String(record.calendar_event_updated_at))) {

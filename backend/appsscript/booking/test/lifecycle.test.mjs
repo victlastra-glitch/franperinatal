@@ -137,6 +137,16 @@ const movedOutcome = reconciliation.reconcileCalendarChange_({ store, event: cli
 check(movedOutcome.changed && storedRecord.calendar_change_source === 'clinician' && storedRecord.patient_reschedule_count === '0' && notifications === 1, 'clinician move reconciles without consuming patient quota');
 const loopOutcome = reconciliation.reconcileCalendarChange_({ store, event: clinicianEvent, enqueueNotification: () => { notifications += 1; } });
 check(loopOutcome.noop === true && notifications === 1, 'reconciliation loop protection is ETag/hash idempotent');
+const failedPatientRescheduleRecord = { ...storedRecord, booking_status: 'confirmed', schedule_status: 'reconciliation_required',
+  reconciliation_state: 'calendar_reschedule_conflict', patient_reschedule_count: '0', calendar_event_etag: clinicianEvent.etag,
+  calendar_event_updated_at: clinicianEvent.updated, calendar_sync_hash: context.__CALENDAR_TEST_EXPORTS__.calendarSyncHash_(clinicianEvent) };
+const recovered = reconciliation.reconcileCalendarChange_({ store: {
+  loadByCalendarEventId: () => failedPatientRescheduleRecord,
+  update: (_record, fields) => Object.assign(failedPatientRescheduleRecord, fields),
+}, event: clinicianEvent });
+check(recovered.changed && recovered.recovered && failedPatientRescheduleRecord.schedule_status === 'scheduled'
+  && failedPatientRescheduleRecord.reconciliation_state === '' && failedPatientRescheduleRecord.patient_reschedule_count === '0',
+  'reconciliation recovers an unchanged authoritative event after a patient Calendar conflict');
 const stale = reconciliation.reconcileCalendarChange_({ store, event: { ...clinicianEvent, etag: 'stale', updated: '2026-08-23T16:00:00.000Z' } });
 check(stale.code === 'STALE_CALENDAR_EVENT' && storedRecord.reconciliation_state === 'calendar_stale_event_retry', 'stale Calendar event produces retry state');
 const cancelOutcome = reconciliation.reconcileCalendarChange_({ store, event: { ...clinicianEvent, status: 'cancelled', deleted: true }, policyEvaluator: () => ({ eligible: false }), enqueueNotification: () => {} });
