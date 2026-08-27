@@ -147,6 +147,21 @@ const recovered = reconciliation.reconcileCalendarChange_({ store: {
 check(recovered.changed && recovered.recovered && failedPatientRescheduleRecord.schedule_status === 'scheduled'
   && failedPatientRescheduleRecord.reconciliation_state === '' && failedPatientRescheduleRecord.patient_reschedule_count === '0',
   'reconciliation recovers an unchanged authoritative event after a patient Calendar conflict');
+const unrelatedRecoveryStates = [
+  'notification_reschedule_retry', 'notification_cancel_retry', 'notification_max_attempts',
+  'capability_configuration_required', 'flow_create_flow_provider_rejected',
+  'calendar_cancel_retry', 'calendar_create_retry',
+];
+unrelatedRecoveryStates.forEach((reconciliationState) => {
+  const untouched = { ...failedPatientRescheduleRecord, schedule_status: 'reconciliation_required', reconciliation_state: reconciliationState };
+  const untouchedBefore = { ...untouched };
+  const unrelatedOutcome = reconciliation.reconcileCalendarChange_({ store: {
+    loadByCalendarEventId: () => untouched,
+    update: (_record, fields) => Object.assign(untouched, fields),
+  }, event: clinicianEvent });
+  check(unrelatedOutcome.noop === true && JSON.stringify(untouched) === JSON.stringify(untouchedBefore),
+    `unchanged event does not clear unrelated reconciliation state: ${reconciliationState}`);
+});
 const stale = reconciliation.reconcileCalendarChange_({ store, event: { ...clinicianEvent, etag: 'stale', updated: '2026-08-23T16:00:00.000Z' } });
 check(stale.code === 'STALE_CALENDAR_EVENT' && storedRecord.reconciliation_state === 'calendar_stale_event_retry', 'stale Calendar event produces retry state');
 const cancelOutcome = reconciliation.reconcileCalendarChange_({ store, event: { ...clinicianEvent, status: 'cancelled', deleted: true }, policyEvaluator: () => ({ eligible: false }), enqueueNotification: () => {} });

@@ -10,6 +10,19 @@ function reconciliationOperationId_(kind, event) {
   return makeOperationId_(kind, String(event && event.id || '') + ':' + String(event && event.etag || '') + ':' + String(event && event.updated || ''));
 }
 
+// Only patient-reschedule Calendar failures can recover from an unchanged
+// authoritative event. Other reconciliation states may represent an
+// unresolved cancellation, creation, notification, Flow, refund, or
+// capability operation and must remain untouched until their own handler runs.
+var CALENDAR_UNCHANGED_EVENT_RECOVERY_STATES = Object.freeze([
+  'calendar_reschedule_conflict', 'calendar_reschedule_retry', 'calendar_reschedule_store_retry',
+]);
+
+function canRecoverUnchangedCalendarEvent_(record) {
+  return record && record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED
+    && CALENDAR_UNCHANGED_EVENT_RECOVERY_STATES.indexOf(String(record.reconciliation_state || '')) !== -1;
+}
+
 function reconcileCalendarChange_(input) {
   if (!input || !input.store || !input.event) fail_('RECONCILIATION_INPUT_INVALID');
   const event = input.event; const linkage = calendarExtendedProperties_(event);
@@ -21,8 +34,7 @@ function reconcileCalendarChange_(input) {
   if (!record) return { ok: true, ignored: true, reason: 'linked_record_missing' };
   const hash = calendarSyncHash_(event);
   if (String(record.calendar_sync_hash || '') === hash && String(record.calendar_event_etag || '') === String(event.etag || '')) {
-    if (record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED
-      || record.reconciliation_state) {
+    if (canRecoverUnchangedCalendarEvent_(record)) {
       const interval = eventInterval_(event);
       if (!interval) {
         input.store.update(record, { reconciliation_state: 'calendar_bad_interval' });
@@ -88,4 +100,5 @@ function reconcileCalendarSync_(input) {
 var __RECONCILIATION_TEST_EXPORTS__ = Object.freeze({
   reconciliationOperationId_: reconciliationOperationId_, reconcileCalendarChange_: reconcileCalendarChange_,
   reconcileClinicianCancellation_: reconcileClinicianCancellation_, reconcileCalendarSync_: reconcileCalendarSync_,
+  canRecoverUnchangedCalendarEvent_: canRecoverUnchangedCalendarEvent_,
 });
