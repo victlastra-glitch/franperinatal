@@ -67,7 +67,10 @@ LIFECYCLE_HARNESS_TESTS=PASS
 node backend/appsscript/booking/test/calendar-metadata-reconciliation.test.mjs
 CALENDAR_METADATA_RECONCILIATION_TESTS=PASS
 
-El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y RefundGateway.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, ScriptApp, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
+node backend/appsscript/booking/test/targeted-calendar-fixture.test.mjs
+TARGETED_CALENDAR_FIXTURE_TESTS=PASS
+
+El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js, RefundGateway.js y TargetedFixture.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, ScriptApp, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
 
 ## Matriz cubierta
 
@@ -95,6 +98,7 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 21. Sheet-backed outbox worker: `ensureNotificationOutboxSheet_` on an existing `reservations_nonprod` spreadsheet with absent `notification_outbox_nonprod` creates the current header schema without changing reservation rows, then enqueue/process reaches terminal `sent`.
 22. Occurrence identity: same source mutation → one row; `CLINICIAN_RESCHEDULED` to B, another clinician mutation, then back to B are distinct; same snapshot_start_at is not replay. Strict lock fake tracks acquire/release ownership and fails nested caller-lock release.
 23. Deterministic VM test clock: lead-time, 90-day horizon and weekend rejection are independent of host `Date.now()`; no public payload field can override server time.
+24. NONPROD targeted Calendar fixture harness: Production/fingerprint/allowlist fail closed; zero-arg operator wrappers; no public route or executionApi; no Flow; 57-column synthetic confirmed/scheduled/paid row in the explicit `targeted-cal` namespace; no BOOKING_CONFIRMED enqueue; no raw capability bearer; duplicate create rejected; cleanup idempotent without deleting historical E2E rows; real `processCalendarReconciliation_` classifies metadata-only vs genuine move.
 
 ## Worker y artefacto
 

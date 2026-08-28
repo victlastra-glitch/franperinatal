@@ -30,3 +30,4 @@ backend/**/*.html
 !backend/README.md
 !backend/appsscript/booking/Code.js
 !backend/appsscript/booking/Lifecycle.js
+!backend/appsscript/booking/TargetedFixture.js

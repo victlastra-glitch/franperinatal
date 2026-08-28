@@ -17,6 +17,7 @@ READY_FOR_NONPROD_ACTIVATION = NO: Meet persistence, Advanced Calendar activatio
 - CalendarGateway.js: FreeBusy, evento enlazado, mismo-evento update/remove, ETag/If-Match/412, syncToken/410 paginado, linkage privado y Meet primitives.
 - Reconciliation.js: sync incremental, clinician move/cancel, metadata-only/system refresh (no notify) y loop protection por ETag/hash/operation. CLINICIAN_RESCHEDULED exige cambio de intervalo, no de etag/Meet.
 - RefundGateway.js: Flow Sandbox adapter, contratos create/getStatus/cancel, deterministic internal order, manual review ante timeout ambiguo, callback y retry sin segundo create.
+- TargetedFixture.js: NONPROD-only operator harness to create/read/cleanup one synthetic confirmed Calendar booking for reconciliation proofs without Flow or public routes.
 - _worker.js: same-origin availability, payment, management y refund callback proxies; upstream privado, APP_ENV nonprod y response allowlists.
 
 ## Notification outbox retry (source-only)
