@@ -59,6 +59,52 @@ Independent Gmail evidence for `hola@franciscabustos.cl` on that synthetic lifec
 
 Cancellation mail is no longer an evidence gap. Reschedule / clinician-move mail was a real runtime gap and is fixed in source below. The already-cancelled booking cannot prove that source fix.
 
+## RUNTIME ANOMALY — FALSE CLINICIAN_RESCHEDULED ON METADATA REFRESH
+
+The later NONPROD E2E completed, but datastore outbox readback for the final
+reservation showed five sent events:
+
+1. BOOKING_CONFIRMED
+2. CLINICIAN_RESCHEDULED (false; original start/end; distinct `clinician_reconcile_move` source_operation_id; before patient reschedule)
+3. PATIENT_RESCHEDULED
+4. CLINICIAN_RESCHEDULED (genuine clinician same-event move)
+5. PATIENT_CANCELLED
+
+Expected semantic lifecycle:
+
+BOOKING_CONFIRMED → PATIENT_RESCHEDULED → CLINICIAN_RESCHEDULED → PATIENT_CANCELLED
+
+Source-proven cause: `reconcileCalendarChange_` treated any linked-event
+hash/etag mismatch as a clinician schedule change. `calendarSyncHash_`
+includes etag, updated, and Meet conferenceId. Google Meet materialization
+(or another metadata-only Calendar follow-up) after `createLinkedBookingEvent`
+changes those fields while start/end stay the same, producing a false
+`CLINICIAN_RESCHEDULED`.
+
+Local classifier: same linked event + semantically equal start/end
+(`Date.parse` instants, including equivalent ISO offsets) →
+`metadata_refreshed` (persist etag/updated/hash/Meet; no clinician source;
+no notification; `patient_reschedule_count` unchanged). Material start or
+end change keeps the existing clinician path. Cancellation detection is
+unchanged.
+
+Local regression: `backend/appsscript/booking/test/calendar-metadata-reconciliation.test.mjs`
+
+```
+FALSE_CLINICIAN_RESCHEDULE_ON_METADATA_REFRESH=ELIMINATED
+MEET_MATERIALIZATION_FALSE_POSITIVE=ELIMINATED
+GENUINE_CLINICIAN_MOVE_NOTIFICATION=PASS
+PATIENT_RESCHEDULE_COUNT_INVARIANT=PASS
+SAME_EVENT_ID_INVARIANT=PASS
+CANCELLATION_REGRESSION=PASS
+OUTBOX_OCCURRENCE_IDEMPOTENCY=PASS
+RUNTIME_NOTIFICATION_SEQUENCE_REPROOF=PENDING
+```
+
+Do not treat this source fix as a new runtime PASS. The next independent
+NONPROD macro run must prove the four-event semantic sequence without a
+metadata-only clinician notification.
+
 ## NOTIFICATION_SEQUENCE_ROOT_CAUSE
 
 CONFIRMED from source.
@@ -309,6 +355,8 @@ Required sequence after forcing Apps Script remote parity with branch tip:
 3. confirmation email queued
 4. patient reschedule → reschedule email queued (`Tu sesión fue reagendada`, CANCEL only)
 5. clinician same-event move → clinician reschedule email queued
+   (incremental sync after create/Meet materialization must not enqueue a
+   metadata-only `CLINICIAN_RESCHEDULED`)
 6. patient cancel → cancellation email queued (no Meet, no CTA)
 7. **one or more worker drains** (observation only; not required between mutations)
 8. terminal policy: cancelled, capacity free, payment paid, `manual_review`
@@ -328,6 +376,9 @@ P0=none
 P1=none
 P2=none
 P3=presencial patient-facing modality label left as stored `presencial`; no in-person positioning invented
+FALSE_CLINICIAN_RESCHEDULE_ON_METADATA_REFRESH=ELIMINATED
+MEET_MATERIALIZATION_FALSE_POSITIVE=ELIMINATED
+RUNTIME_NOTIFICATION_SEQUENCE_REPROOF=PENDING
 OUTBOX_DRAIN_REQUIRED_FOR_CORRECTNESS=NO
 SINGLE_SLOT_EVENT_LOSS_RISK=ELIMINATED
 SAME_TYPE_REPEAT_COLLISION=ELIMINATED

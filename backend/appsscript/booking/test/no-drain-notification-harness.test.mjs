@@ -137,14 +137,14 @@ const context = {
       get: () => eventStore,
       insert: (resource) => {
         eventStore = {
-          id: 'event-sequential-1', etag: 'etag-1', updated: '2026-08-27T15:00:00.000Z', status: 'confirmed',
+          id: 'event-sequential-1', etag: 'etag-1', updated: '2026-09-03T15:00:00.000Z', status: 'confirmed',
           start: resource.start, end: resource.end, extendedProperties: resource.extendedProperties,
           conferenceData: { conferenceId: 'meet-1', entryPoints: [{ entryPointType: 'video', uri: 'https://meet.google.com/opaque-meet' }] },
         };
         return eventStore;
       },
       update: (resource) => {
-        eventStore = Object.assign({}, eventStore, resource, { etag: 'etag-2', updated: '2026-08-27T16:00:00.000Z',
+        eventStore = Object.assign({}, eventStore, resource, { etag: 'etag-2', updated: '2026-09-03T16:00:00.000Z',
           conferenceData: eventStore.conferenceData });
         return eventStore;
       },
@@ -220,7 +220,7 @@ const idempotencyKey = 'fran-nonprod-20260821-cccccccc-e89b-12d3-a456-4266141740
 const created = context.createFlowPayment_({
   postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey, serviceType: 'initial', modality: 'online',
-    date: '2026-08-27', time: '13:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
+    date: '2026-09-03', time: '13:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
   }) },
 });
 check(created.ok, 'Flow create accepted');
@@ -231,13 +231,13 @@ check(outboxRows.some((row) => row.event_type === 'BOOKING_CONFIRMED' && row.sta
 
 const issued = phase.retryLifecycleNotification_({
   store, reservationId: record().reservation_id, eventType: 'BOOKING_CONFIRMED',
-  now: Date.parse('2026-08-27T16:05:00.000Z'), requireCapabilitySecret_: () => capabilitySecret,
+  now: Date.parse('2026-09-03T16:05:00.000Z'), requireCapabilitySecret_: () => capabilitySecret,
   lock: { tryLock: () => true, releaseLock: () => {} },
 });
 check(issued.ok && issued.capabilityTokens.RESCHEDULE && issued.capabilityTokens.CANCEL, 'live capabilities issued without sending');
 
 const reschedule = context.patientReschedule_({
-  postData: { contents: JSON.stringify({ token: issued.capabilityTokens.RESCHEDULE, fecha: '2026-08-27', hora: '14:00' }) },
+  postData: { contents: JSON.stringify({ token: issued.capabilityTokens.RESCHEDULE, fecha: '2026-09-03', hora: '14:00' }) },
 });
 check(reschedule.ok && record().patient_reschedule_count === '1', 'patient reschedule mutates booking without a worker drain');
 const scenarioA = outboxRows.filter((row) => row.reservation_id === record().reservation_id);
@@ -247,14 +247,14 @@ check(scenarioA.some((row) => row.event_type === 'BOOKING_CONFIRMED')
 check(new Set(scenarioA.map((row) => row.logical_key)).size === scenarioA.length, 'logical keys are unique');
 
 eventStore = Object.assign({}, eventStore, {
-  start: { dateTime: '2026-08-27T20:00:00.000Z' }, end: { dateTime: '2026-08-27T21:00:00.000Z' },
-  etag: 'etag-clinician', updated: '2026-08-27T17:30:00.000Z',
+  start: { dateTime: '2026-09-03T20:00:00.000Z' }, end: { dateTime: '2026-09-03T21:00:00.000Z' },
+  etag: 'etag-clinician', updated: '2026-09-03T17:30:00.000Z',
 });
 const move = reconciliation.reconcileCalendarChange_({
   store, event: eventStore,
   enqueueNotification: (updated) => worker.enqueueLifecycleNotification_(sheet, schema(), updated, 'CLINICIAN_RESCHEDULED'),
 });
-check(move.ok && record().current_start_at === '2026-08-27T20:00:00.000Z', 'clinician move updates live booking time');
+check(move.ok && record().current_start_at === '2026-09-03T20:00:00.000Z', 'clinician move updates live booking time');
 
 const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: issued.capabilityTokens.CANCEL }) } });
 check(cancel.ok && record().booking_status === 'cancelled', 'patient cancel without draining prior outbox events');
@@ -270,11 +270,11 @@ check(beforeWorker.every((row) => row.state === 'pending' || row.state === 'supe
 const patientSnap = beforeWorker.find((row) => row.event_type === 'PATIENT_RESCHEDULED');
 const clinicianSnap = beforeWorker.find((row) => row.event_type === 'CLINICIAN_RESCHEDULED');
 check(patientSnap.snapshot_start_at !== clinicianSnap.snapshot_start_at
-  && patientSnap.snapshot_start_at.includes('2026-08-27T18:00:00'),
+  && patientSnap.snapshot_start_at.includes('2026-09-03T18:00:00'),
   'patient-reschedule snapshot keeps the 14:00 Chile slot, not the later clinician time');
 
 mailBodies = [];
-const drained = drainOutbox(Date.parse('2026-08-27T18:00:00.000Z'));
+const drained = drainOutbox(Date.parse('2026-09-03T18:00:00.000Z'));
 check(drained.ok && drained.processed >= 4, 'worker processes every durable event after the mutations');
 const after = outboxRows.filter((row) => row.reservation_id === record().reservation_id);
 const byType = Object.fromEntries(after.map((row) => [row.event_type, row]));
@@ -301,11 +301,11 @@ check(replay.ok && replay.replay === true, 'terminal cancel replay is a no-op');
 const missing = worker.memoryNotificationOutboxStore_([{
   logical_key: 'lifecycle_missing_BOOKING_CONFIRMED_1', reservation_id: 'missing-reservation',
   event_type: 'BOOKING_CONFIRMED', notification_version: '1', state: 'pending', attempt_count: '0',
-  created_at: '2026-08-27T16:00:00.000Z', snapshot_start_at: '2026-08-27T17:00:00.000Z',
+  created_at: '2026-09-03T16:00:00.000Z', snapshot_start_at: '2026-09-03T17:00:00.000Z',
 }]);
 const missingRun = worker.processLifecycleNotificationOutbox_({
   config: phase.readCapabilityConfig_(), store, outboxStore: missing, resources: { sheet }, schema: schema(),
-  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-27T18:10:00.000Z'),
+  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-09-03T18:10:00.000Z'),
 });
 check(missingRun.results[0].code === 'NOTIFICATION_RECORD_MISSING' && missing.records()[0].state === 'failed',
   'missing booking row fails closed without a send');
@@ -313,7 +313,7 @@ check(missingRun.results[0].code === 'NOTIFICATION_RECORD_MISSING' && missing.re
 const claimed = worker.memoryNotificationOutboxStore_([{
   logical_key: 'lifecycle_claimed_BOOKING_CONFIRMED_1', reservation_id: record().reservation_id,
   event_type: 'BOOKING_CONFIRMED', notification_version: '9', state: 'claimed', attempt_count: '1',
-  created_at: '2026-08-27T16:00:00.000Z', snapshot_start_at: '2026-08-27T17:00:00.000Z',
+  created_at: '2026-09-03T16:00:00.000Z', snapshot_start_at: '2026-09-03T17:00:00.000Z',
   snapshot_booking_status: 'confirmed', snapshot_schedule_status: 'scheduled', snapshot_patient_reschedule_count: '0',
 }]);
 worker.enqueueLifecycleNotification_(sheet, schema(), record(), 'CLINICIAN_RESCHEDULED', null, claimed);
@@ -329,17 +329,17 @@ const snapBooking = {
   schedule_status: 'scheduled',
   service_type: 'initial',
   modality: 'online',
-  current_start_at: '2026-08-27T20:00:00.000Z',
-  current_end_at: '2026-08-27T21:00:00.000Z',
+  current_start_at: '2026-09-03T20:00:00.000Z',
+  current_end_at: '2026-09-03T21:00:00.000Z',
   patient_reschedule_count: '1',
   meet_url: 'https://meet.google.com/opaque-meet',
   meet_status: 'ready',
   notification_version: '3',
   ...phase.capabilityFields_(phase.capabilityForStorage_(phase.createCapability_('CANCEL', {
-    secret: capabilitySecret, now: Date.parse('2026-08-27T16:00:00.000Z'),
+    secret: capabilitySecret, now: Date.parse('2026-09-03T16:00:00.000Z'),
   }))),
 };
-snapBooking.reschedule_capability_revoked_at = '2026-08-27T16:10:00.000Z';
+snapBooking.reschedule_capability_revoked_at = '2026-09-03T16:10:00.000Z';
 const snapStore = {
   records: () => [snapBooking],
   loadByReservationId: (id) => String(id) === snapBooking.reservation_id ? snapBooking : null,
@@ -349,16 +349,16 @@ const snapOutbox = worker.memoryNotificationOutboxStore_([
   {
     logical_key: 'lifecycle_fran-nonprod-20260821-reservation-snap-harness_BOOKING_CONFIRMED_1',
     reservation_id: snapBooking.reservation_id, event_type: 'BOOKING_CONFIRMED', notification_version: '1',
-    state: 'pending', attempt_count: '0', created_at: '2026-08-27T16:00:00.000Z',
-    snapshot_start_at: '2026-08-27T17:00:00.000Z', snapshot_service_type: 'initial', snapshot_modality: 'online',
+    state: 'pending', attempt_count: '0', created_at: '2026-09-03T16:00:00.000Z',
+    snapshot_start_at: '2026-09-03T17:00:00.000Z', snapshot_service_type: 'initial', snapshot_modality: 'online',
     snapshot_booking_status: 'confirmed', snapshot_schedule_status: 'scheduled', snapshot_patient_reschedule_count: '0',
     snapshot_meet_url: snapBooking.meet_url, snapshot_meet_status: 'ready',
   },
   {
     logical_key: 'lifecycle_fran-nonprod-20260821-reservation-snap-harness_PATIENT_RESCHEDULED_2',
     reservation_id: snapBooking.reservation_id, event_type: 'PATIENT_RESCHEDULED', notification_version: '2',
-    state: 'pending', attempt_count: '0', created_at: '2026-08-27T16:10:00.000Z',
-    snapshot_start_at: '2026-08-27T18:00:00.000Z', snapshot_service_type: 'initial', snapshot_modality: 'online',
+    state: 'pending', attempt_count: '0', created_at: '2026-09-03T16:10:00.000Z',
+    snapshot_start_at: '2026-09-03T18:00:00.000Z', snapshot_service_type: 'initial', snapshot_modality: 'online',
     snapshot_booking_status: 'confirmed', snapshot_schedule_status: 'scheduled', snapshot_patient_reschedule_count: '1',
     snapshot_meet_url: snapBooking.meet_url, snapshot_meet_status: 'ready',
   },
@@ -366,7 +366,7 @@ const snapOutbox = worker.memoryNotificationOutboxStore_([
 mailBodies = [];
 const snapRun = worker.processLifecycleNotificationOutbox_({
   config: phase.readCapabilityConfig_(), store: snapStore, outboxStore: snapOutbox, resources: { sheet },
-  schema: schema(), requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-27T18:20:00.000Z'),
+  schema: schema(), requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-09-03T18:20:00.000Z'),
 });
 check(snapRun.ok && snapOutbox.records().find((row) => row.event_type === 'BOOKING_CONFIRMED').state === 'superseded'
   && snapOutbox.records().find((row) => row.event_type === 'BOOKING_CONFIRMED').disposition_reason === 'schedule_changed'

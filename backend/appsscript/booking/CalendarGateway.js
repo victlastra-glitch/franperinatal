@@ -72,6 +72,10 @@ function meetFields_(event) {
 }
 
 function calendarSyncHash_(event) {
+  // Identity for persisted sync/idempotency. Reconciliation classifies a
+  // clinician reschedule by appointment start/end instants, not by this hash
+  // alone: etag, updated, and Meet conferenceId can change without a schedule
+  // change.
   const linkage = calendarExtendedProperties_(event) || {};
   const meet = meetFields_(event);
   const stable = [event && event.id, event && event.etag, event && event.updated,

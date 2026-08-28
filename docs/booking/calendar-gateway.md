@@ -4,7 +4,7 @@ createCalendarGateway_ encapsula Advanced Calendar Service v3:
 
 - Freebusy.query en un rango acotado;
 - Events.get(calendarId, eventId, optionalArgs?), list(calendarId, optionalArgs), insert(resource, calendarId, optionalArgs), update(resource, calendarId, eventId, optionalArgs, optionalHeaders) y remove(calendarId, eventId, optionalArgs);
-- ETag, updated y hash canónico;
+- ETag, updated y hash canónico. El hash incluye etag/updated/Meet conferenceId para idempotencia de sync; un cambio de hash sin cambio de start/end no es un move clinician. Reconciliation clasifica CLINICIAN_RESCHEDULED por instantes de intervalo;
 - extendedProperties.private opacas: source, link_key, schema;
 - Events.list incremental paginado con nextPageToken, nextSyncToken sólo al completar todas las páginas y recuperación HTTP 410 mediante full sync paginado;
 - conferenceDataVersion=1 para request/preservación de Meet; el gateway de recursos de booking se crea con requestMeet=true.

@@ -15,7 +15,7 @@ READY_FOR_NONPROD_ACTIVATION = NO: Meet persistence, Advanced Calendar activatio
 - Code.js: entrypoints Apps Script, configuración base/lazy, schema, payment existente, disponibilidad ocupada, side effects idempotentes, management, outbox worker y delivery adapter NONPROD.
 - Lifecycle.js: estados separados, capabilities opacas, LockService transaction boundaries, outbox primitives, CTA matrix y reconstrucción segura de event type.
 - CalendarGateway.js: FreeBusy, evento enlazado, mismo-evento update/remove, ETag/If-Match/412, syncToken/410 paginado, linkage privado y Meet primitives.
-- Reconciliation.js: sync incremental, clinician move/cancel y loop protection por ETag/hash/operation.
+- Reconciliation.js: sync incremental, clinician move/cancel, metadata-only/system refresh (no notify) y loop protection por ETag/hash/operation. CLINICIAN_RESCHEDULED exige cambio de intervalo, no de etag/Meet.
 - RefundGateway.js: Flow Sandbox adapter, contratos create/getStatus/cancel, deterministic internal order, manual review ante timeout ambiguo, callback y retry sin segundo create.
 - _worker.js: same-origin availability, payment, management y refund callback proxies; upstream privado, APP_ENV nonprod y response allowlists.
 

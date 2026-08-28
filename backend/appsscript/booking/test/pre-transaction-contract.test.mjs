@@ -87,7 +87,7 @@ let assertions = 0;
 const check = (condition, message) => { assert.ok(condition, message); assertions += 1; };
 const payload = {
   idempotencyKey: 'fran-nonprod-20260821-123e4567-e89b-12d3-a456-426614174000',
-  serviceType: 'initial', modality: 'online', date: '2026-08-27', time: '10:00',
+  serviceType: 'initial', modality: 'online', date: '2026-09-03', time: '10:00',
   name: 'Synthetic Patient', email: 'qa+nonprod@example.test', phone: '', patientRut: '', reason: '', message: '',
 };
 

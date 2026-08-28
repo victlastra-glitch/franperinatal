@@ -28,9 +28,9 @@ The outbox worker owns one ScriptLock for its batch. Inner capability rotation r
 
 ## Clinician reconciliation
 
-Un cambio del mismo event id con ETag/hash nuevo actualiza current_start_at/current_end_at, marca calendar_change_source=clinician y conserva patient_reschedule_count. Delete/cancel marca booking/schedule cancelled y encola el flujo de refund según BUSINESS_POLICY_TBD.
+Un cambio de intervalo del mismo event id (start o end con instante distinto a `current_start_at`/`current_end_at`) actualiza current_start_at/current_end_at, marca calendar_change_source=clinician y conserva patient_reschedule_count. Delete/cancel marca booking/schedule cancelled y encola el flujo de refund según BUSINESS_POLICY_TBD.
 
-El mismo ETag/hash es no-op. syncToken se guarda mediante syncState; HTTP 410 borra la confianza del token y ejecuta full sync antes de persistir el nuevo nextSyncToken.
+El mismo ETag/hash es no-op. Una evolución metadata-only del mismo evento enlazado (etag, updated, Meet/conferenceId u otro hash) con start/end semánticamente iguales persiste metadata Calendar y **no** encola `CLINICIAN_RESCHEDULED`, **no** marca `calendar_change_source=clinician` y **no** toca `patient_reschedule_count`. La comparación de horario es por instante (`Date.parse`), no por el string ISO crudo. syncToken se guarda mediante syncState; HTTP 410 borra la confianza del token y ejecuta full sync antes de persistir el nuevo nextSyncToken.
 
 ## Capabilities
 

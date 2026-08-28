@@ -1,9 +1,15 @@
 /**
  * Calendar -> datastore reconciliation.
  *
- * This layer never writes Calendar while processing a clinician edit. A
- * system-authored change is recognized by the persisted ETag/sync hash and is
- * therefore a no-op on the next incremental sync.
+ * This layer never writes Calendar while processing a clinician edit.
+ * Matching persisted ETag + sync hash is a duplicate/system no-op.
+ * calendarSyncHash_ also includes etag, updated, and Meet conferenceId, so a
+ * later Google/system representation of the same linked event can change the
+ * hash without moving the appointment. That metadata-only evolution is
+ * non-notifying: persist current Calendar metadata/hash/etag/Meet, do not set
+ * calendar_change_source=clinician, and do not enqueue CLINICIAN_RESCHEDULED.
+ * CLINICIAN_RESCHEDULED is reserved for a material start/end instant change
+ * on the same linked event. Cancellation/deleted detection is unchanged.
  */
 
 function reconciliationOperationId_(kind, event) {
@@ -21,6 +27,53 @@ var CALENDAR_UNCHANGED_EVENT_RECOVERY_STATES = Object.freeze([
 function canRecoverUnchangedCalendarEvent_(record) {
   return record && record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.RECONCILIATION_REQUIRED
     && CALENDAR_UNCHANGED_EVENT_RECOVERY_STATES.indexOf(String(record.reconciliation_state || '')) !== -1;
+}
+
+function sameAppointmentInstant_(left, right) {
+  const leftMs = Date.parse(String(left || ''));
+  const rightMs = Date.parse(String(right || ''));
+  if (Number.isNaN(leftMs) || Number.isNaN(rightMs)) return false;
+  return leftMs === rightMs;
+}
+
+function datastoreAppointmentInterval_(record) {
+  const start = String(record && record.current_start_at || '');
+  const end = String(record && record.current_end_at || '');
+  if (!start && !end) return { comparable: false, empty: true };
+  const startMs = Date.parse(start); const endMs = Date.parse(end);
+  if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) return { comparable: false, invalid: true };
+  return { comparable: true, start: new Date(startMs).toISOString(), end: new Date(endMs).toISOString() };
+}
+
+function appointmentIntervalUnchanged_(record, interval) {
+  if (!record || !interval) return false;
+  return sameAppointmentInstant_(record.current_start_at, interval.start)
+    && sameAppointmentInstant_(record.current_end_at, interval.end);
+}
+
+function isSameLinkedCalendarEvent_(record, event) {
+  const eventId = String(event && event.id || '');
+  if (!eventId) return false;
+  const persistedId = String(record && record.calendar_event_id || '');
+  return !persistedId || persistedId === eventId;
+}
+
+function persistCalendarMetadataRefresh_(input, record, event, hash) {
+  const recover = canRecoverUnchangedCalendarEvent_(record);
+  const eventFields = calendarEventFields_(calendarEventResult_(event));
+  const updates = Object.assign({}, eventFields, {
+    calendar_event_id: String(event.id),
+    calendar_event_etag: String(event.etag || ''),
+    calendar_event_updated_at: String(event.updated || ''),
+    calendar_sync_hash: hash,
+  });
+  if (recover) {
+    updates.schedule_status = LIFECYCLE.SCHEDULE_STATUS.SCHEDULED;
+    updates.reconciliation_state = '';
+  }
+  const updated = input.store.update(record, updates);
+  return { ok: true, changed: true, recovered: recover, source: 'system', reason: 'metadata_refreshed',
+    patientRescheduleCount: String(updated.patient_reschedule_count) };
 }
 
 function reconcileCalendarChange_(input) {
@@ -59,6 +112,16 @@ function reconcileCalendarChange_(input) {
   if (event.status === 'cancelled' || event.deleted === true) return reconcileClinicianCancellation_(input, record, operationId);
   const interval = eventInterval_(event);
   if (!interval) { input.store.update(record, { reconciliation_state: 'calendar_bad_interval' }); return { ok: false, code: 'CALENDAR_BAD_INTERVAL' }; }
+  if (isSameLinkedCalendarEvent_(record, event)) {
+    const storedInterval = datastoreAppointmentInterval_(record);
+    if (storedInterval.invalid) {
+      input.store.update(record, { reconciliation_state: 'calendar_bad_interval' });
+      return { ok: false, code: 'CALENDAR_BAD_INTERVAL' };
+    }
+    if (storedInterval.comparable && appointmentIntervalUnchanged_(record, interval)) {
+      return persistCalendarMetadataRefresh_(input, record, event, hash);
+    }
+  }
   const eventFields = calendarEventFields_(calendarEventResult_(event));
   const updated = input.store.update(record, Object.assign({}, eventFields, { current_start_at: interval.start, current_end_at: interval.end,
     calendar_event_id: String(event.id), calendar_event_etag: String(event.etag || ''), calendar_event_updated_at: String(event.updated || ''),
@@ -101,4 +164,6 @@ var __RECONCILIATION_TEST_EXPORTS__ = Object.freeze({
   reconciliationOperationId_: reconciliationOperationId_, reconcileCalendarChange_: reconcileCalendarChange_,
   reconcileClinicianCancellation_: reconcileClinicianCancellation_, reconcileCalendarSync_: reconcileCalendarSync_,
   canRecoverUnchangedCalendarEvent_: canRecoverUnchangedCalendarEvent_,
+  sameAppointmentInstant_: sameAppointmentInstant_, appointmentIntervalUnchanged_: appointmentIntervalUnchanged_,
+  datastoreAppointmentInterval_: datastoreAppointmentInterval_, isSameLinkedCalendarEvent_: isSameLinkedCalendarEvent_,
 });

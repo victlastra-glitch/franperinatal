@@ -130,14 +130,14 @@ const context = {
       get: () => eventStore,
       insert: (resource) => {
         eventStore = {
-          id: 'event-lifecycle-1', etag: 'etag-1', updated: '2026-08-27T16:00:00.000Z', status: 'confirmed',
+          id: 'event-lifecycle-1', etag: 'etag-1', updated: '2026-09-03T16:00:00.000Z', status: 'confirmed',
           start: resource.start, end: resource.end, extendedProperties: resource.extendedProperties,
           conferenceData: { conferenceId: 'meet-1', entryPoints: [{ entryPointType: 'video', uri: 'https://meet.google.com/opaque-meet' }] },
         };
         return eventStore;
       },
       update: (resource) => {
-        eventStore = Object.assign({}, eventStore, resource, { etag: 'etag-2', updated: '2026-08-27T17:00:00.000Z',
+        eventStore = Object.assign({}, eventStore, resource, { etag: 'etag-2', updated: '2026-09-03T17:00:00.000Z',
           conferenceData: eventStore.conferenceData });
         return eventStore;
       },
@@ -183,7 +183,7 @@ const record = () => currentRows()[0];
 const idempotencyKey = 'fran-nonprod-20260821-aaaaaaaa-e89b-12d3-a456-4266141740aa';
 const createPayload = {
   action: 'create_flow_payment', idempotencyKey, serviceType: 'initial', modality: 'online',
-  date: '2026-08-27', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
+  date: '2026-09-03', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
 };
 
 // free slot -> Flow create accepted
@@ -215,7 +215,7 @@ const store = {
 mailBodies = [];
 const notify = worker.processLifecycleNotificationOutbox_({
   config: phase.readCapabilityConfig_(), store, resources: { sheet }, schema: { headers, columns: Object.fromEntries(headers.map((h, i) => [h, i + 1])) },
-  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-27T16:10:00.000Z'),
+  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-09-03T16:10:00.000Z'),
 });
 check(notify.ok && notify.results[0].ok && mailBodies.length === 1, 'initial notification delivered');
 check(mailBodies[0].to === allowlisted && mailBodies[0].body.includes('Meet:')
@@ -235,7 +235,7 @@ check(lookup.ok && lookup.capabilityType === 'CANCEL', 'management lookup with C
 
 // patient reschedule once, second rejected
 const reschedule = context.patientReschedule_({
-  postData: { contents: JSON.stringify({ token: rescheduleToken, fecha: '2026-08-27', hora: '12:00' }) },
+  postData: { contents: JSON.stringify({ token: rescheduleToken, fecha: '2026-09-03', hora: '12:00' }) },
 });
 check(reschedule.ok && record().patient_reschedule_count === '1'
   && record().calendar_event_id === 'event-lifecycle-1'
@@ -246,14 +246,14 @@ check(record().notification_patient_state === 'pending'
   && String(record().notification_attempt_count) === '0',
   'patient reschedule queues despite prior sent confirmation');
 const secondReschedule = context.patientReschedule_({
-  postData: { contents: JSON.stringify({ token: rescheduleToken, fecha: '2026-08-27', hora: '13:00' }) },
+  postData: { contents: JSON.stringify({ token: rescheduleToken, fecha: '2026-09-03', hora: '13:00' }) },
 });
 check(secondReschedule && secondReschedule.ok === false, 'second patient reschedule rejected');
 
 // clinician move/reconciliation preserves count and payment
 eventStore = Object.assign({}, eventStore, {
-  start: { dateTime: '2026-08-27T18:00:00.000Z' }, end: { dateTime: '2026-08-27T19:00:00.000Z' },
-  etag: 'etag-clinician', updated: '2026-08-27T18:30:00.000Z',
+  start: { dateTime: '2026-09-03T18:00:00.000Z' }, end: { dateTime: '2026-09-03T19:00:00.000Z' },
+  etag: 'etag-clinician', updated: '2026-09-03T18:30:00.000Z',
 });
 const move = reconciliation.reconcileCalendarChange_({
   store, event: eventStore,

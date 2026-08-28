@@ -84,7 +84,7 @@ const check = (condition, message) => { assert.ok(condition, message); assertion
 const idempotencyKey = 'fran-nonprod-20260821-123e4567-e89b-12d3-a456-426614174000';
 const payload = {
   action: 'create_flow_payment', idempotencyKey, serviceType: 'initial', modality: 'online',
-  date: '2026-08-27', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
+  date: '2026-09-03', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
 };
 
 // 1-3. commerceOrder contract

@@ -136,14 +136,14 @@ const context = {
       get: () => eventStore,
       insert: (resource) => {
         eventStore = {
-          id: 'event-sequential-1', etag: 'etag-1', updated: '2026-08-27T15:00:00.000Z', status: 'confirmed',
+          id: 'event-sequential-1', etag: 'etag-1', updated: '2026-09-03T15:00:00.000Z', status: 'confirmed',
           start: resource.start, end: resource.end, extendedProperties: resource.extendedProperties,
           conferenceData: { conferenceId: 'meet-1', entryPoints: [{ entryPointType: 'video', uri: 'https://meet.google.com/opaque-meet' }] },
         };
         return eventStore;
       },
       update: (resource) => {
-        eventStore = Object.assign({}, eventStore, resource, { etag: 'etag-2', updated: '2026-08-27T16:00:00.000Z',
+        eventStore = Object.assign({}, eventStore, resource, { etag: 'etag-2', updated: '2026-09-03T16:00:00.000Z',
           conferenceData: eventStore.conferenceData });
         return eventStore;
       },
@@ -218,7 +218,7 @@ const idempotencyKey = 'fran-nonprod-20260821-bbbbbbbb-e89b-12d3-a456-4266141740
 const created = context.createFlowPayment_({
   postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey, serviceType: 'initial', modality: 'online',
-    date: '2026-08-27', time: '13:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
+    date: '2026-09-03', time: '13:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
   }) },
 });
 check(created.ok && flowCreateCalls === 1, 'Flow create accepted');
@@ -230,7 +230,7 @@ check(record().notification_patient_state === 'pending'
 const confirmationKey = String(record().notification_outbox_key);
 
 mailBodies = [];
-const sentConfirmation = drainOutbox(Date.parse('2026-08-27T16:10:00.000Z'));
+const sentConfirmation = drainOutbox(Date.parse('2026-09-03T16:10:00.000Z'));
 check(sentConfirmation.ok && sentConfirmation.results[0].ok && mailBodies.length === 1, 'confirmation sent once');
 check(mailBodies[0].subject === 'Confirmación de tu sesión', 'confirmation subject');
 assertChileTime(mailBodies[0].body, '13:00', 'confirmation uses America/Santiago local time');
@@ -243,7 +243,7 @@ const confirmationRescheduleToken = tokenFrom(mailBodies[0].body, 'Reagendar');
 const confirmationCancelToken = tokenFrom(mailBodies[0].body, 'Cancelar');
 check(confirmationRescheduleToken && confirmationCancelToken, 'confirmation issues both capabilities');
 mailBodies = [];
-const replayConfirmation = drainOutbox(Date.parse('2026-08-27T16:11:00.000Z'));
+const replayConfirmation = drainOutbox(Date.parse('2026-09-03T16:11:00.000Z'));
 check(replayConfirmation.processed === 0 && mailBodies.length === 0
   && record().notification_patient_state === 'sent', 'confirmation replay does not resend');
 
@@ -252,7 +252,7 @@ check(record().notification_patient_state === 'sent' && record().notification_ou
   'same logical confirmation enqueue is a no-op after sent');
 
 const reschedule = context.patientReschedule_({
-  postData: { contents: JSON.stringify({ token: confirmationRescheduleToken, fecha: '2026-08-27', hora: '14:00' }) },
+  postData: { contents: JSON.stringify({ token: confirmationRescheduleToken, fecha: '2026-09-03', hora: '14:00' }) },
 });
 check(reschedule.ok && record().patient_reschedule_count === '1' && record().payment_status === 'paid',
   'patient reschedule succeeds and preserves payment');
@@ -265,7 +265,7 @@ const patientRescheduleKey = String(record().notification_outbox_key);
 check(phase.reconstructLifecycleEventType_(record()) === 'PATIENT_RESCHEDULED', 'reschedule logical key reconstructs');
 
 mailBodies = [];
-const sentReschedule = drainOutbox(Date.parse('2026-08-27T16:20:00.000Z'));
+const sentReschedule = drainOutbox(Date.parse('2026-09-03T16:20:00.000Z'));
 check(sentReschedule.ok && sentReschedule.results[0].ok && mailBodies.length === 1, 'patient reschedule email sent once');
 check(mailBodies[0].subject === 'Tu sesión fue reagendada', 'patient reschedule subject');
 assertChileTime(mailBodies[0].body, '14:00', 'patient reschedule uses Chile local time');
@@ -275,18 +275,18 @@ check(mailBodies[0].body.includes('Meet: https://meet.google.com/opaque-meet')
 const patientCancelToken = tokenFrom(mailBodies[0].body, 'Cancelar');
 check(patientCancelToken && patientCancelToken !== confirmationCancelToken, 'reschedule rotates a surviving CANCEL capability');
 check(!phase.verifyCapability_(confirmationRescheduleToken, 'RESCHEDULE', phase.capabilityFromRecord_(record(), 'RESCHEDULE'), {
-  secret: capabilitySecret, now: Date.parse('2026-08-27T16:20:00.000Z'),
+  secret: capabilitySecret, now: Date.parse('2026-09-03T16:20:00.000Z'),
 }), 'stale RESCHEDULE remains invalid');
 mailBodies = [];
-check(drainOutbox(Date.parse('2026-08-27T16:21:00.000Z')).processed === 0 && mailBodies.length === 0,
+check(drainOutbox(Date.parse('2026-09-03T16:21:00.000Z')).processed === 0 && mailBodies.length === 0,
   'patient reschedule replay does not resend');
 worker.enqueueLifecycleNotification_(sheet, schema(), record(), 'PATIENT_RESCHEDULED');
 check(record().notification_outbox_key === patientRescheduleKey && record().notification_patient_state === 'sent',
   'same logical patient-reschedule enqueue does not duplicate');
 
 eventStore = Object.assign({}, eventStore, {
-  start: { dateTime: '2026-08-27T20:00:00.000Z' }, end: { dateTime: '2026-08-27T21:00:00.000Z' },
-  etag: 'etag-clinician', updated: '2026-08-27T17:30:00.000Z',
+  start: { dateTime: '2026-09-03T20:00:00.000Z' }, end: { dateTime: '2026-09-03T21:00:00.000Z' },
+  etag: 'etag-clinician', updated: '2026-09-03T17:30:00.000Z',
 });
 const move = reconciliation.reconcileCalendarChange_({
   store, event: eventStore,
@@ -303,7 +303,7 @@ const clinicianKey = String(record().notification_outbox_key);
 check(clinicianKey !== confirmationKey && clinicianKey !== patientRescheduleKey, 'logical keys differ across event types');
 
 mailBodies = [];
-const sentClinician = drainOutbox(Date.parse('2026-08-27T17:40:00.000Z'));
+const sentClinician = drainOutbox(Date.parse('2026-09-03T17:40:00.000Z'));
 check(sentClinician.ok && sentClinician.results[0].ok && mailBodies.length === 1, 'clinician reschedule email sent once');
 check(mailBodies[0].subject === 'Tu sesión fue reagendada', 'clinician reschedule subject');
 assertChileTime(mailBodies[0].body, '16:00', 'clinician reschedule uses Chile local time for 20:00Z');
@@ -313,7 +313,7 @@ check(mailBodies[0].body.includes('Meet: https://meet.google.com/opaque-meet')
 const clinicianCancelToken = tokenFrom(mailBodies[0].body, 'Cancelar');
 check(clinicianCancelToken && clinicianCancelToken !== patientCancelToken, 'clinician email rotates CANCEL without resurrecting RESCHEDULE');
 mailBodies = [];
-check(drainOutbox(Date.parse('2026-08-27T17:41:00.000Z')).processed === 0 && mailBodies.length === 0,
+check(drainOutbox(Date.parse('2026-09-03T17:41:00.000Z')).processed === 0 && mailBodies.length === 0,
   'clinician reschedule replay does not resend');
 
 const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: clinicianCancelToken }) } });
@@ -331,7 +331,7 @@ check(record().notification_internal_state === 'pending'
 const cancelKey = String(record().notification_outbox_key);
 
 mailBodies = [];
-const sentCancel = drainOutbox(Date.parse('2026-08-27T17:50:00.000Z'));
+const sentCancel = drainOutbox(Date.parse('2026-09-03T17:50:00.000Z'));
 check(sentCancel.ok && sentCancel.results[0].ok && mailBodies.length === 1, 'cancellation email sent once');
 check(mailBodies[0].subject === 'Tu sesión fue cancelada', 'cancellation subject');
 assertChileTime(mailBodies[0].body, '16:00', 'cancellation shows Chile local appointment context');
@@ -342,7 +342,7 @@ check(mailBodies[0].body.includes('Confirmamos la cancelación')
   && !mailBodies[0].body.includes('Cancelar:'),
   'cancellation has no Meet, no Reagendar, and no Cancelar');
 mailBodies = [];
-check(drainOutbox(Date.parse('2026-08-27T17:51:00.000Z')).processed === 0 && mailBodies.length === 0,
+check(drainOutbox(Date.parse('2026-09-03T17:51:00.000Z')).processed === 0 && mailBodies.length === 0,
   'cancellation notification replay does not resend');
 const replayCancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: clinicianCancelToken }) } });
 check(replayCancel.ok && replayCancel.replay === true && mailBodies.length === 0
@@ -354,15 +354,15 @@ check(record().notification_internal_state === 'sent' && mailBodies.length === 0
   'same logical cancellation enqueue does not duplicate');
 
 check(!phase.verifyCapability_(clinicianCancelToken, 'CANCEL', phase.capabilityFromRecord_(record(), 'CANCEL'), {
-  secret: capabilitySecret, now: Date.parse('2026-08-27T17:52:00.000Z'),
+  secret: capabilitySecret, now: Date.parse('2026-09-03T17:52:00.000Z'),
 }), 'terminal cancel revokes the live CANCEL capability');
 check(String(record().reschedule_capability_revoked_at || '') !== ''
   || !phase.verifyCapability_(confirmationRescheduleToken, 'RESCHEDULE', phase.capabilityFromRecord_(record(), 'RESCHEDULE'), {
-    secret: capabilitySecret, now: Date.parse('2026-08-27T17:52:00.000Z'),
+    secret: capabilitySecret, now: Date.parse('2026-09-03T17:52:00.000Z'),
   }), 'RESCHEDULE remains unusable after terminal cancel');
 
-const formattedWinter = worker.formatPatientFacingDateTime_('2026-08-27T17:00:00.000Z');
-check(formattedWinter === 'jueves 27 de agosto de 2026, 13:00', 'canonical Chile winter local format');
+const formattedWinter = worker.formatPatientFacingDateTime_('2026-09-03T17:00:00.000Z');
+check(formattedWinter === 'jueves 3 de septiembre de 2026, 13:00', 'canonical Chile winter local format');
 check(worker.PATIENT_EMAIL_TIME_ZONE === 'America/Santiago', 'patient email timezone is America/Santiago');
 const dstBefore = phase.formatPatientFacingDateTime_(phase.startAt_('2026-04-04', '10:00'));
 const dstAfter = phase.formatPatientFacingDateTime_(phase.startAt_('2026-04-05', '10:00'));
@@ -376,7 +376,7 @@ const poison = {
   service_type: 'initial',
   modality: 'online',
   patient_email: allowlisted,
-  current_start_at: '2026-08-27T17:00:00.000Z',
+  current_start_at: '2026-09-03T17:00:00.000Z',
   booking_status: 'confirmed',
   payment_status: 'paid',
   schedule_status: 'scheduled',
@@ -391,13 +391,13 @@ const poison = {
   meet_url: 'https://meet.google.com/opaque-meet-poison',
   meet_status: 'ready',
   ...phase.capabilityFields_(phase.capabilityForStorage_(phase.createCapability_('CANCEL', {
-    secret: capabilitySecret, now: Date.parse('2026-08-27T16:00:00.000Z'),
+    secret: capabilitySecret, now: Date.parse('2026-09-03T16:00:00.000Z'),
   }))),
   ...phase.capabilityFields_(phase.capabilityForStorage_(phase.createCapability_('RESCHEDULE', {
-    secret: capabilitySecret, now: Date.parse('2026-08-27T16:00:00.000Z'),
+    secret: capabilitySecret, now: Date.parse('2026-09-03T16:00:00.000Z'),
   }))),
 };
-poison.reschedule_capability_revoked_at = '2026-08-27T16:05:00.000Z';
+poison.reschedule_capability_revoked_at = '2026-09-03T16:05:00.000Z';
 const poisonSheet = {
   getRange: (row, col) => ({
     setValue: (value) => { poison[headers[col - 1]] = String(value == null ? '' : value); },
@@ -419,7 +419,7 @@ mailBodies = [];
 const poisonRun = worker.processLifecycleNotificationOutbox_({
   config: phase.readCapabilityConfig_(), store: poisonStore, outboxStore: poisonOutbox,
   resources: { sheet: poisonSheet }, schema: schema(),
-  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-27T16:30:00.000Z'),
+  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-09-03T16:30:00.000Z'),
 });
 check(poisonRun.ok && poisonRun.results[0].ok && poison.notification_patient_state === 'sent'
   && Number(poison.notification_attempt_count) === 1 && mailBodies.length === 1

@@ -31,6 +31,9 @@ FLOW_CONTRACT_TESTS=PASS
 node backend/appsscript/booking/test/lifecycle-harness.test.mjs
 LIFECYCLE_HARNESS_TESTS=PASS
 
+node backend/appsscript/booking/test/calendar-metadata-reconciliation.test.mjs
+CALENDAR_METADATA_RECONCILIATION_TESTS=PASS assertions=37
+
 El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y RefundGateway.js en VM. Stubbea PropertiesService, SpreadsheetApp, CalendarApp, Advanced Calendar, LockService, ScriptApp, UrlFetchApp y mail; no lee .env, no usa datos de reserva ni contacta servicios externos.
 
 ## Matriz cubierta
@@ -41,6 +44,7 @@ El harness carga Code.js, Lifecycle.js, CalendarGateway.js, Reconciliation.js y 
 4. Evento idempotente, retry, update mismo evento, ETag y Meet preservation.
 5. syncToken expirado/410 y full-sync reset.
 6. Clinician move/cancel, quota intacta, stale event y loop protection.
+6b. Metadata-only Calendar evolution (etag/updated/Meet materialization, ISO offset equivalent) is not CLINICIAN_RESCHEDULED; genuine start/end change still is; patient-move incremental follow-up stays non-clinician; cancellation and stale handling unchanged.
 7. Patient reschedule x1, lock/fresh reload y segundo intento rechazado.
 8. Patient cancel idempotente y agenda libre independiente de refund.
 9. Refund order determinista, duplicate callback y timeout manual_review.
