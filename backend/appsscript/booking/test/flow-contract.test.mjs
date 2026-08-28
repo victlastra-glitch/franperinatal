@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { createFixedDate } from './helpers/fixed-date.mjs';
+
+const FixedDate = createFixedDate();
 
 const sources = await Promise.all(['../Code.js', '../Lifecycle.js', '../CalendarGateway.js']
   .map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
@@ -49,7 +52,7 @@ const sheet = {
 };
 
 const context = {
-  console, Date, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
+  console, Date: FixedDate, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
   Utilities: {
     DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, getUuid: randomUUID,
     computeDigest: (_algorithm, value) => digestBytes(value),
@@ -84,7 +87,7 @@ const check = (condition, message) => { assert.ok(condition, message); assertion
 const idempotencyKey = 'fran-nonprod-20260821-123e4567-e89b-12d3-a456-426614174000';
 const payload = {
   action: 'create_flow_payment', idempotencyKey, serviceType: 'initial', modality: 'online',
-  date: '2026-09-03', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
+  date: '2026-08-27', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
 };
 
 // 1-3. commerceOrder contract

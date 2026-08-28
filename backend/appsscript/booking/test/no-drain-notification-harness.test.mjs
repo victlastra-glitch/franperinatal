@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { createFixedDate } from './helpers/fixed-date.mjs';
+
+const FixedDate = createFixedDate();
 
 /**
  * No-drain multi-event notification harness.
@@ -110,7 +113,7 @@ spreadsheet = {
 outboxSheet.getLastRow = () => outboxHeaders.length ? 1 + outboxRows.length : 0;
 
 const context = {
-  console, Date, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
+  console, Date: FixedDate, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
   Utilities: {
     DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, getUuid: randomUUID,
     computeDigest: (_a, value) => digestBytes(value),

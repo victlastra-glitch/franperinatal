@@ -2,10 +2,12 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { createFixedDate, FIXED_TEST_NOW_MS } from './helpers/fixed-date.mjs';
 
 const sourceFiles = ['../Code.js', '../Lifecycle.js', '../CalendarGateway.js'];
 const sources = sourceFiles.map((file) => readFileSync(new URL(file, import.meta.url), 'utf8'));
-const fixedNow = Date.parse('2026-08-25T13:00:00.000Z');
+const FixedDate = createFixedDate();
+const fixedNow = FIXED_TEST_NOW_MS;
 const bytes = (value) => [...value].map((byte) => (byte > 127 ? byte - 256 : byte));
 const utilities = {
   DigestAlgorithm: { SHA_256: 'sha256' },
@@ -61,7 +63,7 @@ const calendarApi = {
   },
 };
 const context = {
-  console, Date, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
+  console, Date: FixedDate, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
   Utilities: utilities,
   PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({
     APP_ENV: 'nonprod', FLOW_API_KEY: 'synthetic-flow-key', FLOW_SECRET_KEY: 'synthetic-flow-secret',
@@ -87,7 +89,7 @@ let assertions = 0;
 const check = (condition, message) => { assert.ok(condition, message); assertions += 1; };
 const payload = {
   idempotencyKey: 'fran-nonprod-20260821-123e4567-e89b-12d3-a456-426614174000',
-  serviceType: 'initial', modality: 'online', date: '2026-09-03', time: '10:00',
+  serviceType: 'initial', modality: 'online', date: '2026-08-27', time: '10:00',
   name: 'Synthetic Patient', email: 'qa+nonprod@example.test', phone: '', patientRut: '', reason: '', message: '',
 };
 

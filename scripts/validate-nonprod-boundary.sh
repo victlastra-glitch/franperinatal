@@ -5,13 +5,16 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 artifact_root="${1:-$repo_root}"
 cd "$repo_root"
 
+# Prefer rg; fall back to grep. Missing search tools never yield PASS.
+# shellcheck source=lib/fail-closed-search.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib/fail-closed-search.sh"
+
 require_tool() {
   command -v "$1" >/dev/null 2>&1 || {
     printf 'TOOL_MISSING: %s\n' "$1" >&2
     exit 127
   }
 }
-require_tool rg
 require_tool find
 require_tool node
 
@@ -25,33 +28,33 @@ test -f "$artifact_root/assets/app.js" || fail 'missing app asset'
 test -f "$artifact_root/manage.html" || fail 'missing management page'
 test -f "$artifact_root/_worker.js" || fail 'missing Worker'
 
-rg -q "availability: '/api/availability'" "$artifact_root/assets/booking.js" || fail 'browser availability route missing'
-rg -q "createFlowPayment: '/api/create-flow-payment'" "$artifact_root/assets/booking.js" || fail 'browser payment route missing'
-rg -q "fran-nonprod-20260821-" "$artifact_root/assets/booking.js" || fail 'browser idempotency namespace missing'
-rg -Fq "'/api/leadmagnet'" "$artifact_root/assets/app.js" || fail 'browser leadmagnet route missing'
+search_quiet_regex "availability: '/api/availability'" "$artifact_root/assets/booking.js" || fail 'browser availability route missing'
+search_quiet_regex "createFlowPayment: '/api/create-flow-payment'" "$artifact_root/assets/booking.js" || fail 'browser payment route missing'
+search_quiet_regex "fran-nonprod-20260821-" "$artifact_root/assets/booking.js" || fail 'browser idempotency namespace missing'
+search_quiet_fixed "'/api/leadmagnet'" "$artifact_root/assets/app.js" || fail 'browser leadmagnet route missing'
 for route in /api/manage /api/manage-availability /api/manage-cancel /api/manage-reschedule; do
-  rg -Fq "'$route'" "$artifact_root/manage.html" || fail "browser management route missing: $route"
+  search_quiet_fixed "'$route'" "$artifact_root/manage.html" || fail "browser management route missing: $route"
 done
-if rg -q -i 'script\.google\.com/macros/s/|script\.googleusercontent\.com/macros/|AKfy[[:alnum:]_-]{20,}' \
+if search_quiet_regex_i 'script\.google\.com/macros/s/|script\.googleusercontent\.com/macros/|AKfy[[:alnum:]_-]{20,}' \
   "$artifact_root/assets" "$artifact_root/blog" "$artifact_root/guia" "$artifact_root/recursos" "$artifact_root"/*.html "$artifact_root/_worker.js"; then
   fail 'public artifact contains direct Apps Script endpoint'
 fi
-if rg -q 'WEBAPP_URL' "$artifact_root/assets/booking.js" "$artifact_root/assets/app.js" "$artifact_root/manage.html"; then
+if search_quiet_regex 'WEBAPP_URL' "$artifact_root/assets/booking.js" "$artifact_root/assets/app.js" "$artifact_root/manage.html"; then
   fail 'browser contains Apps Script upstream material'
 fi
 
 for route in /api/availability /api/create-flow-payment /api/flow-confirmation /api/payment-status /api/refund-confirmation; do
-  rg -Fq "$route" "$artifact_root/_worker.js" || fail "Worker route missing: $route"
+  search_quiet_fixed "$route" "$artifact_root/_worker.js" || fail "Worker route missing: $route"
 done
 for route in /api/leadmagnet /api/manage /api/manage-availability /api/manage-cancel /api/manage-reschedule; do
-  rg -Fq "$route" "$artifact_root/_worker.js" || fail "disabled Worker route missing: $route"
+  search_quiet_fixed "$route" "$artifact_root/_worker.js" || fail "disabled Worker route missing: $route"
 done
-rg -Fq "env.APP_ENV !== 'nonprod'" "$artifact_root/_worker.js" || fail 'Worker APP_ENV guard missing'
-rg -Fq 'idempotencyKey' "$artifact_root/_worker.js" || fail 'Worker idempotency field missing'
-rg -Fq "feature_disabled_nonprod" "$artifact_root/_worker.js" || fail 'disabled feature response missing'
+search_quiet_fixed "env.APP_ENV !== 'nonprod'" "$artifact_root/_worker.js" || fail 'Worker APP_ENV guard missing'
+search_quiet_fixed 'idempotencyKey' "$artifact_root/_worker.js" || fail 'Worker idempotency field missing'
+search_quiet_fixed "feature_disabled_nonprod" "$artifact_root/_worker.js" || fail 'disabled feature response missing'
 node "$repo_root/scripts/assert-nonprod-worker-structure.mjs" "$artifact_root/_worker.js" >/dev/null \
   || fail 'unexpected semantic nonprod upstream call site'
-if rg -q -i 'script\.google\.com/macros/s/|script\.googleusercontent\.com/macros/|AKfy[[:alnum:]_-]{20,}' "$artifact_root/_worker.js"; then
+if search_quiet_regex_i 'script\.google\.com/macros/s/|script\.googleusercontent\.com/macros/|AKfy[[:alnum:]_-]{20,}' "$artifact_root/_worker.js"; then
   fail 'Worker contains literal upstream'
 fi
 

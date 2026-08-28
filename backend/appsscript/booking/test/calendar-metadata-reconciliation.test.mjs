@@ -130,6 +130,35 @@ check(meetReady.record.meet_url === MEET_URI && meetReady.record.meet_conference
 check(meetReady.record.calendar_change_source !== 'clinician' && meetReady.record.schedule_changed_at === originalScheduleChangedAt
   && meetReady.record.last_operation_id === '',
   'Meet materialization does not mark a clinician schedule change');
+check(meetReady.record.payment_status === 'paid', 'metadata refresh leaves payment_status unchanged');
+check(meetReady.record.refund_status === 'not_required', 'metadata refresh leaves refund_status unchanged');
+const meetReadyReplay = runReconcile(holder, meetReadyEvent);
+check(meetReadyReplay.outcome.noop === true && meetReadyReplay.notifications === 0
+  && meetReadyReplay.record.current_start_at === originalStart
+  && meetReadyReplay.record.calendar_event_etag === 'etag-meet-ready',
+  'repeated identical metadata-only event is a no-op');
+
+const capabilityHolder = { record: persistConfirmed(insertEvent, {
+  reschedule_capability_hash: 'aa'.repeat(32),
+  cancel_capability_hash: 'bb'.repeat(32),
+  reschedule_capability_version: '3',
+  cancel_capability_version: '3',
+  reschedule_capability_expires_at: '2026-09-04T12:00:00.000Z',
+  cancel_capability_expires_at: '2026-09-04T12:00:00.000Z',
+  reschedule_capability_revoked_at: '',
+  cancel_capability_revoked_at: '',
+}) };
+const capabilityMeta = runReconcile(capabilityHolder, meetReadyEvent);
+check(capabilityMeta.outcome.reason === 'metadata_refreshed' && capabilityMeta.notifications === 0
+  && capabilityMeta.record.reschedule_capability_hash === 'aa'.repeat(32)
+  && capabilityMeta.record.cancel_capability_hash === 'bb'.repeat(32)
+  && capabilityMeta.record.reschedule_capability_version === '3'
+  && capabilityMeta.record.cancel_capability_version === '3'
+  && capabilityMeta.record.reschedule_capability_expires_at === '2026-09-04T12:00:00.000Z'
+  && capabilityMeta.record.cancel_capability_expires_at === '2026-09-04T12:00:00.000Z'
+  && capabilityMeta.record.payment_status === 'paid'
+  && capabilityMeta.record.refund_status === 'not_required',
+  'capability hashes/state and payment/refund survive metadata refresh');
 
 const genuineMoveEvent = linkedEvent({
   etag: 'etag-clinician-move', updated: '2026-09-03T16:00:00.000Z', conferenceData: availableMeet,
