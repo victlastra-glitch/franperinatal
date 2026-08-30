@@ -205,6 +205,12 @@ function cleanupTargetedCalendarFixture_() {
       && record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.CANCELLED
       && String(record.reconciliation_state || '') === TARGETED_CALENDAR_FIXTURE_CLEANUP_STATE
       && !String(record.slot_hold_expires_at || '');
+    if (alreadyTerminal) {
+      terminalizeTargetedFixtureOutbox_(resources, record.reservation_id);
+      return sanitizeTargetedCalendarFixtureEvidence_(record, {
+        ok: true, cleaned: true, alreadyClean: true,
+      });
+    }
     const now = new Date().toISOString();
     const revokedAt = function(hash, current) {
       return hash ? (current || now) : '';
@@ -223,7 +229,7 @@ function cleanupTargetedCalendarFixture_() {
     terminalizeTargetedFixtureOutbox_(resources, record.reservation_id);
     const refreshed = findTargetedCalendarFixtureRecord_(resources.sheet, schema);
     return sanitizeTargetedCalendarFixtureEvidence_(refreshed, {
-      ok: true, cleaned: true, alreadyClean: alreadyTerminal,
+      ok: true, cleaned: true, alreadyClean: false,
     });
   } finally { lock.releaseLock(); }
 }

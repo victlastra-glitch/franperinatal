@@ -170,6 +170,12 @@ const calendarApi = {
       removeCalls += 1;
       lastInsert = lastInsert || {};
       lastInsert.removeArgs = optionalArgs;
+      const found = calendarEvents.find((event) => event.id === String(eventId));
+      if (!found) {
+        const error = new Error('API call to calendar.events.delete failed with error: Resource has been deleted');
+        error.name = 'GoogleJsonResponseException';
+        throw error;
+      }
       calendarEvents = calendarEvents.filter((event) => event.id !== String(eventId));
     },
   },
@@ -315,6 +321,13 @@ check(jsonResult(context.doPost({
 
 const historical = seedHistoricalRow();
 const historicalSnapshot = JSON.stringify(historical);
+const missingCleanup = context.nonprodCleanupTargetedCalendarFixture();
+check(missingCleanup.ok === true && missingCleanup.cleaned === true && missingCleanup.alreadyClean === true
+  && missingCleanup.reason === 'fixture_absent'
+  && JSON.stringify(historical) === historicalSnapshot
+  && reservationRows.length === 1,
+  'missing fixture cleanup is successful and idempotent');
+
 networkCalls = 0;
 openByIdCalls = [];
 getCalendarByIdCalls = [];
@@ -445,6 +458,7 @@ const clinicianOutbox = outboxRows.find((row) => row.event_type === 'CLINICIAN_R
 
 networkCalls = 0;
 removeCalls = 0;
+const mailCallsBeforeCleanup = mailCalls;
 const cleaned = context.nonprodCleanupTargetedCalendarFixture();
 check(cleaned.ok === true && cleaned.cleaned === true && cleaned.alreadyClean !== true, 'cleanup terminalizes the active fixture');
 check(networkCalls === 0, 'Flow transport never called on cleanup');
@@ -455,7 +469,7 @@ check(cleanedRecord.booking_status === 'cancelled' && cleanedRecord.schedule_sta
   && cleanedRecord.reconciliation_state === fixture.TARGETED_CALENDAR_FIXTURE_CLEANUP_STATE
   && reservationRows.some((row) => row.reservation_id === cleanedRecord.reservation_id),
   'cleanup retains sanitized fixture audit and releases hold');
-check(calendarEvents.length === 0 && removeCalls === 1, 'cleanup removes the synthetic Calendar event');
+check(calendarEvents.length === 0 && removeCalls === 1, 'first cleanup deletes the synthetic Calendar event once');
 check(clinicianOutbox.state === 'superseded'
   && clinicianOutbox.disposition_reason === fixture.TARGETED_CALENDAR_FIXTURE_OUTBOX_DISPOSITION,
   'cleanup leaves no retryable targeted notification');
@@ -463,7 +477,36 @@ check(outboxRows.find((row) => row.reservation_id === historical.reservation_id)
   && JSON.stringify(historical) === historicalSnapshot
   && historical.booking_status === 'confirmed',
   'historical rows cannot match cleanup selector');
-check(mailCalls === 0, 'cleanup does not generate a clinician cancellation mail');
+check(mailCalls === mailCallsBeforeCleanup && mailCalls === 0, 'cleanup does not generate a clinician cancellation mail');
+check(cleanedRecord.refund_status === 'not_required'
+  && !cleanedRecord.reschedule_capability_hash && !cleanedRecord.cancel_capability_hash
+  && !cleanedRecord.reschedule_capability_version && !cleanedRecord.cancel_capability_version,
+  'first cleanup does not refund or issue capabilities');
+
+const outboxCountAfterFirstCleanup = outboxRows.length;
+const clinicianOutboxSnapshot = JSON.stringify(clinicianOutbox);
+const cleanedRecordSnapshot = JSON.stringify(cleanedRecord);
+const cleanedAgain = context.nonprodCleanupTargetedCalendarFixture();
+check(cleanedAgain.ok === true && cleanedAgain.alreadyClean === true && cleanedAgain.cleaned === true
+  && reservationRows.filter((row) => fixture.isTargetedCalendarFixtureRecord_(row)).length === 1,
+  'second cleanup is idempotent and never deletes the fixture audit row');
+check(removeCalls === 1, 'second cleanup does not delete Calendar again');
+check(mailCalls === 0 && networkCalls === 0, 'second cleanup has no mail or Flow/refund side effect');
+check(!outboxRows.some((row) => row.event_type === 'CLINICIAN_CANCELLED')
+  && outboxRows.length === outboxCountAfterFirstCleanup
+  && JSON.stringify(clinicianOutbox) === clinicianOutboxSnapshot,
+  'second cleanup does not enqueue or mutate notifications');
+check(JSON.stringify(currentRecord()) === cleanedRecordSnapshot
+  && currentRecord().booking_status === 'cancelled'
+  && currentRecord().schedule_status === 'cancelled'
+  && currentRecord().reconciliation_state === fixture.TARGETED_CALENDAR_FIXTURE_CLEANUP_STATE
+  && currentRecord().slot_hold_expires_at === ''
+  && currentRecord().refund_status === 'not_required'
+  && !currentRecord().reschedule_capability_hash && !currentRecord().cancel_capability_hash,
+  'second cleanup leaves datastore terminal without capability or refund mutation');
+check(clinicianOutbox.state === 'superseded'
+  && outboxRows.find((row) => row.reservation_id === historical.reservation_id).state === 'pending',
+  'second cleanup leaves targeted outbox terminal and historical outbox untouched');
 
 calendarEvents = [{
   id: 'event-targeted-opaque-1',
@@ -481,11 +524,10 @@ check(currentRecord().booking_status === 'cancelled'
   && !outboxRows.some((row) => row.event_type === 'CLINICIAN_CANCELLED'),
   'cleanup avoids a misleading clinician cancellation notification');
 
-removeCalls = 0;
-const cleanedAgain = context.nonprodCleanupTargetedCalendarFixture();
-check(cleanedAgain.ok === true && cleanedAgain.alreadyClean === true && cleanedAgain.cleaned === true
-  && reservationRows.filter((row) => fixture.isTargetedCalendarFixtureRecord_(row)).length === 1,
-  'cleanup is idempotent and never deletes the fixture audit row');
+const cleanedDeletedListed = context.nonprodCleanupTargetedCalendarFixture();
+check(cleanedDeletedListed.ok === true && cleanedDeletedListed.alreadyClean === true && cleanedDeletedListed.cleaned === true
+  && removeCalls === 1,
+  'already-terminal fixture with deleted Calendar event does not call cancelLinkedEvent');
 
 const recreated = context.nonprodCreateTargetedCalendarFixture();
 check(recreated.ok === true && currentRecord().booking_status === 'confirmed'
