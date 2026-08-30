@@ -524,14 +524,6 @@
       message:     state.form.reason || '',
     };
 
-    // Funnel event only: no name, email, phone, RUT, free text or token.
-    if (typeof window.fbTrack === 'function') {
-      window.fbTrack('payment_started', {
-        service_type: serviceType,
-        modality: state.modality && state.modality.value ? state.modality.value : 'online'
-      });
-    }
-
     try {
       const resp = await fetch(BOOKING_API.createFlowPayment, {
         method: 'POST',
@@ -588,6 +580,17 @@
         statusEl.className = 'form-status is-loading';
         statusEl.textContent = 'Redirigiendo al pago seguro…';
       }
+
+      // Funnel event only: fire after a valid createFlowPayment response and
+      // immediately before redirecting to the payment provider. No name,
+      // email, phone, RUT, free text or token is sent.
+      if (typeof window.fbTrack === 'function') {
+        window.fbTrack('payment_started', {
+          service_type: serviceType,
+          modality: state.modality && state.modality.value ? state.modality.value : 'online'
+        });
+      }
+
       window.location.href = result.paymentUrl;
     } catch (err) {
       if (statusEl) {
