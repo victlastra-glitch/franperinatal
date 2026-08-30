@@ -25,7 +25,7 @@
 <link rel="stylesheet" href="assets/styles.css?v=3" />
 <link rel="stylesheet" href="assets/booking.css?v=3" />
 </head>
-<body>
+<body data-booking-page>
 
 <!-- ─── NAV ────────────────────────────────────────────────── -->
 <header class="nav">
@@ -61,7 +61,7 @@
   <div class="container">
     <div class="eyebrow eyebrow-mark">Reservar hora</div>
     <h1 class="mt-3">Elige tu sesión<br/><em class="ital">y agenda tu hora</em>.</h1>
-    <p class="lede mt-4" style="max-width:52ch;">Completa el formulario en pocos pasos. Recibirás la confirmación por correo electrónico.</p>
+    <p class="lede mt-4" style="max-width:52ch;">Completa el formulario en pocos pasos. Las sesiones son online para personas en Chile y recibirás la confirmación por correo electrónico.</p>
   </div>
 </section>
 
@@ -165,7 +165,7 @@
           <div class="bk-step-head">
             <span class="bk-step-num">3 de 7 — Fecha</span>
             <h2>Elige un día</h2>
-            <p class="lede">Disponibilidad de lunes a viernes, excluyendo feriados nacionales.</p>
+            <p class="lede">Las horas reservables aparecen en este calendario, de lunes a viernes y excluyendo feriados nacionales. Este horario puede ser distinto del horario de respuesta.</p>
           </div>
 
           <div class="bk-calendar">
@@ -334,7 +334,7 @@
               <p class="serif">Al continuar, irás al pago seguro por Flow. La hora se confirma administrativamente una vez aprobado el pago.</p>
               <ul>
                 <li>Pago online requerido para confirmar la hora.</li>
-                <li>Si elegiste online, recibirás el enlace de Google Meet en el email una vez aprobado el pago.</li>
+                <li>Una vez aprobado el pago, recibirás el enlace de Google Meet en el email.</li>
                 <li>Para modificar o cancelar tu hora, escríbenos por WhatsApp o email.</li>
               </ul>
 
@@ -434,7 +434,7 @@
                       <div><span>ID</span><strong id="em-id" style="font-family:var(--mono);font-size:12px;letter-spacing:0.04em;">—</strong></div>
                     </div>
                     <hr />
-                    <p class="em-fine">Una vez aprobado el pago, te enviaremos la confirmación administrativa con el enlace de Google Meet si elegiste sesión online. Para modificar o cancelar tu hora, escríbenos por WhatsApp o email.</p>
+                    <p class="em-fine">Una vez aprobado el pago, te enviaremos la confirmación administrativa con el enlace de Google Meet. Para modificar o cancelar tu hora, escríbenos por WhatsApp o email.</p>
                   </div>
                 </div>
               </details>
@@ -524,8 +524,9 @@
     });
   }
 </script>
-<!-- Web 04.14 PRODUCTION: cache-bust v22. -->
-<script src="assets/booking.js?v=23" defer></script>
+<!-- Cache-bust v24 for the frontend analytics and booking bundles. -->
+<script src="assets/analytics.js?v=3" defer></script>
+<script src="assets/booking.js?v=24" defer></script>
 
 </body>
 </html>

@@ -21,6 +21,10 @@
      - llamada_15min_click  → CTA llamada gratuita
      - formulario_submit    → envío formulario contacto
      - landing_view         → vista landing específica
+     - view_service         → vista de una página/área de servicio
+     - start_booking        → entrada al flujo de reserva
+     - payment_started      → solicitud de inicio de pago
+     - booking_completed    → pago confirmado y reserva completada
 
    NOTA COOKIES: GA4 ahora carga con anonymize_ip en TODAS las páginas
    (privacy-safe, no requiere consentimiento previo bajo ePrivacy Chile).
@@ -149,12 +153,66 @@
     };
   }
 
-  /* -------- 3. Event tracker helpers -------- */
+  /* -------- 3. Attribution + event tracker helpers -------- */
+  const ATTRIBUTION_STORAGE_KEY = 'fb_marketing_attribution';
+  const ATTRIBUTION_FIELDS = Object.freeze([
+    ['source', ['utm_source', 'source']],
+    ['medium', ['utm_medium', 'medium']],
+    ['campaign', ['utm_campaign', 'campaign']]
+  ]);
+
+  // Sólo se aceptan identificadores de campaña acotados. Nunca se leen ni
+  // envían campos de contacto, formularios, tokens o parámetros arbitrarios.
+  function safeAttributionValue(value) {
+    const normalized = String(value || '').trim().replace(/\s+/g, '-').slice(0, 100);
+    return /^[a-z0-9][a-z0-9._~:/+-]{0,99}$/i.test(normalized) ? normalized : '';
+  }
+
+  function readStoredAttribution() {
+    try {
+      const stored = JSON.parse(sessionStorage.getItem(ATTRIBUTION_STORAGE_KEY) || '{}');
+      return {
+        source: safeAttributionValue(stored.source),
+        medium: safeAttributionValue(stored.medium),
+        campaign: safeAttributionValue(stored.campaign)
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
+  function getAttribution() {
+    const params = new URLSearchParams(window.location.search);
+    const stored = readStoredAttribution();
+    const attribution = {};
+
+    ATTRIBUTION_FIELDS.forEach(([field, keys]) => {
+      for (const key of keys) {
+        const value = safeAttributionValue(params.get(key));
+        if (value) {
+          attribution[field] = value;
+          break;
+        }
+      }
+      if (!attribution[field] && stored[field]) attribution[field] = stored[field];
+    });
+
+    try {
+      if (Object.keys(attribution).length) {
+        sessionStorage.setItem(ATTRIBUTION_STORAGE_KEY, JSON.stringify(attribution));
+      }
+    } catch (_) {}
+
+    return attribution;
+  }
+
+  const attribution = getAttribution();
+
   function track(eventName, params) {
-    params = params || {};
-    window.gtag('event', eventName, params);
+    const eventParams = Object.assign({}, attribution, params || {});
+    window.gtag('event', eventName, eventParams);
     // Meta Pixel custom event
-    if (window.fbq) window.fbq('trackCustom', eventName, params);
+    if (window.fbq) window.fbq('trackCustom', eventName, eventParams);
   }
 
   // Auto-bind CTAs por selector
@@ -193,6 +251,15 @@
     // Landing-specific pageview (beyond standard GA4 pageview)
     const landing = document.body.getAttribute('data-landing');
     if (landing) track('landing_view', { landing: landing });
+
+    // Service pages expose a stable, non-PII identifier in the markup.
+    const service = document.body.getAttribute('data-service');
+    if (service) track('view_service', { service: service });
+
+    // Entering the booking page is the start of the public booking funnel.
+    if (document.body.hasAttribute('data-booking-page')) {
+      track('start_booking', { booking_type: 'online' });
+    }
   });
 
   // Expose for manual firing
