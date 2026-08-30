@@ -213,6 +213,14 @@
 
     window.gtag('event', 'purchase', purchasePayload);
     window.gtag('event', 'reserva_pagada_confirmada', payload);
+    if (typeof window.fbTrack === 'function') {
+      window.fbTrack('booking_completed', {
+        service_type: payload.service_type,
+        modality: payload.modality,
+        value: payload.value,
+        currency: payload.currency
+      });
+    }
     storage.setItem(storageKey, '1');
   }
 
