@@ -1,0 +1,45 @@
+# Cloudflare Pages — Redirects for clean URL canonical consolidation
+# Sprint SEO Tecnico 01.2 · 2026-05-12
+# Web 04.9 (2026-05-16): hard 404 on /backend/* (defense in depth).
+# Web 04.10 (2026-05-17): 301 www -> canonical non-www
+# Web 04.11 (2026-05-21): SEO consolidation — legacy ansiedad embarazo slug -> new
+# The backend/ folder MUST also be excluded from the deploy artifact via
+# wrangler config / build step. _redirects is a second line of defense.
+
+# 301 www -> canonical non-www (requires www as active CF Pages custom domain)
+https://www.franciscabustos.cl/* https://franciscabustos.cl/:splat 301
+
+# 404: deny direct access to the backend source tree
+/backend          /404  404
+/backend/         /404  404
+/backend/*        /404  404
+
+# 301 permanent: public drafts -> canonical guide
+/guia/10-senales-simple       /guia/10-senales  301
+/guia/10-senales-simple.html  /guia/10-senales  301
+/guia/10-senales-v2           /guia/10-senales  301
+/guia/10-senales-v2.html      /guia/10-senales  301
+
+# 301 permanent: legacy .html -> clean URL
+/index.html / 301
+/servicios.html /servicios 301
+/sobre-mi.html /sobre-mi 301
+/contacto.html /contacto 301
+/faq.html /faq 301
+/blog.html /blog 301
+/privacidad.html /privacidad 301
+/reserva.html /reserva 301
+/depresion-postparto.html /depresion-postparto 301
+/ansiedad-perinatal.html /ansiedad-perinatal 301
+/recursos/test-edimburgo.html /recursos/test-edimburgo 301
+/guia/10-senales.html /guia/10-senales 301
+/blog/baby-blues-vs-depresion-postparto.html /blog/baby-blues-vs-depresion-postparto 301
+/blog/sintomas-depresion-postparto.html /blog/sintomas-depresion-postparto 301
+
+# 301 permanent: legacy slug -> new canonical (SEO consolidation 2026-05-21)
+# Replaces the previous /blog/ansiedad-embarazo-cuando-consultar(.html) article
+# with the new /blog/ansiedad-en-el-embarazo to eliminate keyword cannibalization.
+# Both legacy URLs (with and without .html) redirect DIRECTLY to the new slug
+# to avoid 301 chains.
+/blog/ansiedad-embarazo-cuando-consultar      /blog/ansiedad-en-el-embarazo 301
+/blog/ansiedad-embarazo-cuando-consultar.html /blog/ansiedad-en-el-embarazo 301

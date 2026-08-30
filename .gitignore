@@ -1,0 +1,33 @@
+.DS_Store
+
+# Local Cloudflare state and local environment values
+.wrangler/
+.nonprod-private/
+.env
+.env.*
+!.env.example
+
+# Never version runtime credentials or clinical/booking data
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.credentials
+*.secrets
+*.secret
+*token*
+*credential*
+*patient*
+*reservation*
+
+# Google Apps Script exports remain out of Git until a canonical export has
+# passed the documented secret and PII review.
+backend/**/*.gs
+backend/**/*.js
+backend/**/*.bat
+backend/**/*.html
+!backend/README.md
+!backend/appsscript/booking/Code.js
+!backend/appsscript/booking/Lifecycle.js
+!backend/appsscript/booking/TargetedFixture.js

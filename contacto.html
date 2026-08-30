@@ -7,61 +7,167 @@
 <meta name="format-detection" content="telephone=no" />
 <title>Contacto · Francisca Bustos</title>
 <meta name="description" content="Escríbeme por el canal que prefieras — formulario, WhatsApp o email. Respondo personalmente en un día hábil." />
+<link rel="canonical" href="https://franciscabustos.cl/contacto" />
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "ContactPage",
+  "name": "Contacto · Francisca Bustos",
+  "url": "https://franciscabustos.cl/contacto",
+  "inLanguage": "es-CL",
+  "mainEntity": {
+    "@type": "Person",
+    "@id": "https://franciscabustos.cl/#francisca-bustos-maldonado",
+    "name": "Francisca Bustos Maldonado",
+    "alternateName": "Francisca Bustos",
+    "jobTitle": "Psicóloga Clínica Perinatal",
+    "url": "https://franciscabustos.cl",
+    "image": "https://franciscabustos.cl/assets/images/francisca/francisca-sobre-mi-web-4.webp",
+    "description": "Psicóloga clínica perinatal titulada de la Universidad del Desarrollo, con formación especializada en salud mental reproductiva y perinatal. Atención online para personas en Chile.",
+    "email": "hola@franciscabustos.cl",
+    "telephone": "+56957663038",
+    "areaServed": { "@type": "Country", "name": "Chile" },
+    "alumniOf": [
+      { "@type": "CollegeOrUniversity", "name": "Universidad del Desarrollo" },
+      { "@type": "CollegeOrUniversity", "name": "Universidad de Zaragoza" }
+    ],
+    "sameAs": [
+      "https://www.instagram.com/franciscabustos.psi"
+    ],
+    "identifier": {
+      "@type": "PropertyValue",
+      "name": "Registro Superintendencia de Salud",
+      "value": "598177"
+    },
+    "contactPoint": [
+      {
+        "@type": "ContactPoint",
+        "contactType": "customer service",
+        "telephone": "+56957663038",
+        "email": "hola@franciscabustos.cl",
+        "availableLanguage": ["Spanish"],
+        "areaServed": "CL",
+        "hoursAvailable": {
+          "@type": "OpeningHoursSpecification",
+          "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday"],
+          "opens": "09:00",
+          "closes": "19:00"
+          },
+          "description": "Horario de respuesta a mensajes; las horas reservables se muestran en el calendario de reserva."
+      }
+    ]
+  }
+}
+</script>
 <meta property="og:type" content="website" />
 <meta property="og:locale" content="es_CL" />
 <meta property="og:site_name" content="Francisca Bustos · Psicología Perinatal" />
 <meta property="og:title" content="Contacto · Francisca Bustos" />
 <meta property="og:description" content="Escríbeme por el canal que prefieras — formulario, WhatsApp o email. Respondo personalmente en un día hábil." />
-<meta property="og:image" content="assets/francisca-retrato-1200.jpg" />
+<meta property="og:image" content="https://franciscabustos.cl/assets/images/francisca/francisca-sobre-mi-web-4.webp" />
 <meta name="twitter:card" content="summary_large_image" />
 <meta name="twitter:title" content="Contacto · Francisca Bustos" />
 <meta name="twitter:description" content="Escríbeme por el canal que prefieras — formulario, WhatsApp o email. Respondo personalmente en un día hábil." />
-<meta name="twitter:image" content="assets/francisca-retrato-1200.jpg" />
+<meta name="twitter:image" content="https://franciscabustos.cl/assets/images/francisca/francisca-sobre-mi-web-4.webp" />
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
-<link rel="stylesheet" href="assets/styles.css?v=2" />
+<link rel="stylesheet" href="assets/styles.css?v=3" />
 <link rel="stylesheet" href="assets/home.css?v=2" />
 <link rel="stylesheet" href="assets/pages.css?v=2" />
 <style>
-  /* Form submission states */
-  .form-status{
-    font-family:var(--sans);font-size:14px;line-height:1.55;
-    padding:14px 16px;border-radius:10px;border:1px solid transparent;
-    letter-spacing:0;text-transform:none;margin-top:4px;
+  /* ── Formulario de contacto nativo ─────────────────────── */
+  .contact-form { display: flex; flex-direction: column; gap: 20px; }
+
+  .field { display: flex; flex-direction: column; gap: 7px; }
+  .field label {
+    font-family: var(--sans); font-size: 13px; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2);
   }
-  .form-status.is-loading{background:color-mix(in oklab, var(--ink-3) 8%, white);color:var(--ink-2);border-color:color-mix(in oklab, var(--ink-3) 18%, white)}
-  .form-status.is-ok{background:color-mix(in oklab, var(--sage) 14%, white);color:var(--ink-1);border-color:color-mix(in oklab, var(--sage) 40%, white)}
-  .form-status.is-err{background:color-mix(in oklab, var(--urgent, #b0303d) 10%, white);color:color-mix(in oklab, var(--urgent, #b0303d) 85%, black);border-color:color-mix(in oklab, var(--urgent, #b0303d) 35%, white)}
-  .contact-submit-row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px}
+  .field label .req { color: var(--malva); margin-left: 2px; }
+
+  .field input,
+  .field select,
+  .field textarea {
+    font-family: var(--sans); font-size: 15.5px; color: var(--ink);
+    background: var(--paper); border: 1px solid var(--line-strong);
+    border-radius: 8px; padding: 11px 14px;
+    outline: none; width: 100%;
+    transition: border-color .18s ease, box-shadow .18s ease;
+    -webkit-appearance: none; appearance: none;
+  }
+  .field select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%238A8178' stroke-width='1.8'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 13px center;
+    padding-right: 38px; cursor: pointer;
+  }
+  .field textarea { resize: vertical; min-height: 130px; line-height: 1.6; }
+  .field input::placeholder,
+  .field textarea::placeholder { color: var(--ink-3); }
+
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    border-color: var(--malva-soft);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--malva) 12%, transparent);
+  }
+  .field input:disabled,
+  .field select:disabled,
+  .field textarea:disabled { opacity: .5; cursor: not-allowed; }
+
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 540px) { .field-row { grid-template-columns: 1fr; } }
+
+  /* Estados */
+  .form-status {
+    font-family: var(--sans); font-size: 14px; line-height: 1.6;
+    padding: 14px 16px; border-radius: 10px; border: 1px solid transparent;
+    letter-spacing: 0; text-transform: none;
+  }
+  .form-status.is-loading {
+    background: color-mix(in srgb, var(--ink-3) 8%, var(--bg));
+    color: var(--ink-2); border-color: var(--line);
+  }
+  .form-status.is-ok {
+    background: color-mix(in srgb, var(--sage) 14%, var(--bg));
+    color: var(--ink); border-color: color-mix(in srgb, var(--sage) 40%, transparent);
+  }
+  .form-status.is-err {
+    background: color-mix(in srgb, #b0303d 8%, var(--bg));
+    color: color-mix(in srgb, #b0303d 80%, #000);
+    border-color: color-mix(in srgb, #b0303d 28%, transparent);
+  }
+  .contact-submit-row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+  .form-note { font-size: 12px; color: var(--ink-3); line-height: 1.5; }
 </style>
 </head>
 <body>
 
 <header class="nav">
   <div class="nav-inner">
-    <a class="brand" href="index.html"><span class="brand-mark" aria-hidden="true">fb</span><span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span></a>
+    <a class="brand" href="/"><span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span></a>
     <nav class="nav-links">
-      <a class="nav-link" href="index.html">Inicio</a>
-      <a class="nav-link" href="sobre-mi.html">Sobre mí</a>
-      <a class="nav-link" href="servicios.html">Servicios</a>
-      <a class="nav-link" href="faq.html">Preguntas</a>
-      <a class="nav-link" href="contacto.html" aria-current="page">Contacto</a>
+      <a class="nav-link" href="/">Inicio</a>
+      <a class="nav-link" href="/sobre-mi">Sobre mí</a>
+      <a class="nav-link" href="/servicios">Servicios</a>
+      <a class="nav-link" href="/faq">Preguntas</a>
+      <a class="nav-link" href="/contacto" aria-current="page">Contacto</a>
     </nav>
     <div class="nav-actions">
-      <a href="reserva.html" class="btn btn-primary">Reservar hora <span class="arrow">→</span></a>
+      <a href="/reserva" class="btn btn-primary">Reservar hora <span class="arrow">→</span></a>
       <button class="nav-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-panel"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h18"/></svg></button>
     </div>
   </div>
   <div class="nav-panel" id="nav-panel" role="menu">
-    <a href="index.html" role="menuitem">Inicio</a>
-    <a href="sobre-mi.html" role="menuitem">Sobre mí</a>
-    <a href="servicios.html" role="menuitem">Servicios</a>
-    <a href="faq.html" role="menuitem">Preguntas</a>
-    <a href="contacto.html" role="menuitem">Contacto</a>
-    <a href="reserva.html" class="btn btn-primary btn-lg">Reservar primera sesión →</a>
-    <a href="https://wa.me/56944919906?text=Hola%20Francisca%2C%20me%20gustar%C3%ADa%20agendar%20una%20sesi%C3%B3n." class="btn btn-wa btn-lg" style="margin-top:12px;">Escribir por WhatsApp</a>
+    <a href="/" role="menuitem">Inicio</a>
+    <a href="/sobre-mi" role="menuitem">Sobre mí</a>
+    <a href="/servicios" role="menuitem">Servicios</a>
+    <a href="/faq" role="menuitem">Preguntas</a>
+    <a href="/contacto" role="menuitem">Contacto</a>
+    <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión →</a>
+    <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20me%20gustar%C3%ADa%20agendar%20una%20sesi%C3%B3n." class="btn btn-wa btn-lg" style="margin-top:12px;">Escribir por WhatsApp</a>
   </div>
 </header>
 
@@ -75,58 +181,76 @@
 
 <section class="section">
   <div class="container contact-grid">
+
+    <!-- Formulario nativo -->
     <div class="reveal">
-      <h3 style="font-size: 26px; margin-bottom: 24px;">Formulario</h3>
-      <form id="contact-form" class="contact-form" novalidate>
-        <div class="contact-row">
+      <h3 style="font-size: 26px; margin-bottom: 28px;">Formulario</h3>
+
+      <form id="contact-form" class="contact-form" data-form="contacto" novalidate>
+
+        <div class="field-row">
           <div class="field">
-            <label for="c-name">Nombre</label>
-            <input id="c-name" name="name" class="input" required />
+            <label for="cf-name">Nombre completo <span class="req" aria-hidden="true">*</span></label>
+            <input id="cf-name" name="name" type="text" placeholder="Tu nombre" autocomplete="name" required />
           </div>
           <div class="field">
-            <label for="c-email">Email</label>
-            <input id="c-email" name="email" type="email" class="input" required />
+            <label for="cf-email">Email <span class="req" aria-hidden="true">*</span></label>
+            <input id="cf-email" name="email" type="email" placeholder="tu@email.cl" autocomplete="email" required />
           </div>
         </div>
-        <div class="field">
-          <label for="c-phone">Teléfono <span style="text-transform: none; color: var(--ink-3); font-size: 11px;">(opcional)</span></label>
-          <input id="c-phone" name="phone" class="input" />
+
+        <div class="field-row">
+          <div class="field">
+            <label for="cf-phone">Teléfono <span style="color:var(--ink-3);font-weight:400">(opcional)</span></label>
+            <input id="cf-phone" name="phone" type="tel" placeholder="+56 9 1234 5678" autocomplete="tel" />
+          </div>
+          <div class="field field-rut">
+            <label for="cf-rut">RUT Paciente <span style="color:var(--ink-3);font-weight:400">(opcional)</span></label>
+            <input id="cf-rut" name="patient_rut" type="text" placeholder="12.345.678-9" autocomplete="off" inputmode="text" />
+            <p class="form-help" style="font-size:12px;color:var(--ink-3,#8A8178);margin:6px 0 0;line-height:1.5;">Se solicita para emisión de boleta.</p>
+          </div>
         </div>
+
         <div class="field">
-          <label for="c-topic">Motivo</label>
-          <select id="c-topic" name="topic" class="select">
-            <option>Quiero reservar una primera sesión</option>
-            <option>Tengo una pregunta antes de consultar</option>
-            <option>Consulta administrativa</option>
-            <option>Derivación desde otro profesional</option>
-            <option>Prensa o colaboración</option>
+          <label for="cf-topic">Motivo de consulta <span class="req" aria-hidden="true">*</span></label>
+          <select id="cf-topic" name="topic" required>
+            <option value="" disabled selected>Selecciona…</option>
+            <option value="Primera sesión">Primera sesión / consulta general</option>
+            <option value="Embarazo">Acompañamiento en embarazo</option>
+            <option value="Posparto">Posparto / depresión posparto</option>
+            <option value="Duelo perinatal">Duelo perinatal o pérdida</option>
+            <option value="Otro">Otro</option>
           </select>
         </div>
+
         <div class="field">
-          <label for="c-msg">Mensaje</label>
-          <textarea id="c-msg" name="message" class="textarea" placeholder="Cuéntame lo que necesites. No hace falta entrar en detalle si prefieres no hacerlo por escrito."></textarea>
+          <label for="cf-message">Mensaje <span class="req" aria-hidden="true">*</span></label>
+          <textarea id="cf-message" name="message" placeholder="Cuéntame brevemente en qué puedo ayudarte…" required></textarea>
         </div>
-        <label class="checkbox">
-          <input type="checkbox" name="consent" required />
-          <span>He leído y acepto la <a href="#" style="text-decoration: underline;">política de privacidad</a>. Mis datos serán tratados con confidencialidad.</span>
-        </label>
-        <div id="contact-status" class="form-status" aria-live="polite" hidden></div>
+
+        <p class="form-note">Este formulario es para solicitar contacto o información general. Por favor no compartas antecedentes clínicos sensibles por este medio — puedes hacerlo directamente en la primera sesión.</p>
+        <p class="form-note">Toda la información es confidencial y está protegida por secreto profesional. Al enviar, aceptas el <a href="/privacidad" style="color:inherit;text-decoration:underline;text-underline-offset:2px;">aviso de privacidad</a>.</p>
+
+        <div id="contact-status" class="form-status" hidden role="status" aria-live="polite"></div>
+
         <div class="contact-submit-row">
-          <button type="submit" class="btn btn-primary btn-lg">
-            <span class="submit-label">Enviar mensaje</span>
-            <span class="arrow">→</span>
+          <button type="submit" class="btn btn-primary" id="contact-submit">
+            <span class="submit-label">Enviar mensaje</span> <span class="arrow">→</span>
           </button>
-          <a id="contact-wa-fallback" class="btn btn-ghost" href="https://wa.me/56944919906" target="_blank" rel="noopener" hidden>O escribe por WhatsApp →</a>
+          <a id="contact-wa-fallback" href="https://wa.me/56957663038" class="btn btn-wa" hidden rel="noopener">
+            Escribir por WhatsApp
+          </a>
         </div>
+
       </form>
     </div>
 
     <aside class="reveal">
       <h3 style="font-size: 26px; margin-bottom: 24px;">Otros canales</h3>
       <div class="contact-channels">
-        <a href="https://wa.me/56944919906" class="channel">
+        <a href="https://wa.me/56957663038" class="channel">
           <span class="channel-icon">W</span>
-          <span class="channel-info"><strong>WhatsApp</strong><span>+56 9 4491 9906 · Lun a vie, 9 – 19 h</span></span>
+          <span class="channel-info"><strong>WhatsApp</strong><span>+56 9 5766 3038 · Lun a vie, 9 – 19 h</span></span>
           <span class="channel-arrow">→</span>
         </a>
         <a href="mailto:hola@franciscabustos.cl" class="channel">
@@ -134,7 +258,7 @@
           <span class="channel-info"><strong>Email</strong><span>hola@franciscabustos.cl</span></span>
           <span class="channel-arrow">→</span>
         </a>
-        <a href="#" class="channel">
+        <a href="https://instagram.com/franciscabustos.psi" class="channel" rel="noopener" target="_blank">
           <span class="channel-icon">IG</span>
           <span class="channel-info"><strong>Instagram</strong><span>@franciscabustos.psi · Divulgación clínica</span></span>
           <span class="channel-arrow">→</span>
@@ -142,24 +266,21 @@
       </div>
 
       <div class="card mt-5" style="background: var(--bg-2); border: 0;">
-        <div class="eyebrow eyebrow-mark">Consulta presencial</div>
-        <h4 class="serif mt-3" style="font-size: 24px;">Providencia, Santiago</h4>
-        <p class="mt-2" style="font-size: 14px; color: var(--ink-2); line-height: 1.6;">
-          Av. Providencia, entre Metro Tobalaba y Los Leones. Edificio residencial
-          discreto, con acceso independiente y estacionamiento cercano.
-        </p>
-        <p class="mt-3" style="font-size: 13px; color: var(--ink-2);">La dirección exacta se comparte al confirmar la reserva.</p>
+        <div class="eyebrow eyebrow-mark">Atención online</div>
+        <h4 class="serif mt-3" style="font-size: 24px;">Para personas en Chile</h4>
+        <p class="mt-2" style="font-size: 14px; color: var(--ink-2); line-height: 1.6;">Las sesiones se realizan por videollamada, en un espacio privado y confidencial.</p>
       </div>
 
       <div class="mt-5" style="padding: 20px 0; border-top: 1px solid var(--line);">
         <div class="eyebrow">Horario de respuesta</div>
         <p class="mt-2" style="font-size: 14px; color: var(--ink-2); line-height: 1.6;">
           Lunes a viernes, 9 a 19 h. Fuera de ese horario los mensajes se leen al día hábil siguiente.
-          Si es una urgencia emocional fuera de ese horario, por favor llama a Salud Responde (*4141)
+          Si es una urgencia emocional fuera de ese horario, por favor llama a *4141, Línea de Prevención del Suicidio,
           o acude al servicio de urgencia más cercano.
         </p>
       </div>
     </aside>
+
   </div>
 </section>
 
@@ -168,18 +289,18 @@
     <div class="footer-grid">
       <div><div class="footer-brand-name">Francisca Bustos</div><p class="footer-brand-desc">Psicología clínica especializada en salud mental perinatal, depresión posparto y acompañamiento emocional en la maternidad.</p></div>
       <div class="footer-col"><h5>Navegación</h5><ul>
-        <li><a href="index.html">Inicio</a></li><li><a href="sobre-mi.html">Sobre mí</a></li>
-        <li><a href="servicios.html">Servicios</a></li><li><a href="reserva.html">Reservar sesión</a></li>
-        <li><a href="faq.html">Preguntas frecuentes</a></li><li><a href="contacto.html">Contacto</a></li>
+        <li><a href="/">Inicio</a></li><li><a href="/sobre-mi">Sobre mí</a></li>
+        <li><a href="/servicios">Servicios</a></li><li><a href="/reserva">Reservar sesión</a></li>
+        <li><a href="/faq">Preguntas frecuentes</a></li><li><a href="/contacto">Contacto</a></li>
       </ul></div>
       <div class="footer-col"><h5>Contacto</h5><ul>
         <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
-        <li><a href="https://wa.me/56944919906">+56 9 4491 9906</a></li>
-        <li>Las Condes · Santiago</li><li>Online · Presencial</li>
+        <li><a href="https://wa.me/56957663038">+56 9 5766 3038</a></li>
+        <li>Atención online para personas en Chile</li>
       </ul></div>
       <div class="footer-col"><h5>Respaldo</h5><ul>
-        <li>Col. Psicólogos Chile · 12.847</li><li>Reg. Superint. de Salud</li>
-        <li>Magíster Clínico · PUC</li><li><a href="privacidad.html">Aviso de privacidad</a></li>
+        <li>Col. Psicólogos Chile · 12.847</li><li>Reg. Superint. Salud · 598177</li>
+        <li>Univ. Zaragoza</li><li><a href="/privacidad">Aviso de privacidad</a></li>
       </ul></div>
     </div>
     <div class="footer-bottom">
@@ -190,54 +311,121 @@
 </footer>
 
 <!-- WhatsApp flotante -->
-<a class="wa-float" href="https://wa.me/56944919906?text=Hola%20Francisca%2C%20me%20gustar%C3%ADa%20agendar%20una%20sesi%C3%B3n." aria-label="Escribir por WhatsApp" rel="noopener">
+<a class="wa-float" href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20me%20gustar%C3%ADa%20agendar%20una%20sesi%C3%B3n." aria-label="Escribir por WhatsApp" rel="noopener">
   <svg viewBox="0 0 32 32" aria-hidden="true"><path d="M16 3C9 3 3.5 8.5 3.5 15.5c0 2.4.7 4.7 1.9 6.7L3 29l7-1.8c1.9 1 4 1.6 6 1.6 7 0 12.5-5.5 12.5-12.5S23 3 16 3zm0 22.7c-1.8 0-3.6-.5-5.1-1.4l-.4-.2-4.1 1 1.1-4-.3-.4a10 10 0 1118 .2c-1.8 2.8-5 4.8-9.2 4.8zm5.6-7.5c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.2s-.8 1-1 1.2c-.2.2-.4.2-.7.1a8.2 8.2 0 01-2.4-1.5 9 9 0 01-1.7-2.1c-.2-.3 0-.5.1-.7l.5-.5c.2-.2.2-.3.4-.5s.1-.4 0-.6c-.1-.2-.7-1.7-1-2.3-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.6.1-.9.4-.3.3-1.1 1.1-1.1 2.7s1.1 3.1 1.3 3.3c.2.2 2.3 3.6 5.7 5 3.4 1.3 3.4.9 4 .8.6-.1 1.8-.8 2.1-1.5.3-.8.3-1.4.2-1.5 0-.1-.3-.2-.6-.4z"/></svg>
   <span class="wa-text">WhatsApp</span>
 </a>
 
-<script src="assets/analytics.js?v=1"></script>
-<script src="assets/app.js?v=2"></script>
+<script src="assets/analytics.js?v=1" defer></script>
+<script src="assets/app.js?v=5" defer></script>
 <script src="assets/tweaks.js?v=2"></script>
-<script src="assets/forms.js?v=1"></script>
 <script>
 (function(){
-  const form = document.getElementById('contact-form');
-  const status = document.getElementById('contact-status');
-  const waBtn = document.getElementById('contact-wa-fallback');
-  const submitBtn = form.querySelector('button[type="submit"]');
+  const GFORM = 'https://docs.google.com/forms/d/e/1FAIpQLSdlri-hHl_y0sMoCi1LYTHCNrvdy52gvJ32WvnaIop9eQ_UjQ/formResponse';
+  const WA    = '56957663038';
+
+  const form        = document.getElementById('contact-form');
+  const status      = document.getElementById('contact-status');
+  const waBtn       = document.getElementById('contact-wa-fallback');
+  const submitBtn   = document.getElementById('contact-submit');
   const submitLabel = submitBtn.querySelector('.submit-label');
+  const fields      = form.querySelectorAll('input, select, textarea');
+
+  function waLink(msg) {
+    return `https://wa.me/${WA}?text=${encodeURIComponent(msg)}`;
+  }
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     if (!form.reportValidity()) return;
 
-    const data = window.FB.forms.formToObject(form);
-    data._subject = `Contacto — ${data.topic || 'Consulta'} — ${data.name}`;
+    // Leer campos
+    const name    = form.querySelector('[name="name"]').value.trim();
+    const email   = form.querySelector('[name="email"]').value.trim();
+    const phone   = form.querySelector('[name="phone"]').value.trim();
+    const topic   = form.querySelector('[name="topic"]').value;
+    const message = form.querySelector('[name="message"]').value.trim();
 
+    // UI: enviando
+    fields.forEach(f => f.disabled = true);
     submitBtn.disabled = true;
     submitLabel.textContent = 'Enviando…';
     status.hidden = false;
     status.className = 'form-status is-loading';
     status.textContent = 'Enviando tu mensaje…';
 
-    const r = await window.FB.forms.submit('contacto', data);
+    // Construir FormData con entry IDs del Google Form
+    const fd = new FormData();
+    fd.append('entry.560431578',  name);
+    fd.append('entry.693610734',  email);
+    fd.append('entry.1095277707', phone);
+    fd.append('entry.1920802274', topic);
+    fd.append('entry.709773196',  message);
 
-    if (r.ok) {
+    try {
+      // no-cors: Google Forms no acepta CORS, pero el POST llega igual
+      await fetch(GFORM, { method: 'POST', mode: 'no-cors', body: fd });
+
+      // Éxito (respuesta opaca — asumimos OK)
       status.className = 'form-status is-ok';
-      status.innerHTML = '<strong>Gracias.</strong> Te responderé en un día hábil. Si es urgente, escríbeme por WhatsApp.';
+      status.innerHTML = '<strong>Mensaje recibido.</strong> Te responderé en un día hábil. Si es urgente, escríbeme por WhatsApp.';
       submitBtn.hidden = true;
+      waBtn.href = waLink(`Hola Francisca, soy ${name}. Te escribí por el formulario de contacto (${topic}).`);
       waBtn.hidden = false;
-      // Construir link de WhatsApp pre-llenado
-      const msg = `Hola Francisca, soy ${data.name}. Te escribí hace un momento por el formulario (${data.topic || 'consulta'}).`;
-      waBtn.href = window.FB.forms.whatsappFallback(msg);
-    } else {
+
+    } catch (err) {
+      // Sin red
       status.className = 'form-status is-err';
-      status.innerHTML = `<strong>No se pudo enviar.</strong> ${r.error || ''} Por favor escríbeme directo por WhatsApp o email.`;
+      status.innerHTML = '<strong>Sin conexión.</strong> Revisa tu red y reintenta, o escríbeme directo por WhatsApp.';
+      fields.forEach(f => f.disabled = false);
       submitBtn.disabled = false;
       submitLabel.textContent = 'Reintentar';
+      waBtn.href = waLink(`Hola Francisca, tuve un error al enviar el formulario. Mi consulta: ${message}`);
       waBtn.hidden = false;
-      waBtn.href = window.FB.forms.whatsappFallback(`Hola Francisca, el formulario de contacto me dio error. Mi consulta es: ${data.message || ''}`);
     }
+  });
+})();
+</script>
+
+<!-- =================== COOKIE BANNER =================== -->
+<div id="fb-cookie-banner" role="region" aria-label="Aviso de cookies" style="
+  display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
+  background:#FDFBF7;border-top:1px solid #E2D8C9;
+  padding:16px 24px;font-family:'Inter',-apple-system,sans-serif;font-size:13.5px;
+  color:#231F1C;line-height:1.55;
+  box-shadow:0 -2px 12px rgba(35,31,28,.07);
+">
+  <div style="max-width:860px;margin:0 auto;display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
+    <p style="margin:0;flex:1;min-width:240px;">
+      Usamos cookies esenciales y, con tu permiso, cookies de análisis para mejorar la experiencia del sitio. Puedes aceptar o continuar solo con las esenciales.
+      <a href="/privacidad" style="color:#8A5A6B;text-decoration:underline;text-underline-offset:2px;">Política de privacidad →</a>
+    </p>
+    <div style="display:flex;gap:10px;flex-shrink:0;">
+      <button id="fb-cookie-reject" style="
+        padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;
+        background:transparent;border:1px solid #C9C0B0;color:#5A534D;font-family:inherit;
+      ">Solo esenciales</button>
+      <button id="fb-cookie-accept" style="
+        padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;
+        background:#231F1C;border:1px solid #231F1C;color:#FDFBF7;font-family:inherit;
+      ">Aceptar cookies</button>
+    </div>
+  </div>
+</div>
+<script>
+(function() {
+  var banner = document.getElementById('fb-cookie-banner');
+  if (!banner) return;
+  var consent = '';
+  try { consent = localStorage.getItem('fb_cookie_consent') || ''; } catch(e) {}
+  if (!consent) banner.style.display = '';
+  document.getElementById('fb-cookie-accept').addEventListener('click', function() {
+    banner.style.display = 'none';
+    if (window.FB_acceptCookies) window.FB_acceptCookies();
+  });
+  document.getElementById('fb-cookie-reject').addEventListener('click', function() {
+    banner.style.display = 'none';
+    if (window.FB_rejectCookies) window.FB_rejectCookies();
   });
 })();
 </script>

@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="es-CL">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="theme-color" content="#FAF6F0" />
+<meta name="format-detection" content="telephone=no" />
+<title>Información de pago · Francisca Bustos</title>
+<meta name="description" content="Pago online por Flow al reservar tu sesión de psicología perinatal. La hora se confirma una vez aprobado el pago." />
+<meta name="robots" content="noindex" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
+<link rel="stylesheet" href="assets/styles.css?v=3" />
+<link rel="stylesheet" href="assets/home.css?v=2" />
+<link rel="stylesheet" href="assets/pages.css?v=2" />
+<style>
+  .pago-card {
+    background: var(--surface-2, #FDFBF7);
+    border: 1px solid var(--border, #E4DDD5);
+    border-radius: 14px;
+    max-width: 560px;
+    margin: 0 auto;
+    overflow: hidden;
+  }
+  .pago-card-head {
+    background: var(--surface-3, #FAF6F0);
+    border-bottom: 1px solid var(--border, #E4DDD5);
+    padding: 28px 36px 24px;
+  }
+  .pago-card-head .eyebrow { margin-bottom: 6px; }
+  .pago-card-body { padding: 28px 36px 32px; }
+  .pago-dl { width: 100%; border-collapse: collapse; }
+  .pago-dl tr + tr td { border-top: 1px solid var(--border, #E4DDD5); }
+  .pago-dl td { padding: 11px 0; vertical-align: top; font-size: 14px; line-height: 1.5; }
+  .pago-dl td:first-child { color: var(--ink-3, #8A8178); width: 140px; padding-right: 16px; white-space: nowrap; font-size: 13px; }
+  .pago-dl td:last-child  { color: var(--ink-1, #231F1C); font-weight: 500; font-family: var(--sans); }
+  .pago-monto { margin-top: 24px; padding: 16px 20px; background: color-mix(in oklab, var(--rose, #C9A8B3) 12%, white); border: 1px solid color-mix(in oklab, var(--rose, #C9A8B3) 28%, white); border-radius: 10px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  .pago-monto-label { font-size: 13px; color: var(--ink-2, #5A534D); }
+  .pago-monto-value { font-family: var(--serif, Georgia,serif); font-size: 26px; color: var(--ink-1, #231F1C); white-space: nowrap; }
+  .pago-helpnote { margin-top: 20px; font-size: 13px; color: var(--ink-2, #5A534D); line-height: 1.65; }
+  .pago-helpnote strong { color: var(--ink-1, #231F1C); font-weight: 600; }
+  @media (max-width: 480px) {
+    .pago-card-head, .pago-card-body { padding-left: 20px; padding-right: 20px; }
+    .pago-dl td:first-child { width: 110px; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <a class="brand" href="/"><span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span></a>
+    <nav class="nav-links">
+      <a class="nav-link" href="/">Inicio</a>
+      <a class="nav-link" href="/sobre-mi">Sobre mí</a>
+      <a class="nav-link" href="/servicios">Servicios</a>
+      <a class="nav-link" href="/faq">Preguntas</a>
+      <a class="nav-link" href="/contacto">Contacto</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="/reserva" class="btn btn-primary">Reservar hora <span class="arrow">→</span></a>
+      <button class="nav-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-panel"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h18"/></svg></button>
+    </div>
+  </div>
+  <div class="nav-panel" id="nav-panel" role="menu">
+    <a href="/" role="menuitem">Inicio</a>
+    <a href="/sobre-mi" role="menuitem">Sobre mí</a>
+    <a href="/servicios" role="menuitem">Servicios</a>
+    <a href="/faq" role="menuitem">Preguntas</a>
+    <a href="/contacto" role="menuitem">Contacto</a>
+    <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión →</a>
+    <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20me%20gustar%C3%ADa%20agendar%20una%20sesi%C3%B3n." class="btn btn-wa btn-lg" style="margin-top:12px;">Escribir por WhatsApp</a>
+  </div>
+</header>
+
+<section class="page-header">
+  <div class="container">
+    <div class="eyebrow eyebrow-mark">Pago de sesión</div>
+    <h1 class="mt-3">Información para<br/><em class="ital">realizar el pago</em>.</h1>
+    <p class="lede mt-4" style="max-width:52ch;">El pago se realiza online por Flow al reservar la sesión. La hora se confirma administrativamente una vez aprobado el pago.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="container" style="padding-top:0;">
+
+    <!-- ── Pago online (flujo unico via reserva) ── -->
+    <div class="pago-card payment-section">
+      <div class="pago-card-head">
+        <div class="eyebrow eyebrow-mark">Pago online</div>
+        <p style="margin:8px 0 0;font-size:14px;color:var(--ink-2,#5A534D);line-height:1.6;">El pago de la sesión se realiza online por Flow, con tarjeta de crédito, débito o transferencia automática, al finalizar el proceso de reserva.</p>
+      </div>
+      <div class="pago-card-body">
+
+        <div class="payment-actions" style="display:flex;flex-direction:column;gap:14px;max-width:520px;margin:8px auto 0;">
+          <a href="/reserva"
+             class="btn btn-primary btn-payment"
+             aria-label="Ir al proceso de reserva con pago online">
+            Iniciar reserva con pago online
+          </a>
+        </div>
+
+        <p class="payment-note" style="margin:18px 0 0;font-size:13px;color:var(--ink-3,#8A8178);line-height:1.6;text-align:center;">
+          La hora se confirma administrativamente una vez aprobado el pago online.
+        </p>
+
+      </div>
+    </div>
+
+    <!-- ── Si ya pagaste o tienes dudas administrativas ── -->
+    <div class="pago-card" style="margin-top:32px;">
+      <div class="pago-card-head">
+        <div class="eyebrow eyebrow-mark">¿Necesitas ayuda con tu pago?</div>
+        <p style="margin:8px 0 0;font-size:14px;color:var(--ink-2,#5A534D);line-height:1.6;">Si pagaste y aún no recibes confirmación, o tienes dudas sobre el proceso administrativo, escríbenos.</p>
+      </div>
+      <div class="pago-card-body">
+
+        <p class="pago-helpnote" style="margin:0 0 16px;">
+          Todo pago se procesa online por Flow al reservar.
+        </p>
+
+        <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;">
+          <a href="mailto:hola@franciscabustos.cl" class="btn btn-ghost">Escribir email</a>
+          <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">WhatsApp</a>
+        </div>
+
+      </div>
+    </div>
+
+    <div style="max-width:560px;margin:32px auto 0;text-align:center;">
+      <p style="font-size:14px;color:var(--ink-3,#8A8178);margin:0 0 18px;">¿Tienes alguna pregunta antes de la sesión?</p>
+      <a href="mailto:hola@franciscabustos.cl" class="btn btn-ghost">Escribir a hola@franciscabustos.cl</a>
+    </div>
+
+  </div>
+</section>
+
+<footer class="footer">
+  <div class="container footer-inner">
+    <div class="footer-brand">
+      <span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span>
+    </div>
+    <nav class="footer-nav">
+      <a href="/privacidad">Privacidad</a>
+      <a href="/faq">Preguntas frecuentes</a>
+      <a href="/reserva">Reservar hora</a>
+    </nav>
+  </div>
+</footer>
+
+<script>
+  // Nav burger
+  const burger = document.querySelector('.nav-burger');
+  const panel  = document.getElementById('nav-panel');
+  if (burger && panel) {
+    burger.addEventListener('click', () => {
+      const open = burger.getAttribute('aria-expanded') === 'true';
+      burger.setAttribute('aria-expanded', String(!open));
+      panel.classList.toggle('is-open', !open);
+    });
+  }
+</script>
+</body>
+</html>
