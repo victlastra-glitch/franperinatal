@@ -52,7 +52,9 @@
       const resp = await fetch(BOOKING_API.availability, { method: 'GET', cache: 'no-store' });
       if (resp.ok) {
         const data = await resp.json();
-        bookedSlots = data && data.ok && Array.isArray(data.slots) ? data.slots : [];
+        bookedSlots = data && data.ok && Array.isArray(data.slots)
+          ? data.slots.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; })
+          : [];
       }
     } catch (_) {}
     slotsLoaded = true;
@@ -277,8 +279,8 @@
 
     // Bloqueo real basado en Calendar (bookedSlots viene del doGet)
     const takenHours = bookedSlots
-      .filter(b => b.fecha === iso)
-      .map(b => normalizeSlotHour(b.hora));
+      .filter(b => (b.date || b.fecha) === iso)
+      .map(b => normalizeSlotHour(b.time || b.hora));
     const remaining = SLOTS_WEEKDAY.filter((hour) => !takenHours.includes(hour) && !isSlotTooSoon(d, hour));
     if (remaining.length === 0) return "none";
     if (remaining.length === 1) return "few";
@@ -340,8 +342,8 @@
 
     const iso = dateKeyFromDate(state.date);
     const takenHours = bookedSlots
-      .filter(b => b.fecha === iso)
-      .map(b => normalizeSlotHour(b.hora));
+      .filter(b => (b.date || b.fecha) === iso)
+      .map(b => normalizeSlotHour(b.time || b.hora));
 
     // Si todos los slots están ocupados o pasaron, no quedan horarios visibles.
     const renderable = SLOTS_WEEKDAY.filter(s => !takenHours.includes(s) && !isSlotTooSoon(state.date, s));
@@ -476,7 +478,7 @@
     if (!window.crypto || typeof window.crypto.randomUUID !== 'function') {
       throw new Error('No pudimos preparar esta reserva de forma segura. Recarga la página e inténtalo nuevamente.');
     }
-    state.idempotencyKey = 'fran-nonprod-20260821-' + window.crypto.randomUUID();
+    state.idempotencyKey = 'fran-booking-' + window.crypto.randomUUID();
     return state.idempotencyKey;
   }
 
@@ -513,7 +515,7 @@
     const payload = {
       idempotencyKey: bookingIdempotencyKey(),
       serviceType: serviceType,
-      modality:    state.modality && state.modality.label ? state.modality.label : '',
+      modality:    state.modality && state.modality.value ? state.modality.value : '',
       date:        fechaISO,
       time:        horaISO,
       name:        state.form.name,
@@ -523,6 +525,14 @@
       reason:      motivoParts.join(' — '),
       message:     state.form.reason || '',
     };
+
+    // Funnel event only: no name, email, phone, RUT, free text or token.
+    if (typeof window.fbTrack === 'function') {
+      window.fbTrack('payment_started', {
+        service_type: serviceType,
+        modality: state.modality && state.modality.value ? state.modality.value : 'online'
+      });
+    }
 
     try {
       const resp = await fetch(BOOKING_API.createFlowPayment, {
@@ -580,17 +590,6 @@
         statusEl.className = 'form-status is-loading';
         statusEl.textContent = 'Redirigiendo al pago seguro…';
       }
-
-      // Funnel event only: fire after a valid createFlowPayment response and
-      // immediately before redirecting to the payment provider. No name,
-      // email, phone, RUT, free text or token is sent.
-      if (typeof window.fbTrack === 'function') {
-        window.fbTrack('payment_started', {
-          service_type: serviceType,
-          modality: state.modality && state.modality.value ? state.modality.value : 'online'
-        });
-      }
-
       window.location.href = result.paymentUrl;
     } catch (err) {
       if (statusEl) {

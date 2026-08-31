@@ -1,19 +1,21 @@
 /**
  * _worker.js — Francisca Bustos · Cloudflare Pages Worker
  * ============================================================
- * NONPROD recovery route boundary:
+ * Production same-origin route boundary:
  *   - Browser booking traffic is same-origin only.
  *   - APPS_SCRIPT_WEB_APP_URL is REQUIRED and never returned to a client.
- *   - Booking/payment routes fail closed unless APP_ENV is exactly nonprod.
+ *   - Booking/payment routes fail closed unless APP_ENV is exactly production.
  *   - /backend/* explicitly returns 404 (defense in depth — should also
  *     be excluded at deploy artifact level via wrangler/build).
+ *   - Management routes are same-origin proxies with server-side capability
+ *     validation; their responses contain no patient/clinical PII.
  *   - /pago-resultado POST → 303 GET preserved (Flow urlReturn).
  *   - Missing APPS_SCRIPT_WEB_APP_URL returns 503 (NOT 200) so monitoring
  *     can detect misconfiguration immediately.
  *
- * Required Cloudflare Pages Preview environment variables:
- *   APP_ENV = nonprod
- *   APPS_SCRIPT_WEB_APP_URL = set privately to the dedicated NONPROD Web App
+ * Required Cloudflare Pages Production environment variables:
+ *   APP_ENV = production
+ *   APPS_SCRIPT_WEB_APP_URL = set privately to the Production Web App
  *
  * This worker supersedes functions/api/flow-confirmation.js. When _worker.js
  * is present, Cloudflare Pages ignores the functions/ directory entirely.
@@ -31,8 +33,8 @@ function jsonResp(obj, status) {
   });
 }
 
-function nonprodUpstream(env) {
-  if (!env || env.APP_ENV !== 'nonprod') {
+function productionUpstream(env) {
+  if (!env || env.APP_ENV !== 'production') {
     return { error: 'environment_not_configured', status: 503 };
   }
   const target = env.APPS_SCRIPT_WEB_APP_URL;
@@ -48,8 +50,8 @@ function nonprodUpstream(env) {
   return { target: target };
 }
 
-function disabledNonprodFeature() {
-  return jsonResp({ ok: false, code: 'feature_disabled_nonprod' }, 503);
+function disabledProductionFeature() {
+  return jsonResp({ ok: false, code: 'feature_disabled' }, 503);
 }
 
 function safeAvailability(data) {
@@ -69,7 +71,7 @@ async function readJsonResponse(upstream) {
 // --- /api/availability ---------------------------------------------------
 async function handleAvailability(request, env) {
   if (request.method !== 'GET') return textBad('method_not_allowed', 405);
-  const upstreamConfig = nonprodUpstream(env);
+  const upstreamConfig = productionUpstream(env);
   if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
 
   const date = new URL(request.url).searchParams.get('date');
@@ -100,8 +102,9 @@ function validCreatePayload(value) {
     if (field.length > 500) return null;
     payload[key] = field;
   }
-  if (!/^fran-nonprod-20260821-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.idempotencyKey)
-      || !/^(initial|followup)$/.test(payload.serviceType) || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)
+  if (!/^fran-booking-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(payload.idempotencyKey)
+      || !/^(initial|followup)$/.test(payload.serviceType) || !/^(online|presencial)$/.test(payload.modality)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date)
       || !/^\d{2}:\d{2}$/.test(payload.time) || !payload.name || payload.name.length > 80
       || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) return null;
   return payload;
@@ -110,7 +113,7 @@ function validCreatePayload(value) {
 // --- /api/create-flow-payment -------------------------------------------
 async function handleCreateFlowPayment(request, env) {
   if (request.method !== 'POST') return textBad('method_not_allowed', 405);
-  const upstreamConfig = nonprodUpstream(env);
+  const upstreamConfig = productionUpstream(env);
   if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
 
   let candidate;
@@ -135,18 +138,51 @@ async function handleCreateFlowPayment(request, env) {
   if (!data || typeof data !== 'object') return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
   if (!data.ok) return jsonResp({ ok: false, code: typeof data.code === 'string' ? data.code : 'payment_rejected' }, 200);
   // A checkout redirect is a required payment-provider handoff, not an Apps
-  // Script upstream URL. It is restricted to Flow Sandbox in this environment.
+  // Script upstream URL. It is restricted to Flow Production (www.flow.cl) in this environment.
   if (typeof data.paymentUrl !== 'string') return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
   try {
     const checkout = new URL(data.paymentUrl);
-    if (checkout.protocol !== 'https:' || checkout.hostname !== 'sandbox.flow.cl') throw new Error('rejected');
+    if (checkout.protocol !== 'https:' || checkout.hostname !== 'www.flow.cl') throw new Error('rejected');
   } catch (_) {
     return jsonResp({ ok: false, code: 'checkout_rejected' }, 502);
   }
-  if (typeof data.publicStatusToken !== 'string' || !/^fran-nonprod-20260821-st-[0-9a-f]{32}$/i.test(data.publicStatusToken)) {
+  if (typeof data.publicStatusToken !== 'string' || !/^fran-booking-st-[0-9a-f]{32}$/i.test(data.publicStatusToken)) {
     return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
   }
   return jsonResp({ ok: true, paymentUrl: data.paymentUrl, publicStatusToken: data.publicStatusToken }, 200);
+}
+
+async function handleRetryFlowPayment(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = productionUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+  let candidate;
+  try { candidate = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  const st = candidate && typeof candidate.st === 'string' ? candidate.st.trim() : '';
+  if (!/^fran-booking-st-[0-9a-f]{32}$/i.test(st)) return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  let upstream;
+  try {
+    upstream = await fetch(upstreamConfig.target + '?action=retry_flow_payment', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ action: 'retry_flow_payment', st: st }),
+      redirect: 'follow',
+    });
+  } catch (_) {
+    return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502);
+  }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  const data = await readJsonResponse(upstream);
+  if (!data || typeof data !== 'object') return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
+  if (!data.ok) return jsonResp({ ok: false, code: typeof data.code === 'string' ? data.code : 'payment_rejected' }, 200);
+  if (typeof data.paymentUrl !== 'string') return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
+  try {
+    const checkout = new URL(data.paymentUrl);
+    if (checkout.protocol !== 'https:' || checkout.hostname !== 'www.flow.cl') throw new Error('rejected');
+  } catch (_) {
+    return jsonResp({ ok: false, code: 'checkout_rejected' }, 502);
+  }
+  return jsonResp({ ok: true, paymentUrl: data.paymentUrl, publicStatusToken: typeof data.publicStatusToken === 'string' ? data.publicStatusToken : st }, 200);
 }
 
 // --- /api/flow-confirmation ----------------------------------------------
@@ -154,7 +190,7 @@ async function handleCreateFlowPayment(request, env) {
 // to Apps Script, follows the 302 redirect internally, returns 200 OK plain
 // text to Flow. Idempotency is enforced server-side (LockService + flags).
 async function handleFlowConfirmation(request, env) {
-  const upstreamConfig = nonprodUpstream(env);
+  const upstreamConfig = productionUpstream(env);
   if (upstreamConfig.error) return textBad(upstreamConfig.error, upstreamConfig.status);
   if (request.method === 'GET') {
     return new Response('flow-confirmation proxy alive\n', { status: 200, headers: RESP_HEADERS_TEXT });
@@ -200,7 +236,7 @@ async function handlePaymentStatus(request, env) {
     return textBad('method_not_allowed', 405);
   }
 
-  const upstreamConfig = nonprodUpstream(env);
+  const upstreamConfig = productionUpstream(env);
   if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
 
   const incomingUrl = new URL(request.url);
@@ -245,7 +281,9 @@ async function handlePaymentStatus(request, env) {
     currency: data.currency === 'CLP' ? 'CLP' : '',
     serviceType: data.serviceType || '',
     modality: data.modality || '',
-    backendVersion: data.backendVersion || ''
+    backendVersion: data.backendVersion || '',
+    retryAvailable: data.retryAvailable === true,
+    holdValid: data.holdValid === true
   } : {
     ok: false,
     code: data && data.code ? data.code : '',
@@ -256,6 +294,92 @@ async function handlePaymentStatus(request, env) {
     status: 200,
     headers: { ...RESP_HEADERS_JSON, 'cache-control': 'no-store' }
   });
+}
+
+function safeManagementResponse(data) {
+  if (!data || typeof data !== 'object') return { ok: false, code: 'upstream_bad_response' };
+  if (!data.ok) return { ok: false, code: typeof data.code === 'string' ? data.code : 'management_rejected' };
+  return { ok: true, status: typeof data.status === 'string' ? data.status : '',
+    date: typeof data.date === 'string' ? data.date : '', time: typeof data.time === 'string' ? data.time : '',
+    serviceType: typeof data.serviceType === 'string' ? data.serviceType : '', modality: typeof data.modality === 'string' ? data.modality : '',
+    originalStart: typeof data.originalStart === 'string' ? data.originalStart : '', currentStart: typeof data.currentStart === 'string' ? data.currentStart : '',
+    currentEnd: typeof data.currentEnd === 'string' ? data.currentEnd : '', meetUrl: typeof data.meetUrl === 'string' ? data.meetUrl : '',
+    capabilityType: data.capabilityType === 'RESCHEDULE' || data.capabilityType === 'CANCEL' ? data.capabilityType : '' };
+}
+
+async function handleManageLookup(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = productionUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+  let payload;
+  try { payload = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  if (!payload || payload.action !== 'manage' || typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{64,256}$/.test(payload.token)) {
+    return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  }
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=manage_lookup', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'manage_lookup', token: payload.token }), redirect: 'follow' }); }
+  catch (_) { return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502); }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  return jsonResp(safeManagementResponse(await readJsonResponse(upstream)), 200);
+}
+
+async function handleManageCancel(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = productionUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+  let payload;
+  try { payload = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  if (!payload || payload.action !== 'cancel_confirm' || typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{64,256}$/.test(payload.token)) {
+    return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  }
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=patient_cancel', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'patient_cancel', token: payload.token }), redirect: 'follow' }); }
+  catch (_) { return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502); }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  const data = await readJsonResponse(upstream);
+  return data && data.ok ? jsonResp({
+    ok: true,
+    status: data.status === 'cancellation_pending' ? 'cancellation_pending' : 'cancelled',
+    refund: data.refund === 'requested' || data.refund === 'pending' ? 'requested' : 'BUSINESS_POLICY_TBD'
+  }, 200)
+    : jsonResp({ ok: false, code: data && data.code ? data.code : 'management_rejected' }, 200);
+}
+
+async function handleManageReschedule(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = productionUpstream(env);
+  if (upstreamConfig.error) return jsonResp({ ok: false, code: upstreamConfig.error }, upstreamConfig.status);
+  let payload;
+  try { payload = await request.json(); } catch (_) { return jsonResp({ ok: false, code: 'bad_request' }, 400); }
+  if (!payload || payload.action !== 'reschedule_confirm' || typeof payload.token !== 'string' || !/^[A-Za-z0-9_-]{64,256}$/.test(payload.token)
+      || !/^\d{4}-\d{2}-\d{2}$/.test(String(payload.fecha || '')) || !/^\d{2}:\d{2}$/.test(String(payload.hora || ''))) {
+    return jsonResp({ ok: false, code: 'bad_request' }, 400);
+  }
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=patient_reschedule', { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'patient_reschedule', token: payload.token, fecha: payload.fecha, hora: payload.hora }), redirect: 'follow' }); }
+  catch (_) { return jsonResp({ ok: false, code: 'upstream_unreachable' }, 502); }
+  if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
+  const data = await readJsonResponse(upstream);
+  return data && data.ok ? jsonResp({ ok: true, status: 'rescheduled', currentStart: data.currentStart || '' }, 200)
+    : jsonResp({ ok: false, code: data && data.code ? data.code : 'management_rejected' }, 200);
+}
+
+async function handleRefundConfirmation(request, env) {
+  if (request.method !== 'POST') return textBad('method_not_allowed', 405);
+  const upstreamConfig = productionUpstream(env);
+  if (upstreamConfig.error) return textBad(upstreamConfig.error, upstreamConfig.status);
+  let body;
+  try { body = await request.text(); } catch (_) { return textBad('bad_request', 400); }
+  if (!body || body.length > 4096) return textBad('bad_request', 400);
+  let upstream;
+  try { upstream = await fetch(upstreamConfig.target + '?action=refund_confirmation', { method: 'POST', headers: { 'content-type': request.headers.get('content-type') || 'application/x-www-form-urlencoded' }, body, redirect: 'follow' }); }
+  catch (_) { return textBad('upstream_unreachable', 502); }
+  if (!upstream.ok) return textBad('upstream_error', 502);
+  try { await upstream.text(); } catch (_) { /* drain */ }
+  return textOk();
 }
 
 // --- /pago-resultado POST → 303 GET --------------------------------------
@@ -291,15 +415,14 @@ export default {
 
     if (url.pathname === '/api/leadmagnet') {
       if (request.method !== 'POST') return jsonResp({ ok: false, code: 'method_not_allowed' }, 405);
-      return disabledNonprodFeature();
+      return disabledProductionFeature();
     }
 
-    if (url.pathname === '/api/manage'
-        || url.pathname === '/api/manage-availability'
-        || url.pathname === '/api/manage-cancel'
-        || url.pathname === '/api/manage-reschedule') {
-      return disabledNonprodFeature();
-    }
+    if (url.pathname === '/api/manage') return handleManageLookup(request, env);
+    if (url.pathname === '/api/manage-availability') return handleAvailability(request, env);
+    if (url.pathname === '/api/manage-cancel') return handleManageCancel(request, env);
+    if (url.pathname === '/api/manage-reschedule') return handleManageReschedule(request, env);
+    if (url.pathname === '/api/refund-confirmation') return handleRefundConfirmation(request, env);
 
     if (url.pathname === '/api/availability') {
       return handleAvailability(request, env);
@@ -307,6 +430,10 @@ export default {
 
     if (url.pathname === '/api/create-flow-payment') {
       return handleCreateFlowPayment(request, env);
+    }
+
+    if (url.pathname === '/api/retry-flow-payment') {
+      return handleRetryFlowPayment(request, env);
     }
 
     if (url.pathname === '/api/payment-status') {
