@@ -1,0 +1,10 @@
+User-agent: *
+Allow: /
+Disallow: /gracias.html
+Disallow: /reserva.html
+Disallow: /guia/10-senales-simple
+Disallow: /guia/10-senales-simple.html
+Disallow: /guia/10-senales-v2
+Disallow: /guia/10-senales-v2.html
+
+Sitemap: https://franciscabustos.cl/sitemap.xml
