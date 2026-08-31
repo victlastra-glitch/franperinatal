@@ -41,6 +41,7 @@ scripts/build-nonprod-preview-artifact.sh
 scripts/validate-nonprod-boundary.sh
 scripts/preflight.sh
 scripts/validate-recovery-docs.sh
+scripts/lib/
 
 # Leftover NONPROD / 2026-08-21 recovery notes are not part of this RC.
 docs/booking/
