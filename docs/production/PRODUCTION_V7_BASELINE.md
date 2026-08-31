@@ -11,6 +11,8 @@ backend recovered read-only on 2026-08-31.
 - Deployed source equals project HEAD at recovery time
 - Public `assets/booking.js` Web App URL fingerprint: `ebf807562fde`
 - `Código.js` sha256: `36719d5eaf75c19670948c94b8949b64996f4ee807770a2428047b1702a02828`
+- On `feat/production-booking-lifecycle-v2-port`, the v7 monolith is stored at
+  `docs/production/v7/Código.js` so clasp cannot load it beside `Code.js`.
 - `appsscript.json` sha256: `ddd4762fab1423c2081502cec5758a38840ba0dd06bd901e7d897b4f38a1a023`
 - Aggregate sha256: `7d00317536c33e0ab58f6b70891859583d95bb630825495dc59685709a6005fc`
 

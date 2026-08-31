@@ -21,10 +21,29 @@ backend/**/*.js
 backend/**/*.bat
 backend/**/*.html
 !backend/README.md
-!backend/appsscript/booking/Código.js
 !backend/appsscript/booking/Code.js
 !backend/appsscript/booking/Lifecycle.js
 !backend/appsscript/booking/EmailTemplates.js
 !backend/appsscript/booking/CalendarGateway.js
 !backend/appsscript/booking/Reconciliation.js
 !backend/appsscript/booking/RefundGateway.js
+!backend/appsscript/booking/test/
+!backend/appsscript/booking/test/**
+
+# NONPROD operators must never enter a Production release candidate.
+backend/appsscript/booking/TargetedFixture.js
+backend/appsscript/booking/test/targeted-calendar-fixture.test.mjs
+scripts/_port_production_once.py
+scripts/nonprod-*
+scripts/assert-nonprod-*
+scripts/test-nonprod-*
+scripts/build-nonprod-preview-artifact.sh
+scripts/validate-nonprod-boundary.sh
+scripts/preflight.sh
+scripts/validate-recovery-docs.sh
+
+# Leftover NONPROD / 2026-08-21 recovery notes are not part of this RC.
+docs/booking/
+docs/deployment/
+docs/recovery/
+docs/control-tower/
