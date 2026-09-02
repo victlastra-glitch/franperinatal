@@ -6,9 +6,83 @@
 const PRODUCTION = Object.freeze({
   appEnv: 'production', flowBaseUrl: 'https://www.flow.cl/api', flowHost: 'www.flow.cl',
   publicHost: 'franciscabustos.cl',
-  idempotencyNamespace: 'fran-booking', sheetName: 'reservations',
+  idempotencyNamespace: 'fran-booking',
+  sheetName: 'Respuestas de formulario 1',
+  equivalentSheetNames: Object.freeze(['reservations']),
   notificationOutboxSheetName: 'notification_outbox',
   backendVersion: 'production-lifecycle-v2-20260831', statusTokenTtlMs: 7200000,
+});
+var SCHEMA_MIGRATION_STRATEGY = 'APPEND_ONLY_V7_COMPATIBILITY';
+var NEW_PRODUCTION_PROPERTY_NAMES = Object.freeze([
+  'APP_ENV', 'FLOW_CONFIRMATION_URL', 'INTERNAL_NOTIFICATION_EMAIL',
+  'STATUS_TOKEN_SECRET', 'CAPABILITY_TOKEN_SECRET', 'FLOW_REFUND_CALLBACK_URL',
+]);
+var V7_FLOW_HEADERS = Object.freeze([
+  'commerceOrder', 'flowOrder', 'flowToken', 'priceClp', 'paidAt',
+  'rawFlowStatus', 'serviceType', 'patientRut', 'paymentUrl', 'publicStatusToken',
+  'calendarCreated', 'emailPatientSent', 'emailInternalSent',
+  'emailPatientSentAt', 'emailInternalSentAt', 'paymentExpiresAt', 'reviewReason',
+]);
+var V7_POSITIONAL_CANONICAL = Object.freeze([
+  'timestamp', 'phone', 'email', 'service', 'modality', 'date', 'time', 'message',
+  'reservationId', 'name', 'googleMeetLink', 'calendarEventId', 'manageToken',
+  'status', 'cancelledAt', 'replacedByReservationId',
+]);
+var V7_HEADER_ALIASES = Object.freeze({
+  timestamp: Object.freeze(['timestamp', 'marca temporal', 'marca_temporal', 'fecha creacion', 'fecha_creacion', 'createdat', 'created at']),
+  phone: Object.freeze(['phone', 'telefono', 'tel', 'celular']),
+  email: Object.freeze(['email', 'correo', 'correo electronico', 'mail', 'e-mail']),
+  service: Object.freeze(['service', 'servicio', 'tipo servicio', 'tipo de servicio']),
+  modality: Object.freeze(['modality', 'modalidad']),
+  date: Object.freeze(['date', 'fecha']),
+  time: Object.freeze(['time', 'hora']),
+  message: Object.freeze(['message', 'motivo', 'reason', 'motivo de consulta', 'mensaje']),
+  reservationId: Object.freeze(['reservationid', 'reservation_id', 'id reserva', 'id_reserva', 'reserva id', 'idreserva']),
+  name: Object.freeze(['name', 'nombre', 'nombre completo', 'nombre paciente']),
+  googleMeetLink: Object.freeze(['googlemeetlink', 'google meet link', 'meet link', 'meet_url', 'enlace meet']),
+  calendarEventId: Object.freeze(['calendareventid', 'calendar event id', 'calendar_event_id', 'event id', 'id evento']),
+  manageToken: Object.freeze(['managetoken', 'manage_token', 'columna 1', 'token gestion', 'token de gestion']),
+  status: Object.freeze(['status', 'estado']),
+  cancelledAt: Object.freeze(['cancelledat', 'cancelled_at', 'cancelado', 'fecha cancelacion']),
+  replacedByReservationId: Object.freeze(['replacedbyreservationid', 'replaced_by_reservation_id', 'reemplazado por']),
+  patientRut: Object.freeze(['patientrut', 'patient_rut', 'rut', 'rut paciente']),
+});
+var V7_TO_V2_FIELD = Object.freeze({
+  reservationId: 'reservation_id',
+  email: 'patient_email',
+  service: 'service_type',
+  serviceType: 'service_type',
+  modality: 'modality',
+  googleMeetLink: 'meet_url',
+  calendarEventId: 'calendar_event_id',
+  cancelledAt: 'cancelled_at',
+  commerceOrder: 'commerce_order',
+  flowToken: 'flow_token',
+  paymentUrl: 'payment_url',
+  paymentExpiresAt: 'slot_hold_expires_at',
+});
+var V2_TO_V7_WRITE = Object.freeze({
+  reservation_id: Object.freeze(['reservationId']),
+  patient_email: Object.freeze(['email']),
+  service_type: Object.freeze(['service', 'serviceType']),
+  modality: Object.freeze(['modality']),
+  meet_url: Object.freeze(['googleMeetLink']),
+  calendar_event_id: Object.freeze(['calendarEventId']),
+  cancelled_at: Object.freeze(['cancelledAt']),
+  commerce_order: Object.freeze(['commerceOrder']),
+  flow_token: Object.freeze(['flowToken']),
+  payment_url: Object.freeze(['paymentUrl']),
+  slot_hold_expires_at: Object.freeze(['paymentExpiresAt']),
+  booking_status: Object.freeze(['status']),
+});
+var V7_STATUS = Object.freeze({
+  ACTIVE: 'active',
+  CANCELLED: 'cancelled',
+  RESCHEDULED: 'rescheduled',
+  PENDING_PAYMENT: 'pending_payment',
+  PAID_CONFIRMED: 'paid_confirmed',
+  PAYMENT_REJECTED: 'payment_rejected',
+  PAYMENT_REVIEW: 'payment_review_required',
 });
 
 var INITIAL_PRICE_CLP = 50000;
@@ -127,11 +201,45 @@ function safeCode_(error) { const code = String(error && error.code || 'REQUEST_
 function getAction_(e) { return String((e && e.parameter && e.parameter.action) || '').trim(); }
 function json_(payload) { return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON); }
 
+function pickScriptProperty_(properties, canonical, aliases) {
+  const primary = String(properties[canonical] || '').trim();
+  if (primary) return primary;
+  const names = aliases || [];
+  for (let i = 0; i < names.length; i += 1) {
+    const value = String(properties[names[i]] || '').trim();
+    if (value) return value;
+  }
+  return '';
+}
+
+function resolvedScriptProperties_(properties) {
+  const source = properties || {};
+  return {
+    APP_ENV: pickScriptProperty_(source, 'APP_ENV', []),
+    FLOW_API_KEY: pickScriptProperty_(source, 'FLOW_API_KEY', []),
+    FLOW_SECRET_KEY: pickScriptProperty_(source, 'FLOW_SECRET_KEY', []),
+    FLOW_BASE_URL: pickScriptProperty_(source, 'FLOW_BASE_URL', []),
+    FLOW_RETURN_URL: pickScriptProperty_(source, 'FLOW_RETURN_URL', ['PUBLIC_RETURN_URL']),
+    FLOW_CONFIRMATION_URL: pickScriptProperty_(source, 'FLOW_CONFIRMATION_URL', []),
+    CALENDAR_ID: pickScriptProperty_(source, 'CALENDAR_ID', []),
+    INTERNAL_NOTIFICATION_EMAIL: pickScriptProperty_(source, 'INTERNAL_NOTIFICATION_EMAIL', []),
+    IDEMPOTENCY_NAMESPACE: pickScriptProperty_(source, 'IDEMPOTENCY_NAMESPACE', []) || PRODUCTION.idempotencyNamespace,
+    STATUS_TOKEN_SECRET: pickScriptProperty_(source, 'STATUS_TOKEN_SECRET', []),
+    BOOKING_STORE_ID: pickScriptProperty_(source, 'BOOKING_STORE_ID', ['SHEET_ID']),
+    CAPABILITY_TOKEN_SECRET: pickScriptProperty_(source, 'CAPABILITY_TOKEN_SECRET', []),
+    FLOW_REFUND_CALLBACK_URL: pickScriptProperty_(source, 'FLOW_REFUND_CALLBACK_URL', []),
+  };
+}
+
 function readConfig_() {
-  const properties = PropertiesService.getScriptProperties().getProperties();
-  BASE_PROPERTY_KEYS.forEach(function(key) { if (!String(properties[key] || '').trim()) fail_('CONFIGURATION_INCOMPLETE'); });
-  const bookingStoreId = String(properties.BOOKING_STORE_ID || properties.SHEET_ID || '').trim();
-  if (!bookingStoreId) fail_('CONFIGURATION_INCOMPLETE');
+  const raw = PropertiesService.getScriptProperties().getProperties();
+  const properties = resolvedScriptProperties_(raw);
+  ['APP_ENV', 'FLOW_API_KEY', 'FLOW_SECRET_KEY', 'FLOW_BASE_URL', 'FLOW_RETURN_URL',
+    'FLOW_CONFIRMATION_URL', 'CALENDAR_ID', 'INTERNAL_NOTIFICATION_EMAIL',
+    'STATUS_TOKEN_SECRET'].forEach(function(key) {
+    if (!String(properties[key] || '').trim()) fail_('CONFIGURATION_INCOMPLETE');
+  });
+  if (!properties.BOOKING_STORE_ID) fail_('CONFIGURATION_INCOMPLETE');
   if (properties.APP_ENV !== PRODUCTION.appEnv) fail_('CONFIGURATION_INCOMPLETE');
   if (/sandbox\.flow\.cl/i.test(String(properties.FLOW_BASE_URL || ''))) fail_('CONFIGURATION_INCOMPLETE');
   if (properties.FLOW_BASE_URL !== PRODUCTION.flowBaseUrl || getHttpsHost_(properties.FLOW_BASE_URL) !== PRODUCTION.flowHost) fail_('CONFIGURATION_INCOMPLETE');
@@ -142,7 +250,7 @@ function readConfig_() {
   const internal = assertPatientEmail_(properties.INTERNAL_NOTIFICATION_EMAIL);
   return { flowApiKey: properties.FLOW_API_KEY, flowSecretKey: properties.FLOW_SECRET_KEY,
     flowBaseUrl: properties.FLOW_BASE_URL, flowReturnUrl: properties.FLOW_RETURN_URL,
-    flowConfirmationUrl: properties.FLOW_CONFIRMATION_URL, bookingStoreId: bookingStoreId,
+    flowConfirmationUrl: properties.FLOW_CONFIRMATION_URL, bookingStoreId: properties.BOOKING_STORE_ID,
     calendarId: properties.CALENDAR_ID, internalNotificationEmail: internal,
     idempotencyNamespace: properties.IDEMPOTENCY_NAMESPACE, statusTokenSecret: properties.STATUS_TOKEN_SECRET };
 }
@@ -150,7 +258,7 @@ function readConfig_() {
 // Capability configuration is deliberately lazy-scoped. Availability, payment
 // creation, payment confirmation and payment status do not need this secret.
 function requireCapabilitySecret_() {
-  const properties = PropertiesService.getScriptProperties().getProperties();
+  const properties = resolvedScriptProperties_(PropertiesService.getScriptProperties().getProperties());
   return assertCapabilitySecret_(properties.CAPABILITY_TOKEN_SECRET);
 }
 
@@ -162,10 +270,8 @@ function readCapabilityConfig_() {
 
 function readRefundConfig_() {
   const config = readConfig_();
-  const properties = PropertiesService.getScriptProperties().getProperties();
-  REFUND_PROPERTY_KEYS.forEach(function(key) {
-    if (!String(properties[key] || '').trim()) fail_('REFUND_CONFIGURATION_INCOMPLETE');
-  });
+  const properties = resolvedScriptProperties_(PropertiesService.getScriptProperties().getProperties());
+  if (!String(properties.FLOW_REFUND_CALLBACK_URL || '').trim()) fail_('REFUND_CONFIGURATION_INCOMPLETE');
   assertProductionRoute_(properties.FLOW_REFUND_CALLBACK_URL, '/api/refund-confirmation');
   config.refundCallbackUrl = properties.FLOW_REFUND_CALLBACK_URL;
   return config;
@@ -187,16 +293,274 @@ function assertPatientEmail_(address) {
   return normalized;
 }
 
+function resolveBookingSheet_(spreadsheet) {
+  if (!spreadsheet || typeof spreadsheet.getSheetByName !== 'function') fail_('CONFIGURATION_INCOMPLETE');
+  const preferred = spreadsheet.getSheetByName(PRODUCTION.sheetName);
+  if (preferred) return preferred;
+  const aliases = PRODUCTION.equivalentSheetNames || [];
+  for (let i = 0; i < aliases.length; i += 1) {
+    const found = spreadsheet.getSheetByName(aliases[i]);
+    if (found) return found;
+  }
+  fail_('CONFIGURATION_INCOMPLETE');
+}
+
 function assertResources_(config) {
   const spreadsheet = SpreadsheetApp.openById(config.bookingStoreId);
-  if (spreadsheet.getId() !== config.bookingStoreId || !spreadsheet.getSheetByName(PRODUCTION.sheetName)) fail_('CONFIGURATION_INCOMPLETE');
+  if (spreadsheet.getId() !== config.bookingStoreId) fail_('CONFIGURATION_INCOMPLETE');
+  const sheet = resolveBookingSheet_(spreadsheet);
   const calendar = CalendarApp.getCalendarById(config.calendarId);
   if (!calendar || calendar.getId() !== config.calendarId) fail_('CONFIGURATION_INCOMPLETE');
-  return { spreadsheet: spreadsheet, sheet: spreadsheet.getSheetByName(PRODUCTION.sheetName), calendar: calendar,
+  return { spreadsheet: spreadsheet, sheet: sheet, calendar: calendar,
     calendarGateway: createCalendarGateway_({ calendarId: config.calendarId, requestMeet: true }) };
 }
 
-// Guarded and idempotent. It is intentionally not invoked during this mission.
+function normalizeHeaderKey_(value) {
+  return String(value || '').trim().toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ');
+}
+
+function headerRowValues_(sheet) {
+  const lastColumn = Number(sheet && sheet.getLastColumn && sheet.getLastColumn() || 0);
+  if (!lastColumn) fail_('SCHEMA_NOT_READY');
+  const range = sheet.getRange(1, 1, 1, lastColumn);
+  let row = [];
+  if (range.getDisplayValues) row = range.getDisplayValues()[0] || [];
+  else if (range.getValues) row = range.getValues()[0] || [];
+  const named = row.filter(function(value) { return String(value || '').trim(); }).length;
+  if (named === 0 && typeof sheet.getDataRange === 'function') {
+    const data = sheet.getDataRange().getValues();
+    if (data && data[0] && data[0].length) row = data[0];
+  }
+  return row.map(function(value) { return String(value == null ? '' : value); });
+}
+
+function headerFingerprint_(headers) {
+  return fingerprint_(headers.map(function(header) { return String(header || ''); }).join('\u001f'));
+}
+
+function schemaMetadata_(inspection) {
+  return {
+    ok: true,
+    strategy: SCHEMA_MIGRATION_STRATEGY,
+    kind: inspection.kind,
+    sheetName: inspection.sheetName || '',
+    headerCount: inspection.physicalHeaders.length,
+    headerFingerprint: headerFingerprint_(inspection.physicalHeaders),
+    rowCount: Number(inspection.rowCount || 0),
+    missingV2Columns: inspection.missingV2Columns.slice(),
+    presentV2Columns: inspection.presentV2Columns.slice(),
+    outbox: inspection.outbox || null,
+  };
+}
+
+function operatorLog_(payload) {
+  if (typeof Logger !== 'undefined' && Logger && typeof Logger.log === 'function') Logger.log(JSON.stringify(payload));
+  return payload;
+}
+
+function resolveAliasColumn_(physicalHeaders, canonical) {
+  const aliases = V7_HEADER_ALIASES[canonical] || [normalizeHeaderKey_(canonical)];
+  for (let i = 0; i < physicalHeaders.length; i += 1) {
+    const normalized = normalizeHeaderKey_(physicalHeaders[i]);
+    if (!normalized) continue;
+    if (aliases.indexOf(normalized) !== -1 || normalized === normalizeHeaderKey_(canonical)) return i + 1;
+  }
+  return 0;
+}
+
+function v7PositionalColumn_(canonical) {
+  const index = V7_POSITIONAL_CANONICAL.indexOf(canonical);
+  return index === -1 ? 0 : index + 1;
+}
+
+function isExactV2Headers_(headers) {
+  if (!headers || headers.length !== RESERVATION_HEADERS.length) return false;
+  return headers.every(function(value, index) { return String(value) === RESERVATION_HEADERS[index]; });
+}
+
+function looksLikeV7Headers_(headers) {
+  if (!headers || headers.length < V7_POSITIONAL_CANONICAL.length) return false;
+  if (String(headers[0] || '') === RESERVATION_HEADERS[0]) return false;
+  const firstNorm = normalizeHeaderKey_(headers[0]);
+  const knownTimestamp = (V7_HEADER_ALIASES.timestamp || []).indexOf(firstNorm) !== -1;
+  const aliasHits = ['email', 'date', 'time', 'status', 'reservationId'].filter(function(canonical) {
+    return resolveAliasColumn_(headers, canonical);
+  });
+  return knownTimestamp || aliasHits.length >= 4;
+}
+
+function inspectReservationSchema_(sheet, opt) {
+  const options = opt || {};
+  if (!sheet || Number(sheet.getLastRow() || 0) === 0) fail_('SCHEMA_NOT_READY');
+  if (new Set(RESERVATION_HEADERS).size !== RESERVATION_HEADERS.length) fail_('SCHEMA_MISMATCH');
+  const physicalHeaders = headerRowValues_(sheet);
+  if (physicalHeaders.some(function(header, index) { return index < V7_POSITIONAL_CANONICAL.length && !String(header || '').trim(); })) {
+    fail_('SCHEMA_MISMATCH');
+  }
+  const duplicateNames = {};
+  physicalHeaders.forEach(function(header) {
+    const key = String(header || '').trim();
+    if (!key) return;
+    duplicateNames[key] = (duplicateNames[key] || 0) + 1;
+  });
+  if (Object.keys(duplicateNames).some(function(key) { return duplicateNames[key] > 1; })) fail_('SCHEMA_MISMATCH');
+
+  const columns = {};
+  const legacyColumns = {};
+  physicalHeaders.forEach(function(header, index) {
+    if (header) columns[header] = index + 1;
+  });
+
+  if (isExactV2Headers_(physicalHeaders)) {
+    RESERVATION_HEADERS.forEach(function(header, index) { columns[header] = index + 1; });
+    return {
+      kind: 'v2_native',
+      physicalHeaders: physicalHeaders,
+      headers: RESERVATION_HEADERS.slice(),
+      columns: columns,
+      legacyColumns: legacyColumns,
+      legacyWriteColumns: {},
+      missingV2Columns: [],
+      presentV2Columns: RESERVATION_HEADERS.slice(),
+      rowCount: Math.max(0, Number(sheet.getLastRow() || 1) - 1),
+      sheetName: options.sheetName || '',
+    };
+  }
+
+  if (!looksLikeV7Headers_(physicalHeaders)) fail_('SCHEMA_MISMATCH');
+
+  V7_POSITIONAL_CANONICAL.forEach(function(canonical, index) {
+    legacyColumns[canonical] = resolveAliasColumn_(physicalHeaders, canonical) || (index + 1);
+  });
+  V7_FLOW_HEADERS.forEach(function(name) {
+    if (columns[name]) legacyColumns[name] = columns[name];
+  });
+  Object.keys(V7_HEADER_ALIASES).forEach(function(canonical) {
+    const col = resolveAliasColumn_(physicalHeaders, canonical);
+    if (col) legacyColumns[canonical] = col;
+  });
+
+  RESERVATION_HEADERS.forEach(function(header) {
+    if (columns[header]) return;
+    const mappedFrom = Object.keys(V7_TO_V2_FIELD).find(function(legacy) { return V7_TO_V2_FIELD[legacy] === header; });
+    if (mappedFrom && legacyColumns[mappedFrom]) columns[header] = legacyColumns[mappedFrom];
+  });
+  if (!columns.booking_status && legacyColumns.status) columns.booking_status = legacyColumns.status;
+
+  const missingV2Columns = RESERVATION_HEADERS.filter(function(header) { return physicalHeaders.indexOf(header) === -1; });
+  const presentV2Columns = RESERVATION_HEADERS.filter(function(header) { return physicalHeaders.indexOf(header) !== -1; });
+  const legacyWriteColumns = {};
+  Object.keys(V2_TO_V7_WRITE).forEach(function(v2Field) {
+    const targets = [];
+    V2_TO_V7_WRITE[v2Field].forEach(function(legacyName) {
+      const col = legacyColumns[legacyName] || columns[legacyName];
+      if (col) targets.push(col);
+    });
+    if (targets.length) legacyWriteColumns[v2Field] = targets;
+  });
+
+  return {
+    kind: 'v7_compat',
+    physicalHeaders: physicalHeaders,
+    headers: physicalHeaders.slice(),
+    columns: columns,
+    legacyColumns: legacyColumns,
+    legacyWriteColumns: legacyWriteColumns,
+    missingV2Columns: missingV2Columns,
+    presentV2Columns: presentV2Columns,
+    rowCount: Math.max(0, Number(sheet.getLastRow() || 1) - 1),
+    sheetName: options.sheetName || '',
+  };
+}
+
+function inspectOutboxSchema_(spreadsheet) {
+  const sheet = spreadsheet && spreadsheet.getSheetByName
+    ? spreadsheet.getSheetByName(PRODUCTION.notificationOutboxSheetName) : null;
+  if (!sheet || Number(sheet.getLastRow() || 0) === 0) {
+    return { present: false, headerCount: 0, headerFingerprint: '', ready: false };
+  }
+  const headers = headerRowValues_(sheet);
+  const exact = headers.length === NOTIFICATION_OUTBOX_HEADERS.length
+    && headers.every(function(value, index) { return value === NOTIFICATION_OUTBOX_HEADERS[index]; });
+  return {
+    present: true,
+    headerCount: headers.length,
+    headerFingerprint: headerFingerprint_(headers),
+    rowCount: Math.max(0, Number(sheet.getLastRow() || 1) - 1),
+    ready: exact,
+  };
+}
+
+function assertSchema_(sheet) {
+  const inspection = inspectReservationSchema_(sheet);
+  if (inspection.kind === 'v2_native') {
+    return { kind: inspection.kind, headers: RESERVATION_HEADERS, columns: inspection.columns };
+  }
+  if (inspection.missingV2Columns.length) fail_('SCHEMA_NOT_READY');
+  RESERVATION_HEADERS.forEach(function(header) {
+    if (!inspection.columns[header]) fail_('SCHEMA_NOT_READY');
+  });
+  return {
+    kind: inspection.kind,
+    headers: inspection.physicalHeaders,
+    columns: inspection.columns,
+    legacyColumns: inspection.legacyColumns,
+    legacyWriteColumns: inspection.legacyWriteColumns,
+    physicalHeaders: inspection.physicalHeaders,
+  };
+}
+
+function appendMissingHeaders_(sheet, names) {
+  const appended = [];
+  names.forEach(function(name) {
+    const nextCol = Number(sheet.getLastColumn() || 0) + 1;
+    sheet.getRange(1, nextCol).setValue(name);
+    appended.push(name);
+  });
+  return appended;
+}
+
+function productionSchemaMigrationDryRun_(opt) {
+  const deps = opt || {};
+  const config = deps.config || readConfig_();
+  const resources = deps.resources || assertResources_(config);
+  const inspection = inspectReservationSchema_(resources.sheet, { sheetName: PRODUCTION.sheetName });
+  inspection.outbox = inspectOutboxSchema_(resources.spreadsheet);
+  const metadata = schemaMetadata_(inspection);
+  metadata.writes = 0;
+  return operatorLog_(metadata);
+}
+
+function migrateProductionV7SchemaToLifecycleV2_(opt) {
+  const deps = opt || {};
+  const config = deps.config || readConfig_();
+  const resources = deps.resources || assertResources_(config);
+  const before = inspectReservationSchema_(resources.sheet, { sheetName: PRODUCTION.sheetName });
+  const missing = before.kind === 'v2_native' ? [] : RESERVATION_HEADERS.filter(function(header) {
+    return before.physicalHeaders.indexOf(header) === -1;
+  });
+  const appended = missing.length ? appendMissingHeaders_(resources.sheet, missing) : [];
+  const outboxSheet = ensureNotificationOutboxSheet_(resources.spreadsheet);
+  const schema = assertSchema_(resources.sheet);
+  const after = inspectReservationSchema_(resources.sheet, { sheetName: PRODUCTION.sheetName });
+  const result = {
+    ok: true,
+    strategy: SCHEMA_MIGRATION_STRATEGY,
+    idempotent: appended.length === 0,
+    appendedCount: appended.length,
+    appended: appended.slice(),
+    headerFingerprintBefore: headerFingerprint_(before.physicalHeaders),
+    headerFingerprintAfter: headerFingerprint_(after.physicalHeaders),
+    rowCount: after.rowCount,
+    kind: after.kind,
+    outboxSchema: assertNotificationOutboxSchema_(outboxSheet).headers.length,
+    schemaColumns: Object.keys(schema.columns).length,
+  };
+  return operatorLog_(result);
+}
+
+// Guarded and idempotent. Empty-sheet bootstrap only. Live V7 uses migrateProductionV7SchemaToLifecycleV2_.
 function bootstrapProductionSchema_() {
   const resources = assertResources_(readConfig_());
   let initialized = false;
@@ -210,16 +574,6 @@ function bootstrapProductionSchema_() {
   }
   return { ok: true, initialized: initialized, schema: assertSchema_(resources.sheet).headers.length,
     outboxSchema: assertNotificationOutboxSchema_(outboxSheet).headers.length };
-}
-
-function assertSchema_(sheet) {
-  if (sheet.getLastRow() === 0) fail_('SCHEMA_NOT_READY');
-  if (new Set(RESERVATION_HEADERS).size !== RESERVATION_HEADERS.length) fail_('SCHEMA_MISMATCH');
-  if (sheet.getLastColumn() !== RESERVATION_HEADERS.length) fail_('SCHEMA_MISMATCH');
-  const actual = sheet.getRange(1, 1, 1, RESERVATION_HEADERS.length).getDisplayValues()[0].map(String);
-  if (actual.some(function(value, index) { return value !== RESERVATION_HEADERS[index]; })) fail_('SCHEMA_MISMATCH');
-  const columns = {}; RESERVATION_HEADERS.forEach(function(header, index) { columns[header] = index + 1; });
-  return { headers: RESERVATION_HEADERS, columns: columns };
 }
 
 function ensureNotificationOutboxSheet_(spreadsheet) {
@@ -339,7 +693,7 @@ function assertBookableSlot_(date, time, nowMs) {
 
 function reserveOnce_(sheet, schema, payload, calendarGateway) {
   const requestedStart = assertBookableSlot_(payload.date, payload.time);
-  const requestedEnd = new Date(Date.parse(requestedStart) + 3600000).toISOString();
+  const requestedEnd = sessionEndAt_(requestedStart);
   if (!calendarGateway || typeof calendarGateway.isSlotAvailable !== 'function') fail_('CALENDAR_UNAVAILABLE');
   if (!calendarGateway.isSlotAvailable(requestedStart, requestedEnd, null)) return { ok: false, code: 'SLOT_TAKEN' };
   const taken = reservationRecords_(sheet, schema).some(function(record) {
@@ -350,13 +704,14 @@ function reserveOnce_(sheet, schema, payload, calendarGateway) {
   const reservation = { ok: true, idempotency_key: payload.idempotencyKey,
     reservation_id: makeOpaqueId_('reservation', payload.idempotencyKey), service_type: payload.serviceType,
     modality: payload.modality, patient_email: payload.email, original_start_at: requestedStart,
-    current_start_at: requestedStart, current_end_at: new Date(Date.parse(requestedStart) + 3600000).toISOString(),
+    current_start_at: requestedStart, current_end_at: requestedEnd,
     slot_hold_expires_at: slotHoldExpiryIso_(),
     booking_status: LIFECYCLE.BOOKING_STATUS.INITIATED, payment_status: LIFECYCLE.PAYMENT_STATUS.NOT_STARTED,
     refund_status: LIFECYCLE.REFUND_STATUS.NOT_REQUIRED, schedule_status: LIFECYCLE.SCHEDULE_STATUS.HOLD,
     calendar_link_key: makeCalendarLinkKey_(payload.idempotencyKey),
     patient_reschedule_count: '0', notification_version: '1', created_at: now, updated_at: now };
-  sheet.appendRow(RESERVATION_HEADERS.map(function(header) { return reservation[header] || ''; })); reservation.rowNumber = sheet.getLastRow(); return reservation;
+  appendReservationRow_(sheet, schema, reservation);
+  reservation.rowNumber = sheet.getLastRow(); return reservation;
 }
 function paymentRetryAllowed_(record) {
   if (!record || slotHoldIsExpired_(record)) return false;
@@ -716,7 +1071,11 @@ function ensureManagementCapabilities_(sheet, schema, record) {
     return { tokens: null };
   }
 }
-function bookingBounds_(startAt) { const start = new Date(String(startAt)); if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED'); return { start: start, end: new Date(start.getTime() + 3600000) }; }
+function bookingBounds_(startAt) {
+  const start = new Date(String(startAt));
+  if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED');
+  return { start: start, end: new Date(sessionEndAt_(startAt)) };
+}
 function startAt_(date, time) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) fail_('REQUEST_REJECTED');
   const parts = String(date).split('-').map(Number); const clock = String(time).split(':').map(Number);
@@ -775,8 +1134,162 @@ function publicStatus_(record) {
 
 function reservationRecords_(sheet, schema) { return sheet.getDataRange().getValues().slice(1).map(function(row, index) { return recordFromRow_(row, schema, index + 2); }); }
 function findBy_(sheet, schema, field, value) { return reservationRecords_(sheet, schema).find(function(record) { return record[field] === value; }) || null; }
-function recordFromRow_(row, schema, rowNumber) { const record = { rowNumber: rowNumber }; RESERVATION_HEADERS.forEach(function(header) { record[header] = row[schema.columns[header] - 1] == null ? '' : String(row[schema.columns[header] - 1]); }); return record; }
-function updateRecord_(sheet, schema, rowNumber, updates) { Object.keys(updates).forEach(function(field) { if (!Object.prototype.hasOwnProperty.call(schema.columns, field)) fail_('SCHEMA_MISMATCH'); sheet.getRange(rowNumber, schema.columns[field]).setValue(updates[field]); }); sheet.getRange(rowNumber, schema.columns.updated_at).setValue(new Date().toISOString()); }
+
+function cellFromRow_(row, column) {
+  if (!column) return '';
+  const value = row[column - 1];
+  return value == null ? '' : String(value);
+}
+
+function normalizeV7Date_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !Number.isNaN(value.getTime())) {
+    if (typeof Utilities !== 'undefined' && Utilities.formatDate) return Utilities.formatDate(value, 'America/Santiago', 'yyyy-MM-dd');
+    return value.toISOString().slice(0, 10);
+  }
+  const raw = String(value).trim();
+  const pipeMatch = raw.match(/\|\s*(\d{4}-\d{2}-\d{2})\s*$/);
+  if (pipeMatch) return pipeMatch[1];
+  const isoMatch = raw.match(/(\d{4}-\d{2}-\d{2})/);
+  return isoMatch ? isoMatch[1] : '';
+}
+
+function normalizeV7Time_(value) {
+  if (value === null || value === undefined || value === '') return '';
+  if (Object.prototype.toString.call(value) === '[object Date]' && !Number.isNaN(value.getTime())) {
+    if (typeof Utilities !== 'undefined' && Utilities.formatDate) return Utilities.formatDate(value, 'America/Santiago', 'HH:mm');
+  }
+  const raw = String(value).replace(/\s*h$/i, '').trim();
+  const match = raw.match(/(\d{1,2}):(\d{2})/);
+  return match ? match[1].padStart(2, '0') + ':' + match[2] : '';
+}
+
+function mapV7StatusToV2_(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === V7_STATUS.PENDING_PAYMENT) {
+    return { booking_status: LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING, payment_status: LIFECYCLE.PAYMENT_STATUS.PENDING, schedule_status: LIFECYCLE.SCHEDULE_STATUS.HOLD };
+  }
+  if (normalized === V7_STATUS.PAID_CONFIRMED || normalized === V7_STATUS.ACTIVE) {
+    return { booking_status: LIFECYCLE.BOOKING_STATUS.CONFIRMED, payment_status: LIFECYCLE.PAYMENT_STATUS.PAID, schedule_status: LIFECYCLE.SCHEDULE_STATUS.SCHEDULED };
+  }
+  if (normalized === V7_STATUS.PAYMENT_REJECTED) {
+    return { booking_status: LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING, payment_status: LIFECYCLE.PAYMENT_STATUS.REJECTED, schedule_status: LIFECYCLE.SCHEDULE_STATUS.HOLD };
+  }
+  if (normalized === V7_STATUS.PAYMENT_REVIEW) {
+    return { booking_status: LIFECYCLE.BOOKING_STATUS.MANUAL_REVIEW, payment_status: LIFECYCLE.PAYMENT_STATUS.UNKNOWN, schedule_status: LIFECYCLE.SCHEDULE_STATUS.MANUAL_REVIEW };
+  }
+  if (normalized === V7_STATUS.RESCHEDULED || normalized === V7_STATUS.CANCELLED) {
+    return { booking_status: LIFECYCLE.BOOKING_STATUS.CANCELLED, payment_status: '', schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED };
+  }
+  return null;
+}
+
+function mapV2StatusToV7_(bookingStatus, paymentStatus) {
+  if (bookingStatus === LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING && paymentStatus === LIFECYCLE.PAYMENT_STATUS.REJECTED) return V7_STATUS.PAYMENT_REJECTED;
+  if (bookingStatus === LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING) return V7_STATUS.PENDING_PAYMENT;
+  if (bookingStatus === LIFECYCLE.BOOKING_STATUS.CONFIRMED) return V7_STATUS.PAID_CONFIRMED;
+  if (bookingStatus === LIFECYCLE.BOOKING_STATUS.CANCELLED) return V7_STATUS.CANCELLED;
+  if (bookingStatus === LIFECYCLE.BOOKING_STATUS.MANUAL_REVIEW) return V7_STATUS.PAYMENT_REVIEW;
+  if (bookingStatus === LIFECYCLE.BOOKING_STATUS.INITIATED) return V7_STATUS.PENDING_PAYMENT;
+  return bookingStatus || '';
+}
+
+function applyLegacyV7RecordAdapter_(record, row, schema) {
+  if (!record || !schema || schema.kind !== 'v7_compat') return record;
+  const legacy = schema.legacyColumns || {};
+  function take(name) { return cellFromRow_(row, legacy[name] || schema.columns[name]); }
+  if (!record.reservation_id) record.reservation_id = take('reservationId');
+  if (!record.patient_email) record.patient_email = take('email');
+  if (!record.service_type) record.service_type = take('serviceType') || take('service');
+  if (!record.modality) record.modality = take('modality');
+  if (!record.meet_url) record.meet_url = take('googleMeetLink');
+  if (!record.calendar_event_id) record.calendar_event_id = take('calendarEventId');
+  if (!record.cancelled_at) record.cancelled_at = take('cancelledAt');
+  if (!record.commerce_order) record.commerce_order = take('commerceOrder');
+  if (!record.flow_token) record.flow_token = take('flowToken');
+  if (!record.payment_url) record.payment_url = take('paymentUrl');
+  if (!record.slot_hold_expires_at) record.slot_hold_expires_at = take('paymentExpiresAt');
+  record.manage_token = record.manage_token || take('manageToken');
+  record.replaced_by_reservation_id = take('replacedByReservationId');
+  if (!record.current_start_at) {
+    const date = normalizeV7Date_(row[(legacy.date || 6) - 1]);
+    const time = normalizeV7Time_(row[(legacy.time || 7) - 1]);
+    if (date && time) {
+      try { record.current_start_at = startAt_(date, time); } catch (_) { record.current_start_at = ''; }
+    }
+  }
+  if (!record.original_start_at) record.original_start_at = record.current_start_at;
+  if (!record.current_end_at && record.current_start_at) {
+    try { record.current_end_at = sessionEndAt_(record.current_start_at); } catch (_) { record.current_end_at = ''; }
+  }
+  const mapped = mapV7StatusToV2_(take('status'));
+  if (mapped) {
+    if (!record.booking_status || record.booking_status === take('status')) record.booking_status = mapped.booking_status;
+    if (!record.payment_status) {
+      record.payment_status = mapped.payment_status || (take('paidAt') ? LIFECYCLE.PAYMENT_STATUS.PAID : record.payment_status);
+    }
+    if (!record.schedule_status) record.schedule_status = mapped.schedule_status;
+    if (!record.refund_status) record.refund_status = LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
+  }
+  return record;
+}
+
+function recordFromRow_(row, schema, rowNumber) {
+  const record = { rowNumber: rowNumber };
+  RESERVATION_HEADERS.forEach(function(header) {
+    const column = schema.columns && schema.columns[header];
+    record[header] = column ? cellFromRow_(row, column) : '';
+  });
+  applyLegacyV7RecordAdapter_(record, row, schema);
+  return record;
+}
+
+function appendReservationRow_(sheet, schema, reservation) {
+  const physical = (schema && (schema.physicalHeaders || schema.headers)) || RESERVATION_HEADERS;
+  const row = physical.map(function() { return ''; });
+  function write(field, value, column) {
+    if (!column) return;
+    row[column - 1] = value == null ? '' : String(value);
+  }
+  RESERVATION_HEADERS.forEach(function(header) {
+    write(header, reservation[header] || '', schema.columns && schema.columns[header]);
+  });
+  if (schema && schema.kind === 'v7_compat') {
+    const legacyWrite = schema.legacyWriteColumns || {};
+    Object.keys(legacyWrite).forEach(function(field) {
+      let value = reservation[field] || '';
+      if (field === 'booking_status') value = mapV2StatusToV7_(reservation.booking_status, reservation.payment_status);
+      legacyWrite[field].forEach(function(column) { write(field, value, column); });
+    });
+    const dateCol = schema.legacyColumns && schema.legacyColumns.date;
+    const timeCol = schema.legacyColumns && schema.legacyColumns.time;
+    if (dateCol && reservation.current_start_at) write('date', String(reservation.current_start_at).slice(0, 10), dateCol);
+    if (timeCol && reservation.current_start_at) {
+      try {
+        const local = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Santiago', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+          .formatToParts(new Date(reservation.current_start_at)).reduce(function(acc, part) { acc[part.type] = part.value; return acc; }, {});
+        write('time', String(local.hour || '00').padStart(2, '0') + ':' + String(local.minute || '00').padStart(2, '0'), timeCol);
+      } catch (_) { /* date/time dual-write is best-effort */ }
+    }
+  }
+  sheet.appendRow(row);
+}
+
+function updateRecord_(sheet, schema, rowNumber, updates) {
+  Object.keys(updates).forEach(function(field) {
+    if (!Object.prototype.hasOwnProperty.call(schema.columns, field) && field !== 'manage_token') fail_('SCHEMA_MISMATCH');
+    if (schema.columns[field]) sheet.getRange(rowNumber, schema.columns[field]).setValue(updates[field]);
+    const legacyCols = schema.legacyWriteColumns && schema.legacyWriteColumns[field];
+    if (legacyCols) {
+      let value = updates[field];
+      if (field === 'booking_status') value = mapV2StatusToV7_(updates.booking_status || updates[field], updates.payment_status);
+      legacyCols.forEach(function(column) {
+        if (column && column !== schema.columns[field]) sheet.getRange(rowNumber, column).setValue(value);
+      });
+    }
+  });
+  if (schema.columns.updated_at) sheet.getRange(rowNumber, schema.columns.updated_at).setValue(new Date().toISOString());
+}
 
 function calendarEventFields_(event) {
   return {
@@ -795,7 +1308,14 @@ function sheetReservationStore_(resources, schema) {
     loadByReservationId: function(id) { return findBy_(resources.sheet, schema, 'reservation_id', String(id)); },
     loadByCalendarEventId: function(id) { return findBy_(resources.sheet, schema, 'calendar_event_id', String(id)); },
     loadByCalendarLinkKey: function(linkKey) { return findBy_(resources.sheet, schema, 'calendar_link_key', String(linkKey)); },
+    loadByLegacyManageToken: function(token) {
+      return reservationRecords_(resources.sheet, schema).find(function(record) {
+        return isLegacyV7ManageToken_(token) && constantTimeEqual_(String(record.manage_token || ''), String(token || ''));
+      }) || null;
+    },
     loadByCapability: function(token, type, secret) {
+      const legacy = this.loadByLegacyManageToken(token);
+      if (legacy) return legacy;
       const capability = capabilityHashForToken_(token, type, secret);
       const field = type === LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE ? 'reschedule_capability_hash' : 'cancel_capability_hash';
       return findBy_(resources.sheet, schema, field, capability.hash);
@@ -822,16 +1342,22 @@ function manageLookup_(e) {
   return publicManagementRecord_(found, capabilityType);
 }
 
+function isLegacyV7ManageToken_(token) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(token || ''));
+}
+
 function managementToken_(e) {
   const raw = String((e && e.postData && e.postData.contents) || '');
   if (raw.length > 2048) fail_('REQUEST_REJECTED');
   let payload; try { payload = raw ? JSON.parse(raw) : e.parameter || {}; } catch (_) { fail_('REQUEST_REJECTED'); }
   const token = String(payload.token || '').trim();
+  if (isLegacyV7ManageToken_(token)) return token;
   if (!/^[A-Za-z0-9_-]{64,256}$/.test(token)) fail_('CAPABILITY_INVALID');
   return token;
 }
 
 function managementTokenValidForRecord_(token, record, secret) {
+  if (isLegacyV7ManageToken_(token) && constantTimeEqual_(String(record && record.manage_token || ''), token)) return true;
   return verifyCapability_(token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.CANCEL), { secret: secret })
     || verifyCapability_(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE), { secret: secret });
 }
@@ -913,22 +1439,28 @@ function createProviderRefundOnce_(resources, schema, record, reason) {
   return result;
 }
 
+function latePaidRefundAlreadyAttempted_(record) {
+  if (!record) return false;
+  if (String(record.refund_commerce_order || '').trim()) return true;
+  const refundStatus = String(record.refund_status || '');
+  if (refundStatus === LIFECYCLE.REFUND_STATUS.REQUESTED
+    || refundStatus === LIFECYCLE.REFUND_STATUS.PENDING
+    || refundStatus === LIFECYCLE.REFUND_STATUS.REFUNDED
+    || refundStatus === LIFECYCLE.REFUND_STATUS.FAILED) return true;
+  const state = String(record.reconciliation_state || '');
+  return state.indexOf('paid_after_hold_expiry_refund') === 0;
+}
+
 function remediatePaidAfterHoldExpiry_(resources, schema, record) {
-  const alreadyReviewed = record.refund_status === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW
-    || record.refund_status === LIFECYCLE.REFUND_STATUS.REFUNDED
-    || record.refund_status === LIFECYCLE.REFUND_STATUS.PENDING
-    || record.refund_status === LIFECYCLE.REFUND_STATUS.REQUESTED
-    || String(record.reconciliation_state || '') === 'paid_after_hold_expiry';
+  if (latePaidRefundAlreadyAttempted_(record)) {
+    return { ok: true, replay: true, code: 'PAID_AFTER_HOLD_EXPIRY_REPLAY' };
+  }
   updateRecord_(resources.sheet, schema, record.rowNumber, {
     reconciliation_state: 'paid_after_hold_expiry',
-    refund_status: alreadyReviewed && record.refund_status ? record.refund_status : LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW,
-    refund_last_error_code: record.refund_last_error_code || 'PAID_AFTER_HOLD_EXPIRY',
   });
-  const updated = findBy_(resources.sheet, schema, 'reservation_id', record.reservation_id) || record;
-  if (!alreadyReviewed) {
-    enqueueLifecycleNotification_(resources.sheet, schema, updated, LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW);
-  }
-  return { ok: true, replay: alreadyReviewed, code: 'PAID_AFTER_HOLD_EXPIRY_MANUAL_REVIEW' };
+  const current = findBy_(resources.sheet, schema, 'reservation_id', record.reservation_id) || record;
+  const result = createProviderRefundOnce_(resources, schema, current, 'paid_after_hold_expiry');
+  return { ok: true, replay: false, refundAttempted: true, refund: result };
 }
 
 function refundConfirmation_(e) {
@@ -1545,10 +2077,22 @@ function matchingProjectTriggers_(handler) {
   });
 }
 
+function triggerIntervalMinutes_(trigger) {
+  if (!trigger) return 0;
+  if (typeof trigger.minutes === 'number') return trigger.minutes;
+  if (typeof trigger.getEveryMinutes === 'function') return Number(trigger.getEveryMinutes()) || 0;
+  return 0;
+}
+
 function installTimeTriggerExactlyOnce_(handler, intervalMinutes) {
   const existing = matchingProjectTriggers_(handler);
   existing.slice(1).forEach(function(trigger) { ScriptApp.deleteTrigger(trigger); });
-  if (existing.length) return { ok: true, created: false, handler: handler, intervalMinutes: intervalMinutes };
+  const keep = matchingProjectTriggers_(handler)[0];
+  const cadence = triggerIntervalMinutes_(keep);
+  if (keep && (cadence === intervalMinutes || cadence === 0)) {
+    return { ok: true, created: false, handler: handler, intervalMinutes: intervalMinutes };
+  }
+  if (keep) ScriptApp.deleteTrigger(keep);
   ScriptApp.newTrigger(handler).timeBased().everyMinutes(intervalMinutes).create();
   return { ok: true, created: true, handler: handler, intervalMinutes: intervalMinutes };
 }
@@ -1602,6 +2146,52 @@ function installProductionNotificationRetryTrigger_() {
     PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES);
 }
 
+function installProductionLifecycleTriggers_() {
+  readConfig_();
+  return {
+    ok: true,
+    notification: installTimeTriggerExactlyOnce_(PRODUCTION_NOTIFICATION_RETRY_HANDLER,
+      PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES),
+    calendar: installTimeTriggerExactlyOnce_(PRODUCTION_CALENDAR_RECONCILIATION_HANDLER,
+      PRODUCTION_CALENDAR_RECONCILIATION_INTERVAL_MINUTES),
+  };
+}
+
+function verifyProductionLifecycleTriggers_() {
+  const expected = [
+    { handler: PRODUCTION_NOTIFICATION_RETRY_HANDLER, intervalMinutes: PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES },
+    { handler: PRODUCTION_CALENDAR_RECONCILIATION_HANDLER, intervalMinutes: PRODUCTION_CALENDAR_RECONCILIATION_INTERVAL_MINUTES },
+  ];
+  const all = ScriptApp.getProjectTriggers();
+  const missing = [];
+  const duplicates = [];
+  const wrongCadence = [];
+  expected.forEach(function(item) {
+    const matches = all.filter(function(trigger) { return trigger.getHandlerFunction() === item.handler; });
+    if (!matches.length) missing.push(item.handler);
+    if (matches.length > 1) duplicates.push(item.handler);
+    const cadence = matches.length === 1 ? triggerIntervalMinutes_(matches[0]) : 0;
+    if (matches.length === 1 && cadence && cadence !== item.intervalMinutes) {
+      wrongCadence.push({ handler: item.handler, intervalMinutes: cadence, expected: item.intervalMinutes });
+    }
+  });
+  const allowed = expected.map(function(item) { return item.handler; });
+  const unexpected = [];
+  all.forEach(function(trigger) {
+    const handler = trigger.getHandlerFunction();
+    if (allowed.indexOf(handler) === -1 && /nonprod|fixture|test/i.test(String(handler || ''))) unexpected.push(handler);
+  });
+  return operatorLog_({
+    ok: missing.length === 0 && duplicates.length === 0 && wrongCadence.length === 0 && unexpected.length === 0,
+    expectedHandlers: allowed,
+    cadenceMinutes: PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES,
+    missing: missing,
+    duplicates: duplicates,
+    wrongCadence: wrongCadence,
+    unexpectedNonprod: unexpected,
+  });
+}
+
 function removeProductionNotificationRetryTrigger_() {
   const handler = PRODUCTION_NOTIFICATION_RETRY_HANDLER;
   const triggers = ScriptApp.getProjectTriggers();
@@ -1640,6 +2230,7 @@ var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   refundPolicy_: refundPolicy_,
   activeRefundPolicy_: activeRefundPolicy_,
   remediatePaidAfterHoldExpiry_: remediatePaidAfterHoldExpiry_,
+  latePaidRefundAlreadyAttempted_: latePaidRefundAlreadyAttempted_,
 });
 
 var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
@@ -1673,4 +2264,31 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   sheetNotificationOutboxStore_: sheetNotificationOutboxStore_,
   memoryNotificationOutboxStore_: memoryNotificationOutboxStore_,
   notificationOutboxStoreFromSheet_: notificationOutboxStoreFromSheet_,
+  installProductionLifecycleTriggers_: installProductionLifecycleTriggers_,
+  verifyProductionLifecycleTriggers_: verifyProductionLifecycleTriggers_,
+});
+
+var __COMPATIBILITY_TEST_EXPORTS__ = Object.freeze({
+  SCHEMA_MIGRATION_STRATEGY: SCHEMA_MIGRATION_STRATEGY,
+  NEW_PRODUCTION_PROPERTY_NAMES: NEW_PRODUCTION_PROPERTY_NAMES,
+  V7_FLOW_HEADERS: V7_FLOW_HEADERS,
+  V7_POSITIONAL_CANONICAL: V7_POSITIONAL_CANONICAL,
+  V7_STATUS: V7_STATUS,
+  PRODUCTION: PRODUCTION,
+  pickScriptProperty_: pickScriptProperty_,
+  resolvedScriptProperties_: resolvedScriptProperties_,
+  resolveBookingSheet_: resolveBookingSheet_,
+  inspectReservationSchema_: inspectReservationSchema_,
+  inspectOutboxSchema_: inspectOutboxSchema_,
+  productionSchemaMigrationDryRun_: productionSchemaMigrationDryRun_,
+  migrateProductionV7SchemaToLifecycleV2_: migrateProductionV7SchemaToLifecycleV2_,
+  assertSchema_: assertSchema_,
+  recordFromRow_: recordFromRow_,
+  appendReservationRow_: appendReservationRow_,
+  mapV7StatusToV2_: mapV7StatusToV2_,
+  isLegacyV7ManageToken_: isLegacyV7ManageToken_,
+  bookingBounds_: bookingBounds_,
+  headerFingerprint_: headerFingerprint_,
+  looksLikeV7Headers_: looksLikeV7Headers_,
+  readConfig_: readConfig_,
 });
