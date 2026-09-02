@@ -16,7 +16,7 @@ authorize execution during the local RC mission.
 | RC branch | `feat/production-booking-lifecycle-v2-port` |
 | Full baseline | `baseline/production-v7-full-20260831` |
 | Historical Apps Script-only baseline | `baseline/production-v7-20260831` @ `a616c43` (immutable) |
-| Apps Script runtime | `backend/appsscript/booking/{Code,Lifecycle,EmailTemplates,CalendarGateway,Reconciliation,RefundGateway}.js` + `appsscript.json` |
+| Apps Script runtime | `backend/appsscript/booking/{Code,Lifecycle,EmailTemplates,CalendarGateway,Reconciliation,RefundGateway,TriggerInstallGuard}.js` + `appsscript.json` (7 JS files + `appsscript.json` = 8 deployable files) |
 | Rollback Apps Script | live version **7** (`docs/production/v7/Código.js`) |
 | Rollback web | previous Cloudflare Pages Production deployment |
 | Prices | `INITIAL_PRICE_CLP=50000` / `FOLLOWUP_PRICE_CLP=50000` |
@@ -40,7 +40,7 @@ Fill RC SHA at deploy time: `git rev-parse --short HEAD`
 4. Schema dry-run (`productionSchemaMigrationDryRun_`) — metadata only, no row PII
 5. Explicit schema migration (`migrateProductionV7SchemaToLifecycleV2_`) once
 6. Verify schema (second migration is a no-op; headers/rows preserved)
-7. Install/verify triggers (`installProductionLifecycleTriggers_` / `verifyProductionLifecycleTriggers_`)
+7. Install/verify triggers (`installProductionLifecycleTriggersDeterministic_` / `verifyProductionLifecycleTriggersDeterministic_`)
 8. Create a new Apps Script version
 9. Deploy the existing Web App to that version (do not mint a second `/exec`)
 10. Configure/verify Worker binding **names**
@@ -116,7 +116,12 @@ Push **exactly**:
 - `CalendarGateway.js`
 - `Reconciliation.js`
 - `RefundGateway.js`
+- `TriggerInstallGuard.js`
 - `appsscript.json`
+
+That is **7 JS files + `appsscript.json` = 8 deployable files**, nothing else.
+`TriggerInstallGuard.js` is Apps Script JS source, so it needs **no**
+`appsscript.json` manifest entry. Do not add one.
 
 `appsscript.json` must enable Advanced Calendar:
 
@@ -129,7 +134,7 @@ Never push `docs/production/v7/Código.js` in the same project as `Code.js`.
 ### 2.2 CLASP_REMOTE_FILESET_RELEASE_GATE (after push, before version)
 
 In the Apps Script editor or via `clasp list`, the remote project must contain
-exactly the seven files above as deployable runtime.
+exactly the eight files above as deployable runtime (7 JS + the manifest).
 
 Must **not** coexist as deployable runtime:
 
@@ -161,15 +166,75 @@ existing sheet (`reservations`) is explicitly resolved.
 
 Do **not** run the installer during the local RC mission.
 
-1. `installProductionLifecycleTriggers_()` once
-2. `verifyProductionLifecycleTriggers_()` read-only
+Use **only** these two deterministic operators, in this order:
 
-Expected handlers, 5-minute cadence, no duplicates, no NONPROD names:
+1. `installProductionLifecycleTriggersDeterministic_()`
+2. `verifyProductionLifecycleTriggersDeterministic_()`
+
+Expected handlers, exactly one current trigger each, 5-minute cadence,
+`TriggerSource.CLOCK`, no duplicates, no NONPROD/fixture/test names:
 
 - `processLifecycleNotificationOutbox_`
 - `processCalendarReconciliation_`
 
-Rerunning the installer is safe.
+#### Why cadence is not read back
+
+An Apps Script `Trigger` object **does not expose its clock cadence for
+runtime read-back**. There is no public `everyMinutes` getter on an installed
+trigger. A previous revision of this runbook accepted a cadence PASS that had
+been derived from a synthetic test-only property, so the PASS was a false
+positive. It is withdrawn. Nothing in the release may claim runtime cadence
+introspection, and an unknown cadence is **never** treated as valid.
+
+Cadence proof is install-time and metadata-bound instead:
+
+- the installer called `.timeBased().everyMinutes(5).create()`
+- it persisted non-secret install metadata in Script Property
+  `PRODUCTION_LIFECYCLE_TRIGGER_INSTALL_META_V1`
+  (`version`, `installedAt`, `cadenceVerification`,
+  `runtimeCadenceIntrospection`, and per trigger `handler`,
+  `intervalMinutes`, `uniqueId`)
+- each **current** `Trigger.getUniqueId()` equals the metadata `uniqueId` for
+  that handler
+- each current trigger source is `ScriptApp.TriggerSource.CLOCK`
+
+That metadata is non-secret. It carries no Flow key, token, store ID, Calendar
+ID, or patient data. Never add any.
+
+#### Required trigger evidence
+
+```
+cadenceVerification=INSTALL_METADATA_PLUS_TRIGGER_ID
+runtimeCadenceIntrospection=false
+```
+
+Record `expectedHandlers`, `cadenceMinutes=5`, `metadataPresent=true`, and
+empty `missing`, `duplicates`, `wrongSource`, `idMismatch`,
+`metadataMismatch`, `unexpectedNonprod`.
+
+Any of the following is a **FAIL**: stop, do not create a version, do not
+switch the Web App.
+
+- missing or stale install metadata (including invalid JSON, an unexpected
+  `version`, or metadata claiming `runtimeCadenceIntrospection=true`)
+- a current trigger unique ID that does not match the metadata
+- a non-CLOCK trigger source
+- a missing target trigger
+- duplicate triggers for a target handler
+- any unexpected NONPROD/fixture/test handler
+
+#### Rerunning the installer
+
+Rerunning is **convergent, not identity-preserving idempotency**. Each run
+recreates both target triggers, so the target trigger unique IDs change every
+run, and the install metadata is rewritten to the new IDs. It converges on
+exactly one current trigger per target handler. Unrelated project triggers are
+never modified. Always rerun
+`verifyProductionLifecycleTriggersDeterministic_()` after any install run: a
+stale ID from an earlier run must fail, not pass.
+
+The installer is fail-closed on configuration (`readConfig_`) and rolls back
+its own newly created triggers plus any incomplete metadata if creation fails.
 
 ### 2.5 Version then Web App
 
@@ -279,7 +344,9 @@ pushed, and the draft PR documents the compatibility gates.
 - Binding **name** checks passed
 - Remote fileset gate passed
 - Schema dry-run + append-only migration + idempotent second run passed
-- Triggers installed/verified
+- Triggers installed/verified with the deterministic operators, evidencing
+  `cadenceVerification=INSTALL_METADATA_PLUS_TRIGGER_ID` and
+  `runtimeCadenceIntrospection=false`
 - Apps Script + Pages deployed as above
 - No-charge smoke passed
 - `FLOW_PROVIDER_MICRO_E2E` passed
