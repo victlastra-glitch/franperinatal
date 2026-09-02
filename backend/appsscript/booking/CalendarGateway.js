@@ -239,7 +239,10 @@ function workingSlots_(start, end, requestedDate) {
     const weekday = new Date(date + 'T00:00:00Z').getUTCDay();
     if ((!requestedDate || date === requestedDate) && weekday !== 0 && weekday !== 6) {
       WORKING_HOURS.forEach(function(time) {
-        const slotStart = startAt_(date, time); const slotEnd = new Date(Date.parse(slotStart) + 3600000).toISOString();
+        const slotStart = startAt_(date, time);
+        const slotEnd = typeof slotIntervalEndAt_ === 'function'
+          ? slotIntervalEndAt_(slotStart)
+          : new Date(Date.parse(slotStart) + ((typeof SLOT_INTERVAL_MS === 'number') ? SLOT_INTERVAL_MS : 60 * 60 * 1000)).toISOString();
         slots.push({ date: date, time: time, start: slotStart, end: slotEnd });
       });
     }
@@ -285,4 +288,5 @@ var __CALENDAR_TEST_EXPORTS__ = Object.freeze({
   createCalendarGateway_: createCalendarGateway_, computeOccupiedSlots_: computeOccupiedSlots_, availabilityBounds_: availabilityBounds_,
   workingSlots_: workingSlots_, addCalendarDays_: addCalendarDays_, localDateLabel_: localDateLabel_,
   calendarHttpStatus_: calendarHttpStatus_, calendarEventResult_: calendarEventResult_, BOOKING_LEAD_MINUTES: BOOKING_LEAD_MINUTES,
+  calendarApi_: calendarApi_,
 });

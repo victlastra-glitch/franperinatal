@@ -6,6 +6,10 @@
  */
 
 var SLOT_HOLD_MS = 15 * 60 * 1000;
+var SESSION_DURATION_MINUTES = 50;
+var SLOT_INTERVAL_MINUTES = 60;
+var SESSION_DURATION_MS = SESSION_DURATION_MINUTES * 60 * 1000;
+var SLOT_INTERVAL_MS = SLOT_INTERVAL_MINUTES * 60 * 1000;
 var FLOW_PAYMENT_TIMEOUT_SECONDS = 900;
 var FLOW_CHECKOUT_TIMEOUT_SECONDS = 900;
 var CANONICAL_CONSULTATION_PRICE_CLP = 50000;
@@ -280,10 +284,21 @@ function withLifecycleLock_(deps, operation) {
 
 function lifecycleNow_(value) { return Number(value || Date.now()); }
 
+function sessionEndAt_(startAt) {
+  const start = new Date(String(startAt));
+  if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED');
+  return new Date(start.getTime() + SESSION_DURATION_MS).toISOString();
+}
+
+function slotIntervalEndAt_(startAt) {
+  const start = new Date(String(startAt));
+  if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED');
+  return new Date(start.getTime() + SLOT_INTERVAL_MS).toISOString();
+}
+
 function targetEndAt_(startAt, endAt) {
   if (endAt) return new Date(String(endAt)).toISOString();
-  const start = new Date(String(startAt)); if (Number.isNaN(start.getTime())) fail_('REQUEST_REJECTED');
-  return new Date(start.getTime() + 3600000).toISOString();
+  return sessionEndAt_(startAt);
 }
 
 function lifecycleCapabilitySecret_(deps) {
@@ -376,6 +391,14 @@ function persistedRevocationFields_(capability) {
   return capabilityFields_(capability);
 }
 
+function lifecycleTokenAuthorized_(token, type, stored, secret, now, record) {
+  if (typeof isLegacyV7ManageToken_ === 'function' && isLegacyV7ManageToken_(token)
+    && record && constantTimeEqual_(String(record.manage_token || ''), String(token))) {
+    return true;
+  }
+  return verifyCapability_(token, type, stored, { secret: secret, now: now });
+}
+
 function patientRescheduleTransaction_(input) {
   const deps = input && input.deps;
   if (!deps || !deps.store || !input.reservationId || !input.token || !input.targetStartAt) fail_('REQUEST_REJECTED');
@@ -387,7 +410,7 @@ function patientRescheduleTransaction_(input) {
     const secret = lifecycleCapabilitySecret_(deps);
     const stored = capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE);
     const now = lifecycleNow_(input.now);
-    if (!verifyCapability_(input.token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, stored, { secret: secret, now: now })) {
+    if (!lifecycleTokenAuthorized_(input.token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, stored, secret, now, record)) {
       return { ok: false, code: 'CAPABILITY_INVALID' };
     }
     const targetEnd = targetEndAt_(input.targetStartAt, input.targetEndAt);
@@ -449,7 +472,8 @@ function patientCancelTransaction_(input) {
     }
     const secret = lifecycleCapabilitySecret_(deps);
     const stored = capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.CANCEL);
-    const now = lifecycleNow_(input.now); if (!verifyCapability_(input.token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, stored, { secret: secret, now: now })) {
+    const now = lifecycleNow_(input.now);
+    if (!lifecycleTokenAuthorized_(input.token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, stored, secret, now, record)) {
       return { ok: false, code: 'CAPABILITY_INVALID' };
     }
     const operationId = input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_CANCEL, record.reservation_id);
@@ -891,7 +915,11 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   makeFlowCommerceOrder_: makeFlowCommerceOrder_, FLOW_COMMERCE_ORDER_MAX_LENGTH: FLOW_COMMERCE_ORDER_MAX_LENGTH,
   startAt_: startAt_,
   formatPatientFacingDateTime_: formatPatientFacingDateTime_,
-  SLOT_HOLD_MS: SLOT_HOLD_MS, FLOW_PAYMENT_TIMEOUT_SECONDS: FLOW_PAYMENT_TIMEOUT_SECONDS,
+  SLOT_HOLD_MS: SLOT_HOLD_MS, SESSION_DURATION_MINUTES: SESSION_DURATION_MINUTES,
+  SLOT_INTERVAL_MINUTES: SLOT_INTERVAL_MINUTES, SESSION_DURATION_MS: SESSION_DURATION_MS,
+  SLOT_INTERVAL_MS: SLOT_INTERVAL_MS, sessionEndAt_: sessionEndAt_, slotIntervalEndAt_: slotIntervalEndAt_,
+  targetEndAt_: targetEndAt_,
+  FLOW_PAYMENT_TIMEOUT_SECONDS: FLOW_PAYMENT_TIMEOUT_SECONDS,
   FLOW_CHECKOUT_TIMEOUT_SECONDS: FLOW_CHECKOUT_TIMEOUT_SECONDS,
   INITIAL_PRICE_CLP: INITIAL_PRICE_CLP, FOLLOWUP_PRICE_CLP: FOLLOWUP_PRICE_CLP,
   CANONICAL_CONSULTATION_PRICE_CLP: CANONICAL_CONSULTATION_PRICE_CLP,

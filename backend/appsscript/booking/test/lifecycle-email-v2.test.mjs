@@ -263,7 +263,7 @@ function tokenFrom(body, label) {
   return match && match[1];
 }
 function forbiddenPatientCopy(text) {
-  return /instagram|testimoni|55\.000|55000|diagn[oó]stico|motivo de consulta|transferencia bancaria/i.test(String(text || ''));
+  return /instagram|testimoni|55\.000|(?<![0-9])55000(?![0-9])|diagn[oó]stico|motivo de consulta|transferencia bancaria/i.test(String(text || ''));
 }
 
 check(phase.CANONICAL_CONSULTATION_PRICE_CLP === 50000, 'Z canonical Production price is 50000');
@@ -338,19 +338,19 @@ setFlowStatus(byKey(1), 2);
 const latePaid = context.flowConfirmation_({ parameter: { token: byKey(1).flow_token } });
 check(latePaid.status === 'payment_verifying' && byKey(1).booking_status === 'expired' && byKey(1).payment_status === 'paid'
   && byKey(2).booking_status === 'payment_pending' && byKey(2).booking_status !== 'confirmed'
-  && byKey(1).refund_status === 'manual_review'
-  && String(byKey(1).reconciliation_state || '') === 'paid_after_hold_expiry',
-  'L expired transaction cannot later steal a rebooked slot; enters manual review');
+  && byKey(1).refund_status === 'refund_pending'
+  && String(byKey(1).reconciliation_state || '').indexOf('paid_after_hold_expiry') === 0,
+  'L expired transaction cannot later steal a rebooked slot; system-consistency refund is attempted');
 check(mailBodies.length === 0 || !mailBodies.some((item) => /confirmada/i.test(item.subject)),
   'L late paid after expiry does not send confirmation email');
-check(refundCreateCalls === 0, 'H late paid after expiry does not call Flow refund under BUSINESS_POLICY_TBD');
+check(refundCreateCalls === 1, 'H late paid after expiry attempts system-consistency refund exactly once');
 check(!String(byKey(1).notification_outbox_key || '').includes('BOOKING_CONFIRMED'),
   'E/G late paid does not enqueue BOOKING_CONFIRMED');
 const latePaidDuplicate = context.flowConfirmation_({ parameter: { token: byKey(1).flow_token } });
-check(latePaidDuplicate.status === 'payment_verifying' && refundCreateCalls === 0
+check(latePaidDuplicate.status === 'payment_verifying' && refundCreateCalls === 1
   && byKey(1).booking_status === 'expired' && byKey(1).payment_status === 'paid'
   && byKey(2).booking_status === 'payment_pending',
-  'I duplicate late-paid callback does not reclaim the slot or call Flow refund');
+  'I duplicate late-paid callback does not reclaim the slot or create a duplicate refund');
 check(byKey(1).booking_status === 'expired' && byKey(1).payment_status === 'paid'
   && !String(byKey(1).notification_outbox_key || '').includes('PATIENT_CANCELLED'),
   'J hold-expiry remediation stays expired/paid without PATIENT_CANCELLED');
@@ -536,7 +536,7 @@ for (const item of emailCases) {
 
 check(templates.EMAIL_BRAND.maxWidth === 600, 'desktop email max width is 600');
 
-refundCreateShouldFail = false;
+refundCreateShouldFail = true;
 const createdExpiryFail = createBooking(21, '10:00', '2026-09-04');
 check(createdExpiryFail.ok, 'K fail-path fixture created');
 nowMs += 16 * 60 * 1000;

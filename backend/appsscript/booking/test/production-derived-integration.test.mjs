@@ -138,7 +138,7 @@ const context = {
       }
       if (href.includes('/refund/create')) {
         refundCreateCalls += 1;
-        throw new Error('refund create must not run on BUSINESS_POLICY_TBD cancel');
+        return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ token: 'REFUNDTOKEN-LATE-' + refundCreateCalls, status: 'created' }) };
       }
       throw new Error('unexpected url ' + href);
     },
@@ -302,11 +302,17 @@ check(lateCreate.ok, 'late-paid fixture created');
 rowFor(3).slot_hold_expires_at = '2026-08-25T12:00:00.000Z';
 flowByToken.get(rowFor(3).flow_token).status = 2;
 const eventsBeforeLatePaid = [...eventsById.values()].filter((event) => event.status !== 'cancelled').length;
+const refundCreatesBeforeLatePaid = refundCreateCalls;
 const latePaid = context.flowConfirmation_({ parameter: { token: rowFor(3).flow_token } });
 check(latePaid.status === 'payment_verifying' && rowFor(3).booking_status === 'expired'
   && rowFor(3).payment_status === 'paid'
   && [...eventsById.values()].filter((event) => event.status !== 'cancelled').length === eventsBeforeLatePaid,
   'LATE_PAID_NO_SLOT_RECLAIM');
+check(refundCreateCalls - refundCreatesBeforeLatePaid === 1, 'LATE_PAID_SYSTEM_REFUND_ATTEMPT_COUNT=1');
+const latePaidReplay = context.flowConfirmation_({ parameter: { token: rowFor(3).flow_token } });
+check(latePaidReplay.status === 'payment_verifying' && refundCreateCalls - refundCreatesBeforeLatePaid === 1
+  && rowFor(3).booking_status === 'expired' && rowFor(3).payment_status === 'paid',
+  'LATE_PAID_REFUND_IDEMPOTENCY');
 
 console.log(`PRODUCTION_DERIVED_INTEGRATION_TESTS=PASS assertions=${assertions}`);
 console.log('PRICE_INITIAL_50000=PASS');
@@ -338,4 +344,6 @@ console.log('MANUAL_REVIEW_NOTIFICATION_COUNT=1');
 console.log('SESSION_CANCELLED_ALLOWED=YES');
 console.log('PATIENT_CANCELLED_EMAIL_COUNT_UNDER_TBD=0');
 console.log('LATE_PAID_NO_SLOT_RECLAIM=PASS');
+console.log('LATE_PAID_SYSTEM_REFUND_ATTEMPT_COUNT=1');
+console.log('LATE_PAID_REFUND_IDEMPOTENCY=PASS');
 console.log('REAL_NETWORK_SIDE_EFFECTS=0');
