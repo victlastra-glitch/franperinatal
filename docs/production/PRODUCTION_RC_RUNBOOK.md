@@ -35,7 +35,7 @@ Fill RC SHA at deploy time: `git rev-parse --short HEAD`
 ## Trigger / deploy order (do not reorder)
 
 1. Pre-deploy binding / Script Property **name** checks
-2. Apps Script clasp push of the modular fileset only
+2. Apps Script clasp push of the **staged allowlist artifact only** (never from `backend/appsscript/booking/`; build with `scripts/build-production-appsscript-staging.mjs`, validate with `scripts/assert-production-clasp-staging-gate.mjs`)
 3. Remote fileset verification (`clasp list` / editor) — **before** version creation
 4. Schema dry-run (`productionSchemaMigrationDryRun_`) — metadata only, no row PII
 5. Explicit schema migration (`migrateProductionV7SchemaToLifecycleV2_`) once
@@ -48,8 +48,9 @@ Fill RC SHA at deploy time: `git rev-parse --short HEAD`
 12. Immediate no-charge smoke, then authorized Flow tests
 
 Do **not** install triggers before schema migration. Do **not** clasp-push
-`docs/production/v7/Código.js`, `TargetedFixture.js`, tests, or NONPROD
-operators into the Production project.
+`docs/production/v7/Código.js`, `TargetedFixture.js`, tests, fixtures, or
+NONPROD operators into the Production project. Do **not** push from the
+runtime source directory: push only the staged allowlist artifact.
 
 ---
 
@@ -106,9 +107,41 @@ Pass this section when both Cloudflare names exist (or were just added) and Apps
 
 ## 2. Exact Apps Script deployment
 
-### 2.1 Clasp push (modular fileset only)
+### 2.1 Clasp push (staged allowlist artifact only)
 
-Push **exactly**:
+**Never run `clasp push` from `backend/appsscript/booking/`.** That directory
+is the runtime *source* tree and it also contains `test/`, including pushable
+`test/fixtures/email-preview/*.html`. clasp uploads `.js`, `.gs`, `.html` and
+the manifest **recursively** from its root, so a push from the source
+directory would upload 12 files instead of 8 and fail the remote fileset gate
+in §2.2 — or worse, quietly install HTML fixtures as Production project files.
+
+Deploy from a generated, ephemeral staging artifact instead
+(`DEPLOY_STAGING_STRATEGY=EXACT_ALLOWLIST_EPHEMERAL`):
+
+```sh
+# 1. Build the artifact. Prints STAGING_DIR / STAGING_FINGERPRINT.
+node scripts/build-production-appsscript-staging.mjs
+
+# 2. Validate it recursively BEFORE any push. Must print
+#    STAGING_FILESET_GATE=PASS and RECURSIVE_FILESET_GATE=PASS.
+node scripts/assert-production-clasp-staging-gate.mjs <STAGING_DIR>
+
+# 3. Inject the private Production .clasp.json into STAGING_DIR only.
+#    Never copy it, or the script ID, back into the repository.
+
+# 4. Push from STAGING_DIR (authorized deploy only).
+cd <STAGING_DIR> && clasp push
+```
+
+The builder copies only the explicit allowlist, flat, into a directory
+**outside** the repository, and is generated — never hand-maintained. The gate
+walks the staged tree recursively and fails on a wrong file count, any
+unexpected or missing file, any `.html`, `Código.js` (NFC or NFD spelling),
+`TargetedFixture.js`, any path containing `test`/`fixture`/`nonprod`/`sandbox`,
+any credential file, any subdirectory, or an artifact located inside the repo.
+
+The staged artifact must contain **exactly**:
 
 - `Code.js`
 - `Lifecycle.js`
@@ -123,6 +156,10 @@ That is **7 JS files + `appsscript.json` = 8 deployable files**, nothing else.
 `TriggerInstallGuard.js` is Apps Script JS source, so it needs **no**
 `appsscript.json` manifest entry. Do not add one.
 
+A private `.clasp.json` inside the staging directory is expected at deploy
+time and is not a deployable file. It must never be committed to Git, and no
+script ID, deployment ID, or Web App URL may be committed either.
+
 `appsscript.json` must enable Advanced Calendar:
 
 - `userSymbol: Calendar`
@@ -134,7 +171,13 @@ Never push `docs/production/v7/Código.js` in the same project as `Code.js`.
 ### 2.2 CLASP_REMOTE_FILESET_RELEASE_GATE (after push, before version)
 
 In the Apps Script editor or via `clasp list`, the remote project must contain
-exactly the eight files above as deployable runtime (7 JS + the manifest).
+exactly the eight files above as deployable runtime (7 JS + the manifest), and
+nothing else. Compare against the `STAGING_FINGERPRINT` recorded in §2.1.
+
+If any `.html` file, `Código.js`, `TargetedFixture.js`, a test/fixture path, or
+a ninth JS file appears remotely, the push came from the wrong directory:
+stop, do not create a version, delete the stray remote files, and re-push from
+a freshly built staging artifact.
 
 Must **not** coexist as deployable runtime:
 
