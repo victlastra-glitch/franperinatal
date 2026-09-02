@@ -2077,25 +2077,12 @@ function matchingProjectTriggers_(handler) {
   });
 }
 
-function triggerIntervalMinutes_(trigger) {
-  if (!trigger) return 0;
-  if (typeof trigger.minutes === 'number') return trigger.minutes;
-  if (typeof trigger.getEveryMinutes === 'function') return Number(trigger.getEveryMinutes()) || 0;
-  return 0;
-}
-
-function installTimeTriggerExactlyOnce_(handler, intervalMinutes) {
-  const existing = matchingProjectTriggers_(handler);
-  existing.slice(1).forEach(function(trigger) { ScriptApp.deleteTrigger(trigger); });
-  const keep = matchingProjectTriggers_(handler)[0];
-  const cadence = triggerIntervalMinutes_(keep);
-  if (keep && (cadence === intervalMinutes || cadence === 0)) {
-    return { ok: true, created: false, handler: handler, intervalMinutes: intervalMinutes };
-  }
-  if (keep) ScriptApp.deleteTrigger(keep);
-  ScriptApp.newTrigger(handler).timeBased().everyMinutes(intervalMinutes).create();
-  return { ok: true, created: true, handler: handler, intervalMinutes: intervalMinutes };
-}
+// Lifecycle trigger installation/verification lives in TriggerInstallGuard.js
+// (installProductionLifecycleTriggersDeterministic_ /
+// verifyProductionLifecycleTriggersDeterministic_). An installed Apps Script
+// Trigger does not expose its clock cadence, so no installer or verifier here
+// may infer cadence from a Trigger object. The helpers below only remove
+// triggers by handler name, which needs no cadence read-back.
 
 function processCalendarReconciliation_() {
   const config = readConfig_();
@@ -2126,70 +2113,11 @@ function processCalendarReconciliation_() {
   });
 }
 
-function installProductionCalendarReconciliationTrigger_() {
-  readConfig_();
-  return installTimeTriggerExactlyOnce_(PRODUCTION_CALENDAR_RECONCILIATION_HANDLER,
-    PRODUCTION_CALENDAR_RECONCILIATION_INTERVAL_MINUTES);
-}
-
 function removeProductionCalendarReconciliationTrigger_() {
   const handler = PRODUCTION_CALENDAR_RECONCILIATION_HANDLER;
   const triggers = matchingProjectTriggers_(handler);
   triggers.forEach(function(trigger) { ScriptApp.deleteTrigger(trigger); });
   return { ok: true, handler: handler, removed: triggers.length };
-}
-
-// IDEMPOTENT installer. Runtime execution is restricted by readConfig_.
-function installProductionNotificationRetryTrigger_() {
-  readConfig_();
-  return installTimeTriggerExactlyOnce_(PRODUCTION_NOTIFICATION_RETRY_HANDLER,
-    PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES);
-}
-
-function installProductionLifecycleTriggers_() {
-  readConfig_();
-  return {
-    ok: true,
-    notification: installTimeTriggerExactlyOnce_(PRODUCTION_NOTIFICATION_RETRY_HANDLER,
-      PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES),
-    calendar: installTimeTriggerExactlyOnce_(PRODUCTION_CALENDAR_RECONCILIATION_HANDLER,
-      PRODUCTION_CALENDAR_RECONCILIATION_INTERVAL_MINUTES),
-  };
-}
-
-function verifyProductionLifecycleTriggers_() {
-  const expected = [
-    { handler: PRODUCTION_NOTIFICATION_RETRY_HANDLER, intervalMinutes: PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES },
-    { handler: PRODUCTION_CALENDAR_RECONCILIATION_HANDLER, intervalMinutes: PRODUCTION_CALENDAR_RECONCILIATION_INTERVAL_MINUTES },
-  ];
-  const all = ScriptApp.getProjectTriggers();
-  const missing = [];
-  const duplicates = [];
-  const wrongCadence = [];
-  expected.forEach(function(item) {
-    const matches = all.filter(function(trigger) { return trigger.getHandlerFunction() === item.handler; });
-    if (!matches.length) missing.push(item.handler);
-    if (matches.length > 1) duplicates.push(item.handler);
-    const cadence = matches.length === 1 ? triggerIntervalMinutes_(matches[0]) : 0;
-    if (matches.length === 1 && cadence && cadence !== item.intervalMinutes) {
-      wrongCadence.push({ handler: item.handler, intervalMinutes: cadence, expected: item.intervalMinutes });
-    }
-  });
-  const allowed = expected.map(function(item) { return item.handler; });
-  const unexpected = [];
-  all.forEach(function(trigger) {
-    const handler = trigger.getHandlerFunction();
-    if (allowed.indexOf(handler) === -1 && /nonprod|fixture|test/i.test(String(handler || ''))) unexpected.push(handler);
-  });
-  return operatorLog_({
-    ok: missing.length === 0 && duplicates.length === 0 && wrongCadence.length === 0 && unexpected.length === 0,
-    expectedHandlers: allowed,
-    cadenceMinutes: PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES,
-    missing: missing,
-    duplicates: duplicates,
-    wrongCadence: wrongCadence,
-    unexpectedNonprod: unexpected,
-  });
 }
 
 function removeProductionNotificationRetryTrigger_() {
@@ -2240,9 +2168,7 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   renderLifecycleNotificationEmail_: renderLifecycleNotificationEmail_,
   previewOriginFromConfig_: previewOriginFromConfig_,
   managementPageUrl_: managementPageUrl_,
-  installProductionNotificationRetryTrigger_: installProductionNotificationRetryTrigger_,
   removeProductionNotificationRetryTrigger_: removeProductionNotificationRetryTrigger_,
-  installProductionCalendarReconciliationTrigger_: installProductionCalendarReconciliationTrigger_,
   removeProductionCalendarReconciliationTrigger_: removeProductionCalendarReconciliationTrigger_,
   notificationWorkerResultSafe_: notificationWorkerResultSafe_,
   PRODUCTION_CALENDAR_RECONCILIATION_HANDLER: PRODUCTION_CALENDAR_RECONCILIATION_HANDLER,
@@ -2264,8 +2190,6 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   sheetNotificationOutboxStore_: sheetNotificationOutboxStore_,
   memoryNotificationOutboxStore_: memoryNotificationOutboxStore_,
   notificationOutboxStoreFromSheet_: notificationOutboxStoreFromSheet_,
-  installProductionLifecycleTriggers_: installProductionLifecycleTriggers_,
-  verifyProductionLifecycleTriggers_: verifyProductionLifecycleTriggers_,
 });
 
 var __COMPATIBILITY_TEST_EXPORTS__ = Object.freeze({

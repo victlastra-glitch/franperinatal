@@ -23,6 +23,19 @@ let mailed = [];
 let lockRejectNext = false;
 let persistedBlob = '';
 const projectTriggers = [];
+const TRIGGER_SOURCE = Object.freeze({ CLOCK: 'CLOCK', SPREADSHEETS: 'SPREADSHEETS' });
+let syntheticTriggerSeq = 0;
+// Public Apps Script Trigger surface only. A real installed Trigger exposes no
+// clock cadence, so these mocks must never carry `.minutes` or getEveryMinutes.
+const makeSyntheticTrigger = (handler, source, uniqueId) => {
+  const id = String(uniqueId || `synthetic-trigger-id-${(syntheticTriggerSeq += 1)}`);
+  const triggerSource = String(source || TRIGGER_SOURCE.CLOCK);
+  return Object.freeze({
+    getHandlerFunction: () => handler,
+    getUniqueId: () => id,
+    getTriggerSource: () => triggerSource,
+  });
+};
 const bytes = (value) => [...value].map((byte) => (byte > 127 ? byte - 256 : byte));
 const digestBytes = (value) => {
   const text = String(value);
@@ -79,17 +92,15 @@ const context = {
   },
   UrlFetchApp: { fetch: () => { networkCalls += 1; throw new Error('network must not be called'); } },
   ScriptApp: {
+    TriggerSource: TRIGGER_SOURCE,
     getProjectTriggers: () => projectTriggers.slice(),
     newTrigger: (handler) => ({
       timeBased: () => ({
-        everyMinutes: (minutes) => ({
+        everyMinutes: () => ({
           create: () => {
-            projectTriggers.push({
-              handler,
-              minutes,
-              getHandlerFunction: () => handler,
-              getEventType: () => 'CLOCK',
-            });
+            const trigger = makeSyntheticTrigger(handler);
+            projectTriggers.push(trigger);
+            return trigger;
           },
         }),
       }),
@@ -840,49 +851,26 @@ check(!maxRotateRun.results[0].ok
 const maxRotateAgain = runWorker(makeStore([maxRotate]), { outboxStore: maxRotateOutbox });
 check(maxRotateAgain.processed === 0, 'max_attempts terminal marking does not wait for a later worker invocation');
 
-// 19 + 20 + 21. installer does not duplicate; targets handler; interval = 5
-projectTriggers.length = 0;
-const installed = worker.installProductionNotificationRetryTrigger_();
-check(installed.ok && installed.created && installed.handler === worker.PRODUCTION_NOTIFICATION_RETRY_HANDLER, 'installer targets processLifecycleNotificationOutbox_');
-check(installed.intervalMinutes === 5 && projectTriggers[0].minutes === 5, 'trigger interval = 5 minutes');
-const installedAgain = worker.installProductionNotificationRetryTrigger_();
-check(installedAgain.ok && !installedAgain.created && projectTriggers.length === 1, 'installer does not create duplicate trigger');
-
-projectTriggers.push({
-  handler: worker.PRODUCTION_NOTIFICATION_RETRY_HANDLER,
-  minutes: 5,
-  getHandlerFunction: () => worker.PRODUCTION_NOTIFICATION_RETRY_HANDLER,
-});
-const deduplicated = worker.installProductionNotificationRetryTrigger_();
-check(deduplicated.ok && !deduplicated.created
-  && projectTriggers.filter((trigger) => trigger.getHandlerFunction() === worker.PRODUCTION_NOTIFICATION_RETRY_HANDLER).length === 1,
-  'installer removes duplicate matching triggers');
+// 19 + 20 + 21. Trigger installation/verification is covered by
+// production-trigger-contract.test.mjs against
+// installProductionLifecycleTriggersDeterministic_. Cadence is never asserted
+// from a Trigger object here: a real Apps Script Trigger cannot report its
+// clock cadence, so these mocks expose no cadence property or getter. Only the
+// handler-scoped removal helpers, which need no cadence read-back, live here.
+check(typeof worker.installProductionLifecycleTriggers_ === 'undefined'
+  && typeof worker.installProductionNotificationRetryTrigger_ === 'undefined'
+  && typeof worker.installProductionCalendarReconciliationTrigger_ === 'undefined',
+  'legacy cadence-guessing trigger installers are no longer exported');
 
 projectTriggers.length = 0;
-const calendarInstalled = worker.installProductionCalendarReconciliationTrigger_();
-check(calendarInstalled.ok && calendarInstalled.created
-  && calendarInstalled.handler === worker.PRODUCTION_CALENDAR_RECONCILIATION_HANDLER
-  && calendarInstalled.intervalMinutes === worker.PRODUCTION_CALENDAR_RECONCILIATION_INTERVAL_MINUTES
-  && projectTriggers.length === 1 && projectTriggers[0].minutes === 5,
-  'Calendar reconciliation installer targets one five-minute trigger');
-const calendarInstalledAgain = worker.installProductionCalendarReconciliationTrigger_();
-check(calendarInstalledAgain.ok && !calendarInstalledAgain.created && projectTriggers.length === 1,
-  'Calendar reconciliation installer is idempotent');
+projectTriggers.push(makeSyntheticTrigger(worker.PRODUCTION_CALENDAR_RECONCILIATION_HANDLER));
 const calendarRemoved = worker.removeProductionCalendarReconciliationTrigger_();
 check(calendarRemoved.ok && calendarRemoved.removed === 1 && projectTriggers.length === 0,
   'Calendar reconciliation removal targets only its handler');
 
 // 22. removal helper removes only intended handler triggers
-projectTriggers.push({
-  handler: worker.PRODUCTION_NOTIFICATION_RETRY_HANDLER,
-  minutes: 5,
-  getHandlerFunction: () => worker.PRODUCTION_NOTIFICATION_RETRY_HANDLER,
-});
-projectTriggers.push({
-  handler: 'unrelatedHandler_',
-  minutes: 10,
-  getHandlerFunction: () => 'unrelatedHandler_',
-});
+projectTriggers.push(makeSyntheticTrigger(worker.PRODUCTION_NOTIFICATION_RETRY_HANDLER));
+projectTriggers.push(makeSyntheticTrigger('unrelatedHandler_'));
 const removed = worker.removeProductionNotificationRetryTrigger_();
 check(removed.ok && removed.removed === 1 && projectTriggers.length === 1
   && projectTriggers[0].getHandlerFunction() === 'unrelatedHandler_', 'removal helper removes only intended handler triggers');

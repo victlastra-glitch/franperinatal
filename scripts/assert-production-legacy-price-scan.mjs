@@ -11,6 +11,7 @@ const runtimeFiles = [
   'backend/appsscript/booking/CalendarGateway.js',
   'backend/appsscript/booking/Reconciliation.js',
   'backend/appsscript/booking/RefundGateway.js',
+  'backend/appsscript/booking/TriggerInstallGuard.js',
   '_worker.js',
   'assets/booking.js',
   'pago-resultado.html',
