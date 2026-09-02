@@ -12,7 +12,7 @@ Target: live Apps Script v7 + recovered public website.
 | 5 | Flow checkout_timeout ≤ 900 | PORT_COMPLETE | `FLOW_CHECKOUT_TIMEOUT_SECONDS = 900`; create/retry payload |
 | 6 | Retry does not extend hold | PORT_COMPLETE | retry keeps `slot_hold_expires_at`; remaining seconds only |
 | 7 | Late PAID does not reclaim slot | PORT_COMPLETE | expired + PAID → verifying, no Calendar create |
-| 8 | TBD manual-review remediation (late paid) | PORT_COMPLETE | `refund_status=manual_review`, `REFUND_FAILED_MANUAL_REVIEW`, no Flow refund |
+| 8 | Late-paid system-consistency refund | PORT_COMPLETE | expired + PAID → verifying, no slot reclaim, `createProviderRefundOnce_` exactly once, independent of TBD cancel |
 | 9 | Calendar refresh / confirm idempotency | PORT_COMPLETE | one event/Meet; duplicate callback does not duplicate |
 | 10 | Lifecycle email V2 | PORT_COMPLETE | `EmailTemplates.js` + GmailApp adapter |
 | 11 | Durable notification outbox | PORT_COMPLETE | `notification_outbox` sheet worker |
