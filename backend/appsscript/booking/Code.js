@@ -560,6 +560,19 @@ function migrateProductionV7SchemaToLifecycleV2_(opt) {
   return operatorLog_(result);
 }
 
+// Public operator entry points. Apps Script treats a trailing underscore as
+// private, so the private operators above cannot be selected in the editor's
+// Run menu. These wrappers only delegate: no logic, no constants, no secret
+// handling. Fail-closed behaviour stays in the underlying functions, which
+// call readConfig_ themselves.
+function opProductionSchemaDryRun() {
+  return productionSchemaMigrationDryRun_();
+}
+
+function opProductionSchemaMigrate() {
+  return migrateProductionV7SchemaToLifecycleV2_();
+}
+
 // Guarded and idempotent. Empty-sheet bootstrap only. Live V7 uses migrateProductionV7SchemaToLifecycleV2_.
 function bootstrapProductionSchema_() {
   const resources = assertResources_(readConfig_());

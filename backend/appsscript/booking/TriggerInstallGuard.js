@@ -290,3 +290,14 @@ var __TRIGGER_INSTALL_GUARD_TEST_EXPORTS__ = Object.freeze({
   PRODUCTION_LIFECYCLE_TRIGGER_CADENCE_VERIFICATION: PRODUCTION_LIFECYCLE_TRIGGER_CADENCE_VERIFICATION,
   PRODUCTION_LIFECYCLE_TRIGGER_RUNTIME_CADENCE_INTROSPECTION: PRODUCTION_LIFECYCLE_TRIGGER_RUNTIME_CADENCE_INTROSPECTION,
 });
+
+// Public operator entry points. Delegation only, so the deterministic
+// installer/verifier above can be selected in the Apps Script editor's Run
+// menu; a trailing underscore makes a function private there.
+function opInstallLifecycleTriggers() {
+  return installProductionLifecycleTriggersDeterministic_();
+}
+
+function opVerifyLifecycleTriggers() {
+  return verifyProductionLifecycleTriggersDeterministic_();
+}
