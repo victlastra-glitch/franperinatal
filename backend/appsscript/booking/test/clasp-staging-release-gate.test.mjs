@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { cp, mkdtemp, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, mkdir, readdir, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,7 +54,15 @@ const walkRelative = async (root) => {
 let baseline;
 try {
   // 0. B1 evidence: the source directory is NOT safe to push from.
-  const sourceTree = await walkRelative(bookingDir);
+  // Read tracked paths from the git index rather than walking the live tree:
+  // lifecycle-email-v2.test.mjs regenerates test/fixtures/email-preview/ and
+  // node --test runs files in parallel, so a live walk of that directory can
+  // race with those writes. The index is stable and needs no exclusion, so
+  // fixture coverage below is preserved in full.
+  const sourceTree = execFileSync('git', ['ls-files', '--', 'backend/appsscript/booking'],
+    { cwd: repoRoot, encoding: 'utf8' })
+    .split('\n').filter(Boolean)
+    .map((rel) => path.relative('backend/appsscript/booking', rel));
   const pushableFromSource = sourceTree.filter((rel) => /\.(js|gs|html|ts)$/i.test(rel)
     || path.basename(rel) === 'appsscript.json');
   const leakedHtml = pushableFromSource.filter((rel) => /\.html$/i.test(rel));
@@ -167,22 +175,27 @@ try {
     'no clasp/OAuth credential file is tracked in Git');
   // Match real identifier SHAPES, not the word "scriptId": this very file
   // contains the literal as a mutation fixture, and a word scan would flag it.
+  // Scanned with `git grep --cached`, i.e. against COMMITTED content, which is
+  // exactly what "committed to Git" should mean and is race-free while
+  // lifecycle-email-v2.test.mjs regenerates its preview fixtures in parallel.
+  // Every tracked file, fixtures included, stays in scope.
   const idShapes = [
-    /AKfycb[A-Za-z0-9_-]{20,}/,                                        // deployment / web app id
-    /"scriptId"\s*:\s*"(?!REDACTED|PLACEHOLDER)[A-Za-z0-9_-]{25,}"/,   // real .clasp.json value
-    /script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{25,}/,             // deployed /exec url
+    'AKfycb[A-Za-z0-9_-]{20,}',                                      // deployment / web app id
+    '"scriptId"\\s*:\\s*"(?!REDACTED|PLACEHOLDER)[A-Za-z0-9_-]{25,}"', // real .clasp.json value
+    'script\\.google\\.com/macros/s/[A-Za-z0-9_-]{25,}',              // deployed /exec url
   ];
   const idHits = [];
-  for (const rel of tracked) {
-    let text;
+  for (const pattern of idShapes) {
     try {
-      text = await readFile(path.join(repoRoot, rel), 'utf8');
-    } catch {
-      continue; // binary or unreadable, nothing to leak textually
+      const hits = execFileSync('git', ['grep', '-P', '--cached', '-l', pattern, '--', '.'],
+        { cwd: repoRoot, encoding: 'utf8' }).split('\n').filter(Boolean);
+      idHits.push(...hits);
+    } catch (error) {
+      if (error.status !== 1) throw error; // 1 = no match, the passing case
     }
-    if (idShapes.some((pattern) => pattern.test(text))) idHits.push(rel);
   }
-  check(idHits.length === 0, `no Production script/deployment ID is committed to Git (${idHits.join(',')})`);
+  check(idHits.length === 0,
+    `no Production script/deployment ID is committed to Git (${[...new Set(idHits)].join(',')})`);
 
   // 11. The runbook must mandate the staged artifact and forbid a direct push.
   const runbook = execFileSync('cat', ['docs/production/PRODUCTION_RC_RUNBOOK.md'],
