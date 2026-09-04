@@ -489,7 +489,7 @@ function patientCancelTransaction_(input) {
     assertCancellationTransition_(record);
     assertTransition_('schedule_status', record.schedule_status, LIFECYCLE.SCHEDULE_STATUS.CANCELLED);
     const revoked = revokeCapability_(stored, new Date(now).toISOString());
-    const policy = deps.policyEvaluator ? deps.policyEvaluator(record) : { decision: 'BUSINESS_POLICY_TBD', eligible: false };
+    const policy = deps.policyEvaluator ? deps.policyEvaluator(record, now) : { decision: 'BUSINESS_POLICY_TBD', eligible: false };
     const refundEligible = Boolean(policy.eligible && record.payment_status === LIFECYCLE.PAYMENT_STATUS.PAID);
     const updates = atomicCancellationTransitionFields_(record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
       cancellation_source: 'patient', cancelled_at: new Date(now).toISOString(), last_operation_id: operationId,

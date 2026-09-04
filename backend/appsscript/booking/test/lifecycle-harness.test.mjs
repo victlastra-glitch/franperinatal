@@ -289,12 +289,17 @@ check(record().notification_patient_state === 'pending'
 
 // cancel + capacity release
 const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: cancelToken }) } });
-check(cancel.ok && record().booking_status === 'cancelled' && record().schedule_status === 'cancelled',
-  'patient cancel releases booking/schedule');
+// PATIENT_CANCEL_FULL_AUTOMATIC_REFUND: the booking holds at
+// cancellation_requested (CANCELLATION_PENDING_REFUND) until the provider
+// confirms, but the slot is released immediately either way.
+check(cancel.ok && record().booking_status === 'cancellation_requested'
+  && record().schedule_status === 'cancelled'
+  && context.ACTIVE_SLOT_STATES.indexOf(record().booking_status) === -1,
+  'patient cancel releases booking/schedule immediately');
 check(context.ACTIVE_SLOT_STATES.indexOf(record().booking_status) === -1, 'cancelled booking no longer consumes availability');
 check(record().payment_status === 'paid', 'cancel does not collapse payment paid');
-check(record().refund_status === 'manual_review' && cancel.refund === 'BUSINESS_POLICY_TBD',
-  'BUSINESS_POLICY_TBD cancel preserves payment and skips automatic refund');
+check(record().refund_status === 'refund_pending' && cancel.refund === 'requested',
+  'PATIENT_CANCEL_FULL_AUTOMATIC_REFUND preserves payment and requests the refund once');
 
 // retry/rotation path remains available for a fresh confirmation-style record
 const rotateCap = phase.createCapability_('CANCEL', { secret: capabilitySecret, now: Date.now() });

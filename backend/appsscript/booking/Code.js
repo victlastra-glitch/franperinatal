@@ -1404,7 +1404,7 @@ function patientCancel_(e) {
   const store = sheetReservationStore_(resources, schema); const record = store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, config.capabilityTokenSecret);
   if (!record) fail_('CAPABILITY_INVALID');
   return patientCancelTransaction_({ reservationId: record.reservation_id, token: token, now: Date.now(), deps: { store: store, calendar: resources.calendarGateway,
-    requireCapabilitySecret_: function() { return config.capabilityTokenSecret; }, policyEvaluator: activeRefundPolicy_,
+    requireCapabilitySecret_: function() { return config.capabilityTokenSecret; }, policyEvaluator: patientCancellationRefundPolicy_,
     enqueueRefund: function(updated) { beginRefundForPaidCancellation_(resources, schema, updated); },
     enqueueNotification: function(updated) {
       enqueueManualPolicyRefundNotification_(resources.sheet, schema, updated);
@@ -1507,9 +1507,43 @@ function refundConfirmation_(e) {
   } finally { lock.releaseLock(); }
 }
 
+// ---------------------------------------------------------------------------
+// Refund policy — single source of truth.
+//
+// A normal patient-initiated cancellation of an already-paid FUTURE session is
+// refunded in full, automatically, exactly once, against the original confirmed
+// payment transaction.
+//
+// Every other refund path is deliberately NOT covered by this policy and keeps
+// its prior BUSINESS_POLICY_TBD semantics: clinician cancellation reconciliation,
+// late-paid-after-hold-expiry system remediation, no-show, chargebacks, and
+// administrative refunds. Those evaluate through refundPolicy_/activeRefundPolicy_.
+// ---------------------------------------------------------------------------
+var CANONICAL_REFUND_POLICY = 'PATIENT_CANCEL_FULL_AUTOMATIC_REFUND';
+var PATIENT_CANCEL_REFUND_PERCENT = 100;
+
+/** The four conditions the canonical patient-cancellation refund depends on. */
+function patientCancelFullRefundEligible_(record, nowMs) {
+  if (!record) return false;
+  if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
+  const startMs = Date.parse(String(record.current_start_at || ''));
+  if (!Number.isFinite(startMs)) return false;
+  const now = Number.isFinite(nowMs) ? Number(nowMs) : Date.now();
+  return startMs > now;
+}
+
+/** Evaluator for patientCancel_ only. Capability and cancellability are already
+ *  enforced by patientCancelTransaction_ before this runs. */
+function patientCancellationRefundPolicy_(record, nowMs) {
+  if (patientCancelFullRefundEligible_(record, nowMs)) {
+    return { decision: CANONICAL_REFUND_POLICY, eligible: true, percent: PATIENT_CANCEL_REFUND_PERCENT };
+  }
+  return { decision: 'BUSINESS_POLICY_TBD', eligible: false, percent: 0 };
+}
+
 function refundPolicy_(record) {
   void record;
-  return { decision: 'BUSINESS_POLICY_TBD', eligible: false };
+  return { decision: 'BUSINESS_POLICY_TBD', eligible: false, percent: 0 };
 }
 
 function activeRefundPolicy_(record) {
@@ -2200,6 +2234,10 @@ var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   FLOW_PROVIDER_PAYMENT_STATUS: FLOW_PROVIDER_PAYMENT_STATUS,
   refundPolicy_: refundPolicy_,
   activeRefundPolicy_: activeRefundPolicy_,
+  patientCancellationRefundPolicy_: patientCancellationRefundPolicy_,
+  patientCancelFullRefundEligible_: patientCancelFullRefundEligible_,
+  CANONICAL_REFUND_POLICY: CANONICAL_REFUND_POLICY,
+  PATIENT_CANCEL_REFUND_PERCENT: PATIENT_CANCEL_REFUND_PERCENT,
   remediatePaidAfterHoldExpiry_: remediatePaidAfterHoldExpiry_,
   latePaidRefundAlreadyAttempted_: latePaidRefundAlreadyAttempted_,
 });

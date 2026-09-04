@@ -282,20 +282,28 @@ check(cancel.ok && rowFor(2).schedule_status === 'cancelled'
   && context.ACTIVE_SLOT_STATES.indexOf(rowFor(2).booking_status) === -1,
   'CANCEL_CAPACITY_RELEASE');
 check(rowFor(2).payment_status === 'paid', 'CANCEL_PAYMENT_HISTORY_PRESERVED');
-check(cancel.refund === 'BUSINESS_POLICY_TBD' && rowFor(2).refund_status === 'manual_review'
-  && refundCreateCalls === refundCreatesBeforeCancel,
-  'NORMAL_CANCEL_FLOW_REFUND_CALLS=0');
+check(cancel.refund === 'requested' && rowFor(2).refund_status === 'refund_pending'
+  && refundCreateCalls === refundCreatesBeforeCancel + 1,
+  'NORMAL_CANCEL_FLOW_REFUND_CALLS=1');
+check(context.CANONICAL_REFUND_POLICY === 'PATIENT_CANCEL_FULL_AUTOMATIC_REFUND'
+  && context.PATIENT_CANCEL_REFUND_PERCENT === 100,
+  'CANONICAL_REFUND_POLICY=PATIENT_CANCEL_FULL_AUTOMATIC_REFUND');
+// Clinician reconciliation and every other refund path keep BUSINESS_POLICY_TBD.
+check(context.activeRefundPolicy_({ payment_status: 'paid', booking_status: 'confirmed' }).eligible === false
+  && context.activeRefundPolicy_({ payment_status: 'paid', booking_status: 'confirmed' }).decision === 'BUSINESS_POLICY_TBD',
+  'NON_PATIENT_REFUND_PATHS_TBD_PRESERVED');
 drain();
-check(outboxRows.filter((row) => row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 1,
-  'MANUAL_REVIEW_NOTIFICATION_COUNT=1');
-check(outboxRows.filter((row) => row.event_type === 'SESSION_CANCELLED').length === 1
-  && mailed.filter((item) => item.subject === 'Tu sesión fue cancelada'
-    && !/(pago|cobro|valor|devoluci[oó]n|reembolso|\\$50\\.000|50000)/i.test(item.body + (item.htmlBody || ''))).length >= 1,
-  'SESSION_CANCELLED_ALLOWED with neutral refund copy');
+// The refund is provider-pending: nothing reaches the patient yet, and no
+// manual-review alert is raised because refund/create succeeded.
+check(outboxRows.filter((row) => row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 0,
+  'MANUAL_REVIEW_NOTIFICATION_COUNT=0 while the refund is healthy and pending');
+check(outboxRows.filter((row) => row.event_type === 'SESSION_CANCELLED').length === 0
+  && mailed.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'REFUND_PENDING_PATIENT_EMAIL_COUNT=0');
 check(outboxRows.filter((row) => row.event_type === 'PATIENT_CANCELLED').length === 0
   && mailed.filter((item) => /reembolso fue procesado|reembolso completado/i.test(
     item.subject + item.body + (item.htmlBody || ''))).length === 0,
-  'PATIENT_CANCELLED_EMAIL_COUNT_UNDER_TBD=0');
+  'NO_PATIENT_REFUND_EMAIL_BEFORE_PROVIDER_CONFIRMATION');
 
 const lateCreate = create(3, 'followup', '14:00');
 check(lateCreate.ok, 'late-paid fixture created');
@@ -339,10 +347,10 @@ console.log('DUPLICATE_CALENDAR_AFTER_RESCHEDULE=0');
 console.log('STALE_RESCHEDULE_REJECTED=PASS');
 console.log('CANCEL_CAPACITY_RELEASE=PASS');
 console.log('CANCEL_PAYMENT_HISTORY_PRESERVED=PASS');
-console.log('NORMAL_CANCEL_FLOW_REFUND_CALLS=0');
-console.log('MANUAL_REVIEW_NOTIFICATION_COUNT=1');
-console.log('SESSION_CANCELLED_ALLOWED=YES');
-console.log('PATIENT_CANCELLED_EMAIL_COUNT_UNDER_TBD=0');
+console.log('NORMAL_CANCEL_FLOW_REFUND_CALLS=1');
+console.log('CANONICAL_REFUND_POLICY=PATIENT_CANCEL_FULL_AUTOMATIC_REFUND');
+console.log('REFUND_PENDING_PATIENT_EMAIL_COUNT=0');
+console.log('NO_PATIENT_REFUND_EMAIL_BEFORE_PROVIDER_CONFIRMATION=PASS');
 console.log('LATE_PAID_NO_SLOT_RECLAIM=PASS');
 console.log('LATE_PAID_SYSTEM_REFUND_ATTEMPT_COUNT=1');
 console.log('LATE_PAID_REFUND_IDEMPOTENCY=PASS');
