@@ -24,7 +24,7 @@ authorize execution during the local RC mission.
 | Slot grid | `SLOT_INTERVAL_MINUTES=60` (hourly starts) |
 | Hold | `PRODUCTION_PAYMENT_SLOT_HOLD_MINUTES=15`; timeout/checkout_timeout ≤ 900; retry does not extend hold |
 | Schema | `SCHEMA_MIGRATION_STRATEGY=APPEND_ONLY_V7_COMPATIBILITY` |
-| Refund policy | `CANONICAL_REFUND_POLICY=BUSINESS_POLICY_TBD` for **normal** cancel |
+| Refund policy | Patient management policy V2 (deployed 2026-09-04): normal patient cancel `>=24h` before the current start → full automatic refund (`PATIENT_CANCEL_FULL_AUTOMATIC_REFUND`, `REFUND_CREATE_EFFECTIVE_MAX=1`); `<24h` → cancel allowed, no refund, zero refund calls. Clinician cancellation remains `BUSINESS_POLICY_TBD`. Contract: `docs/production/CANCELLATION_RESCHEDULE_POLICY_V2.md` |
 | Late PAID after hold expiry | system-consistency refund attempt **once**; never reclaim the slot; never confirm |
 | Patient cancel email | `SESSION_CANCELLED` (neutral copy). `PATIENT_CANCELLED` only after provider-confirmed refund |
 
