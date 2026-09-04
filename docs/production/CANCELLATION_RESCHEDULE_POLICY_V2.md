@@ -1,7 +1,10 @@
 # Cancellation & Reschedule Policy V2 — patient self-management
 
-Status: implemented on `feat/production-booking-lifecycle-v2-port`, **not deployed**.
-Baseline it builds on: `bf62852`.
+Status: **deployed to Production on 2026-09-04** from `7eaf034` — Apps Script immutable
+**v10** on the existing versioned Web App deployment (`AKfycbyfioG2bs…`, same `/exec`),
+Cloudflare Pages Production deployment `f1626b71…`. Previous immutable version **v9**
+and the baseline-binding Pages deployment `34bc77bd…` remain as rollback targets.
+Monetary E2E not yet run. Baseline it builds on: `bf62852`.
 
 ## The rule
 
@@ -333,6 +336,7 @@ Audited and closed before deployment:
 | 3 | Availability could list a slot inside the 120-minute lead time | **Fixed.** `availability_` now withholds them at source; see the lead-time section above. |
 | 4 | A patient may reschedule once into the `<24h` band | **Accepted by design**, plus accurate copy. Behaviour unchanged: `current_start_at` becomes authoritative, the one-move cap blocks a second move, and cancellation/refund follow the new schedule. The page now states the true reason ("ya usaste el cambio de horario disponible") instead of misattributing it to the cutoff. |
 | 5 | `docs/booking/` is gitignored | **Governance only.** The ignore rule is unchanged; this page is the tracked document of record and is self-contained. |
+| 6 | An anonymous `@HEAD` Web App deployment exists on the Production project (`AKfycbx36YM9SZ…`, access `ANYONE_ANONYMOUS`) | **Residual hardening item — not closed.** Production is bound to the versioned deployment and never to `@HEAD` (verified 2026-09-04: pushing Policy V2 to HEAD did not change Production until the versioned deployment was repointed). No safe deterministic closure exists today: the `@HEAD` entry is the implicit head deployment, which the Apps Script API/clasp do not delete, and `webapp.access` lives in the manifest, so restricting it would also restrict the canonical deployment. Recommended future action: keep HEAD free of anything not yet release-gated; revisit if Apps Script exposes per-deployment access control. |
 
 ## Out of scope, unchanged
 

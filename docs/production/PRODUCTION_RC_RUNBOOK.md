@@ -17,7 +17,7 @@ authorize execution during the local RC mission.
 | Full baseline | `baseline/production-v7-full-20260831` |
 | Historical Apps Script-only baseline | `baseline/production-v7-20260831` @ `a616c43` (immutable) |
 | Apps Script runtime | `backend/appsscript/booking/{Code,Lifecycle,EmailTemplates,CalendarGateway,Reconciliation,RefundGateway,TriggerInstallGuard}.js` + `appsscript.json` (7 JS files + `appsscript.json` = 8 deployable files) |
-| Rollback Apps Script | live version **7** (`docs/production/v7/Código.js`) |
+| Rollback Apps Script | the immediately previous **verified immutable** Production version (never a fixed number; for the Policy V2 release that is **v9**). `docs/production/v7/Código.js` is the historical v7 recovery baseline only. |
 | Rollback web | previous Cloudflare Pages Production deployment |
 | Prices | `INITIAL_PRICE_CLP=50000` / `FOLLOWUP_PRICE_CLP=50000` |
 | Session | `SESSION_DURATION_MINUTES=50` (clinical event) |
@@ -403,7 +403,7 @@ Until those live steps run: `READY_FOR_PRODUCTION_RELEASE=NO`.
 
 ## 7. Exact rollback
 
-1. Apps Script: point the existing Web App deployment back to **version 7**.
+1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it is **v9**). Never repoint to `@HEAD`.
 2. Pages: restore the previous Production deployment in Cloudflare (Deployments → previous Production → Rollback).
 3. Do not change Script Properties or Flow keys as rollback.
 4. Git: do not merge this RC to `main` during rollback.
