@@ -404,14 +404,35 @@ for (const [name, rendered] of Object.entries({
     name + ': cancelled carries no payment instructions');
   check(rendered.htmlBody.includes('>AGENDAR NUEVA SESIÓN</a>') && rendered.htmlBody.includes('href="https://franciscabustos.cl/reserva"'),
     name + ': cancelled primary is AGENDAR NUEVA SESIÓN');
-  check(rendered.htmlBody.includes('>CONTACTAR POR WHATSAPP</a>') && rendered.htmlBody.includes('href="https://wa.me/56957663038"'),
-    name + ': cancelled secondary is CONTACTAR POR WHATSAPP on the official contract');
+  // The standalone WhatsApp secondary is gone: the contact area right below
+  // already carries WhatsApp, and it competed with the single primary action.
+  check(!rendered.htmlBody.includes('CONTACTAR POR WHATSAPP') && !rendered.body.includes('Contactar por WhatsApp'),
+    name + ': no redundant CONTACTAR POR WHATSAPP secondary button');
+  check(!rendered.htmlBody.includes('class="v3-col"'), name + ': cancelled renders no secondary action row');
+  check(rendered.htmlBody.includes('¿Necesitas ayuda?') && rendered.htmlBody.includes('>WhatsApp<')
+    && rendered.htmlBody.includes('href="https://wa.me/56957663038"') && rendered.htmlBody.includes('>Email<')
+    && rendered.body.includes('WhatsApp: https://wa.me/56957663038')
+    && rendered.body.includes('Email: hola@franciscabustos.cl'),
+    name + ': the contact area still offers WhatsApp and Email');
   check(rendered.htmlBody.includes('Si necesitas apoyo o tienes dudas, puedes escribirnos. Estamos aquí para acompañarte cuando lo necesites.'),
     name + ': cancelled human message');
   check(rendered.body.includes('Agendar nueva sesión: https://franciscabustos.cl/reserva')
-    && rendered.body.includes('Contactar por WhatsApp: https://wa.me/56957663038')
     && rendered.body.includes('Fecha: jueves 3 de septiembre de 2026') && rendered.body.includes('Hora: 13:00 (Chile)'),
     name + ': cancelled text/plain is equivalent');
+
+  // Approved final order.
+  const humanCopy = 'Si necesitas apoyo o tienes dudas';
+  const order = ['La sesión agendada para el', '>Fecha</td>', '>Hora</td>'];
+  if (rendered.htmlBody.includes('>REEMBOLSO</td>')) order.push('>REEMBOLSO</td>');
+  order.push(humanCopy, '>AGENDAR NUEVA SESIÓN</a>', '¿Necesitas ayuda?', '>WhatsApp<');
+  let at = -1;
+  for (const needle of order) {
+    const index = rendered.htmlBody.indexOf(needle);
+    check(index > at, name + ': V3 cancellation order holds at "' + needle + '"');
+    at = index;
+  }
+  check(rendered.body.indexOf(humanCopy) < rendered.body.indexOf('Agendar nueva sesión: '),
+    name + ': text/plain puts the human copy before the primary action');
   check(!/reembolso de tu sesión fue procesado|Si corresponde un reembolso/i.test(rendered.htmlBody + rendered.body),
     name + ': the V2 cancellation refund copy is gone');
 }
@@ -449,7 +470,9 @@ for (const [name, rendered] of Object.entries({
     name + ': refund block has no icon and no financial-marketing emphasis');
   // The single final email carries no second refund CTA or follow-up promise.
   const primaries = (rendered.htmlBody.match(/background-color:#2F3236;border:1px solid #2F3236/g) || []).length;
-  check(primaries === 1, name + ': exactly one primary action, no separate refund CTA');
+  const buttons = (rendered.htmlBody.match(/min-height:48px/g) || []).length;
+  check(primaries === 1 && buttons === 1,
+    name + ': exactly one action button in the whole email, and it is the primary');
   check(!/ver reembolso|estado del reembolso|seguimiento del reembolso|te enviaremos|te contactaremos/i.test(
     rendered.htmlBody + rendered.body), name + ': promises no further refund email');
 }

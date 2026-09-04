@@ -498,10 +498,9 @@ function renderLifecycleEmailHtml_(input) {
         + emailV3Body_(escapeEmailText_(when), 16)
         + emailV3Details_(cancelledRows)
         + (refundConfirmed ? emailV3InfoBlock_('REEMBOLSO', EMAIL_V3_REFUND_COPY) : '')
-        + emailV3PrimaryRow_(emailV3BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN')
-        + emailV3SecondaryRow_([{ href: EMAIL_V3_BRAND.whatsappUrl, label: 'CONTACTAR POR WHATSAPP' }])
         + emailV3Body_('Si necesitas apoyo o tienes dudas, puedes escribirnos. '
           + 'Estamos aquí para acompañarte cuando lo necesites.', 32)
+        + emailV3PrimaryRow_(emailV3BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN')
         + emailV3Footer_(origin),
     });
   }
@@ -635,10 +634,9 @@ function renderLifecycleEmailText_(input) {
     if (emailV3RefundConfirmed_(notification.eventType, record)) {
       lines.push('', 'REEMBOLSO', EMAIL_V3_REFUND_COPY);
     }
-    lines.push('', 'Agendar nueva sesión: ' + emailV3BookingUrl_(origin));
-    lines.push('Contactar por WhatsApp: ' + EMAIL_V3_BRAND.whatsappUrl);
     lines.push('', 'Si necesitas apoyo o tienes dudas, puedes escribirnos. '
       + 'Estamos aquí para acompañarte cuando lo necesites.');
+    lines.push('', 'Agendar nueva sesión: ' + emailV3BookingUrl_(origin));
     return lines.concat(emailV3TextFooter_(origin)).join('\n');
   }
 

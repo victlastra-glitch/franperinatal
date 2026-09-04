@@ -30,6 +30,8 @@ backend/**/*.html
 !backend/appsscript/booking/TriggerInstallGuard.js
 !backend/appsscript/booking/test/
 !backend/appsscript/booking/test/**
+# ...but the test re-include must not drag macOS junk back in.
+backend/appsscript/booking/test/**/.DS_Store
 
 # NONPROD operators must never enter a Production release candidate.
 backend/appsscript/booking/TargetedFixture.js
