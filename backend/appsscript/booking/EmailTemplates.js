@@ -45,9 +45,9 @@ var EMAIL_V3_PREHEADER = Object.freeze({
   generic: 'Actualización operativa de tu reserva.',
 });
 
-// Approved human copy. Only rendered for a first session; there is no approved
-// follow-up variant yet, so a follow-up confirmation renders no substitute.
-var EMAIL_V3_FIRST_SESSION_COPY = 'No necesitas preparar nada para nuestra primera sesión. '
+// Approved universal human copy. Rendered on every confirmation, initial and
+// follow-up alike; it makes no claim about which session this is.
+var EMAIL_V3_SESSION_COPY = 'No necesitas preparar nada especial para la sesión. '
   + 'Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';
 
 function escapeEmailText_(value) {
@@ -260,26 +260,41 @@ function emailV3Details_(rows) {
     + '</table></td></tr>';
 }
 
-function emailV3Comparison_(oldValue, newValue) {
+/**
+ * Highlighted schedule block.
+ *
+ * ANTES is rendered only when the record can prove the immediately previous
+ * appointment time. That holds for a patient reschedule, which the state
+ * machine caps at one move, so original_start_at is the prior slot. It does not
+ * hold for a clinician change that follows a patient reschedule, so the
+ * clinician variant shows NUEVA FECHA alone rather than a misleading ANTES.
+ */
+function emailV3ScheduleHighlight_(previousValue, newValue) {
+  function label(text, color, top) {
+    return '<tr><td class="v3-ink' + (color === EMAIL_V3.charcoal ? '' : '3') + '" style="padding:' + top
+      + 'px 16px 0 16px;font-family:' + EMAIL_V3.sans
+      + ';font-size:10px;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase;color:'
+      + color + ';">' + text + '</td></tr>';
+  }
+  let inner = '';
+  if (previousValue) {
+    inner += label('ANTES', EMAIL_V3.textMuted, 16)
+      + '<tr><td class="v3-ink2" style="padding:4px 16px 0 16px;font-family:' + EMAIL_V3.sans
+      + ';font-size:14px;font-weight:500;line-height:1.5;color:' + EMAIL_V3.textSecondary + ';">'
+      + escapeEmailText_(previousValue) + '</td></tr>'
+      + '<tr><td style="padding:12px 16px 0 16px;font-family:' + EMAIL_V3.sans
+      + ';font-size:16px;line-height:1;color:' + EMAIL_V3.taupe + ';">&#8594;</td></tr>'
+      + label('NUEVA FECHA', EMAIL_V3.charcoal, 12);
+  } else {
+    inner += label('NUEVA FECHA', EMAIL_V3.charcoal, 16);
+  }
+  inner += '<tr><td class="v3-ink" style="padding:4px 16px 16px 16px;font-family:' + EMAIL_V3.sans
+    + ';font-size:16px;font-weight:600;line-height:1.5;color:' + EMAIL_V3.charcoal + ';">'
+    + escapeEmailText_(newValue) + '</td></tr>';
   return '<tr><td class="v3-pad" style="padding:24px 28px 0 28px;">'
     + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="' + EMAIL_V3.cream
     + '" style="width:100%;background-color:' + EMAIL_V3.cream + ';border:1px solid ' + EMAIL_V3.border
-    + ';border-radius:4px;">'
-    + '<tr><td class="v3-ink3" style="padding:16px 16px 0 16px;font-family:' + EMAIL_V3.sans
-    + ';font-size:10px;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase;color:'
-    + EMAIL_V3.textMuted + ';">ANTES</td></tr>'
-    + '<tr><td class="v3-ink2" style="padding:4px 16px 0 16px;font-family:' + EMAIL_V3.sans
-    + ';font-size:14px;font-weight:500;line-height:1.5;color:' + EMAIL_V3.textSecondary + ';">'
-    + escapeEmailText_(oldValue) + '</td></tr>'
-    + '<tr><td style="padding:12px 16px 0 16px;font-family:' + EMAIL_V3.sans
-    + ';font-size:16px;line-height:1;color:' + EMAIL_V3.taupe + ';">&#8594;</td></tr>'
-    + '<tr><td class="v3-ink" style="padding:12px 16px 0 16px;font-family:' + EMAIL_V3.sans
-    + ';font-size:10px;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase;color:'
-    + EMAIL_V3.charcoal + ';">NUEVA FECHA</td></tr>'
-    + '<tr><td class="v3-ink" style="padding:4px 16px 16px 16px;font-family:' + EMAIL_V3.sans
-    + ';font-size:16px;font-weight:600;line-height:1.5;color:' + EMAIL_V3.charcoal + ';">'
-    + escapeEmailText_(newValue) + '</td></tr>'
-    + '</table></td></tr>';
+    + ';border-radius:4px;">' + inner + '</table></td></tr>';
 }
 
 function emailV3Button_(href, label, primary) {
@@ -475,19 +490,20 @@ function renderLifecycleEmailHtml_(input) {
     } else if (kind === 'clinician_rescheduled') {
       eyebrow = 'HUBO UN CAMBIO EN TU PRÓXIMA SESIÓN';
       headline = 'Hubo un cambio en tu próxima sesión.';
-      lead = 'Actualicé el horario. Revisa la nueva fecha y, si no te sirve, cancela o escríbeme.';
+      lead = 'Actualicé el horario. Revisa a continuación la nueva fecha.';
       preheader = EMAIL_V3_PREHEADER.rescheduled;
       band = EMAIL_V3.cream;
     }
 
-    const comparison = (kind === 'rescheduled' || kind === 'clinician_rescheduled')
-      && previous.combined && parts.combined && record.original_start_at !== record.current_start_at
-      ? emailV3Comparison_(previous.date + ' · ' + previous.time, parts.date + ' · ' + parts.time)
-      : '';
+    let highlight = '';
+    if (kind === 'clinician_rescheduled' && parts.combined) {
+      highlight = emailV3ScheduleHighlight_('', parts.date + ' · ' + parts.time);
+    } else if (kind === 'rescheduled' && previous.combined && parts.combined
+      && record.original_start_at !== record.current_start_at) {
+      highlight = emailV3ScheduleHighlight_(previous.date + ' · ' + previous.time, parts.date + ' · ' + parts.time);
+    }
 
-    const humanCopy = kind === 'confirmed' && String(record.service_type || '') === 'initial'
-      ? emailV3Body_(EMAIL_V3_FIRST_SESSION_COPY, 32)
-      : '';
+    const humanCopy = kind === 'confirmed' ? emailV3Body_(EMAIL_V3_SESSION_COPY, 32) : '';
 
     return emailV3Document_({
       title: subject,
@@ -497,7 +513,7 @@ function renderLifecycleEmailHtml_(input) {
         + emailV3Headline_(headline)
         + emailV3Body_(escapeEmailText_(emailV3Greeting_(record)), 24, EMAIL_V3.charcoal)
         + emailV3Body_(escapeEmailText_(lead), 16)
-        + comparison
+        + highlight
         + emailV3Details_(emailV3SessionRows_(record, parts))
         + emailV3PrimaryRow_(meetUrl, 'ENTRAR A LA SESIÓN')
         + emailV3MeetFallback_(meetUrl)
@@ -600,10 +616,12 @@ function renderLifecycleEmailText_(input) {
       lines.push('TU SESIÓN FUE REAGENDADA', '', emailV3Greeting_(record), '', 'Te esperamos en tu nueva fecha.');
     } else {
       lines.push('HUBO UN CAMBIO EN TU PRÓXIMA SESIÓN', '', emailV3Greeting_(record), '',
-        'Actualicé el horario. Revisa la nueva fecha y, si no te sirve, cancela o escríbeme.');
+        'Actualicé el horario. Revisa a continuación la nueva fecha.');
     }
-    if ((kind === 'rescheduled' || kind === 'clinician_rescheduled')
-      && previous.combined && parts.combined && record.original_start_at !== record.current_start_at) {
+    if (kind === 'clinician_rescheduled' && parts.combined) {
+      lines.push('', 'NUEVA FECHA: ' + parts.date + ' · ' + parts.time);
+    } else if (kind === 'rescheduled' && previous.combined && parts.combined
+      && record.original_start_at !== record.current_start_at) {
       lines.push('', 'ANTES: ' + previous.date + ' · ' + previous.time);
       lines.push('NUEVA FECHA: ' + parts.date + ' · ' + parts.time);
     }
@@ -623,9 +641,7 @@ function renderLifecycleEmailText_(input) {
     actions.forEach(function(action) {
       lines.push((action.label === 'REAGENDAR SESIÓN' ? 'Reagendar: ' : 'Cancelar: ') + action.href);
     });
-    if (kind === 'confirmed' && String(record.service_type || '') === 'initial') {
-      lines.push('', EMAIL_V3_FIRST_SESSION_COPY);
-    }
+    if (kind === 'confirmed') lines.push('', EMAIL_V3_SESSION_COPY);
     return lines.concat(emailV3TextFooter_(origin)).join('\n');
   }
 
@@ -639,7 +655,7 @@ var __EMAIL_TEMPLATE_TEST_EXPORTS__ = Object.freeze({
   EMAIL_V3: EMAIL_V3,
   EMAIL_V3_BRAND: EMAIL_V3_BRAND,
   EMAIL_V3_PREHEADER: EMAIL_V3_PREHEADER,
-  EMAIL_V3_FIRST_SESSION_COPY: EMAIL_V3_FIRST_SESSION_COPY,
+  EMAIL_V3_SESSION_COPY: EMAIL_V3_SESSION_COPY,
   lifecycleEmailDateParts_: lifecycleEmailDateParts_,
   lifecycleNotificationSubject_: lifecycleNotificationSubject_,
   lifecycleEmailV3Kind_: lifecycleEmailV3Kind_,

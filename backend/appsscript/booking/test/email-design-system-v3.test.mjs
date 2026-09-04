@@ -66,6 +66,8 @@ const render = (eventType, record, tokens, meet) => context.renderLifecycleNotif
 });
 
 const confirmed = render('BOOKING_CONFIRMED', baseRecord, { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN });
+const confirmedFollowup = render('BOOKING_CONFIRMED', Object.assign({}, baseRecord, { service_type: 'followup' }),
+  { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN });
 const confirmedNoMeet = render('BOOKING_CONFIRMED', Object.assign({}, baseRecord, { modality: 'presencial' }),
   { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN }, null);
 const rescheduled = render('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN });
@@ -82,6 +84,7 @@ const internal = render('REFUND_FAILED_MANUAL_REVIEW', Object.assign({}, baseRec
 
 const patientStates = {
   BOOKING_CONFIRMED: confirmed,
+  BOOKING_CONFIRMED_FOLLOWUP: confirmedFollowup,
   BOOKING_CONFIRMED_NO_MEET: confirmedNoMeet,
   PATIENT_RESCHEDULED: rescheduled,
   CLINICIAN_RESCHEDULED: clinicianChange,
@@ -258,9 +261,18 @@ check(confirmed.htmlBody.includes('>REAGENDAR SESIÓN</a>') && confirmed.htmlBod
   'confirmed offers REAGENDAR SESIÓN');
 check(confirmed.htmlBody.includes('>CANCELAR SESIÓN</a>') && confirmed.htmlBody.includes('open=cancel'),
   'confirmed offers CANCELAR SESIÓN');
-check(confirmed.htmlBody.includes(context.__EMAIL_TEMPLATE_TEST_EXPORTS__.EMAIL_V3_FIRST_SESSION_COPY)
-  && confirmed.body.includes(context.__EMAIL_TEMPLATE_TEST_EXPORTS__.EMAIL_V3_FIRST_SESSION_COPY),
-  'confirmed carries the approved first-session copy in html and text');
+const UNIVERSAL_COPY = 'No necesitas preparar nada especial para la sesión. '
+  + 'Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';
+check(context.__EMAIL_TEMPLATE_TEST_EXPORTS__.EMAIL_V3_SESSION_COPY === UNIVERSAL_COPY,
+  'the approved human copy is the universal string');
+for (const [name, rendered] of Object.entries({
+  CONFIRMED_INITIAL: confirmed, CONFIRMED_FOLLOWUP: confirmedFollowup, CONFIRMED_NO_MEET: confirmedNoMeet,
+})) {
+  check(rendered.htmlBody.includes(UNIVERSAL_COPY) && rendered.body.includes(UNIVERSAL_COPY),
+    name + ': carries the universal approved human copy in html and text');
+  check(!/primera sesión/i.test(rendered.htmlBody + rendered.body),
+    name + ': the human copy makes no first-session claim');
+}
 check(!/Agregar al calendario|calendar\.google\.com\/calendar\/render/i.test(confirmed.htmlBody + confirmed.body),
   'confirmed no longer competes with an "Agregar al calendario" action');
 check(!/pagar|pendiente de pago|transferencia/i.test(confirmed.htmlBody + confirmed.body),
@@ -307,13 +319,40 @@ check(rescheduled.body.includes('ANTES: jueves 3 de septiembre de 2026 · 13:00'
   && rescheduled.body.includes('Cancelar: '),
   'rescheduled text/plain has both datetimes and only the cancel action');
 
-// CLINICIAN_RESCHEDULED keeps its distinct lifecycle semantics, V3 styling.
+// CLINICIAN_RESCHEDULED: NUEVA FECHA alone. original_start_at is not provably
+// the immediately previous slot once a patient reschedule has happened, so
+// rendering it as ANTES would be factually misleading.
 check(clinicianChange.subject === 'Hubo un cambio en tu próxima sesión', 'clinician reschedule keeps its subject contract');
-check(clinicianChange.htmlBody.includes('>ANTES<') && clinicianChange.htmlBody.includes('>NUEVA FECHA<'),
-  'clinician reschedule shows the same comparison');
+check(clinicianChange.htmlBody.includes('>HUBO UN CAMBIO EN TU PRÓXIMA SESIÓN<'), 'clinician reschedule eyebrow');
+check(clinicianChange.htmlBody.includes('>Hubo un cambio en tu próxima sesión.<'), 'clinician reschedule H1');
+check(clinicianChange.htmlBody.includes('Actualicé el horario. Revisa a continuación la nueva fecha.')
+  && clinicianChange.body.includes('Actualicé el horario. Revisa a continuación la nueva fecha.'),
+  'clinician reschedule lead');
+check(clinicianChange.htmlBody.includes('>NUEVA FECHA<')
+  && clinicianChange.htmlBody.includes('viernes 4 de septiembre de 2026 · 14:00'),
+  'clinician reschedule shows a single highlighted NUEVA FECHA block');
+check(!/ANTES/.test(clinicianChange.htmlBody) && !/ANTES/.test(clinicianChange.body),
+  'clinician reschedule renders no ANTES value');
+check(!clinicianChange.htmlBody.includes('&#8594;'), 'clinician reschedule has no comparison arrow');
+check(!/jueves 3 de septiembre de 2026/.test(clinicianChange.htmlBody + clinicianChange.body),
+  'clinician reschedule never surfaces original_start_at');
+check(clinicianChange.body.includes('NUEVA FECHA: viernes 4 de septiembre de 2026 · 14:00')
+  && !clinicianChange.body.includes('ANTES: '),
+  'clinician reschedule text/plain shows only the new date');
+for (const label of ['Fecha', 'Hora', 'Modalidad', 'Duración', 'Valor']) {
+  check(clinicianChange.htmlBody.includes('>' + label + '</td>'), 'clinician reschedule detail row ' + label);
+}
+check(clinicianChange.htmlBody.includes('>ENTRAR A LA SESIÓN</a>')
+  && clinicianChange.htmlBody.includes('>' + MEET_URL + '</a>'),
+  'clinician reschedule keeps the Meet primary and its visible fallback');
 check(!/REAGENDAR SESIÓN|open=reschedule/.test(clinicianChange.htmlBody + clinicianChange.body),
   'clinician reschedule offers no reschedule action');
 check(clinicianChange.htmlBody.includes('>CANCELAR SESIÓN</a>'), 'clinician reschedule keeps CANCELAR SESIÓN');
+
+// PATIENT_RESCHEDULED keeps the mandatory ANTES -> NUEVA FECHA comparison.
+check(rescheduled.htmlBody.includes('>ANTES<') && rescheduled.htmlBody.includes('>NUEVA FECHA<')
+  && rescheduled.body.includes('ANTES: ') && rescheduled.body.includes('NUEVA FECHA: '),
+  'patient reschedule keeps ANTES and NUEVA FECHA in html and text');
 
 // ---------------------------------------------------------------------------
 // CANCELLED (patient) — fail-closed
