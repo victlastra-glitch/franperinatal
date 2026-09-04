@@ -396,7 +396,105 @@ check(collideResult.ok === false && collideResult.code === 'SLOT_TAKEN',
   'a taken slot still reports SLOT_TAKEN, unchanged by the lead-time floor');
 
 // ===========================================================================
-// PART 5 — Policy V2 is not regressed
+// PART 5 — availability withholds slots inside the lead time
+//
+// availability_ returns the OCCUPIED slots and the client subtracts them, so
+// "withheld" means "reported occupied". The picker must never offer an hour the
+// mutation guards would refuse.
+// ===========================================================================
+const calendar = clean.context.__CALENDAR_TEST_EXPORTS__;
+const LEAD_MINUTES = phase.rescheduleTargetMinLeadMinutes_();
+const leadSlots = (baseMs) => [
+  { date: '2026-09-18', time: '10:00', start: new Date(baseMs).toISOString(), end: new Date(baseMs + 60 * MINUTE_MS).toISOString() },
+  { date: '2026-09-18', time: '11:00', start: new Date(baseMs + 60 * MINUTE_MS).toISOString(), end: new Date(baseMs + 120 * MINUTE_MS).toISOString() },
+];
+const occupiedAt = (nowMs, slots) => calendar.computeOccupiedSlots_({
+  workingSlots: slots, busyIntervals: [], reservations: [],
+  leadCutoffMs: nowMs + LEAD_MINUTES * MINUTE_MS,
+});
+
+const SLOT_AT = Date.parse('2026-09-18T14:00:00.000Z');
+const oneSlot = [leadSlots(SLOT_AT)[0]];
+// Exactly +120m is still eligible; one millisecond nearer is withheld.
+check(occupiedAt(SLOT_AT - LEAD_MINUTES * MINUTE_MS, oneSlot).length === 0,
+  'AVAILABILITY_120M: a slot exactly 120 minutes away is still offered');
+check(occupiedAt(SLOT_AT - LEAD_MINUTES * MINUTE_MS + 1, oneSlot).length === 1,
+  'AVAILABILITY_119M59S: one millisecond inside the lead time is withheld');
+check(occupiedAt(SLOT_AT - LEAD_MINUTES * MINUTE_MS + 1000, oneSlot).length === 1,
+  'AVAILABILITY_119M59S: a slot 119m59s away is withheld');
+check(occupiedAt(SLOT_AT + HOUR_MS, oneSlot).length === 1,
+  'a slot already in the past is withheld');
+check(occupiedAt(SLOT_AT - 3 * HOUR_MS, oneSlot).length === 0,
+  'a slot comfortably beyond the lead time is offered');
+// The filter is additive: without a cutoff nothing changes, and it never
+// un-occupies a slot that Calendar or the datastore already blocked.
+check(calendar.computeOccupiedSlots_({ workingSlots: oneSlot, busyIntervals: [], reservations: [] }).length === 0,
+  'omitting leadCutoffMs preserves the original behaviour exactly');
+[null, '', undefined, 'not-a-clock', NaN].forEach((value) => {
+  check(calendar.computeOccupiedSlots_({ workingSlots: oneSlot, busyIntervals: [], reservations: [], leadCutoffMs: value }).length === 0,
+    'an unusable leadCutoffMs withholds nothing rather than withholding everything (' + String(value) + ')');
+});
+const busyFar = [{ start: new Date(SLOT_AT).toISOString(), end: new Date(SLOT_AT + 30 * MINUTE_MS).toISOString() }];
+check(calendar.computeOccupiedSlots_({ workingSlots: oneSlot, busyIntervals: busyFar, reservations: [],
+  leadCutoffMs: SLOT_AT - 5 * HOUR_MS }).length === 1,
+  'SLOT_COLLISION_UNCHANGED: a Calendar-busy slot stays occupied outside the lead time');
+check(calendar.computeOccupiedSlots_({ workingSlots: leadSlots(SLOT_AT), busyIntervals: busyFar, reservations: [],
+  leadCutoffMs: SLOT_AT + 90 * MINUTE_MS }).length === 2,
+  'lead-time and collision reasons union without double-counting a slot');
+
+// End to end through the endpoint, on the server clock, with nothing busy.
+const availabilityHarness = buildHarness(null);
+// Friday 2026-09-18 is inside Chile DST (UTC-3), so 13:00Z is 10:00 local and
+// the +120m boundary lands exactly on the 12:00 working hour.
+const BOUNDARY_NOW = Date.parse('2026-09-18T13:00:00.000Z');
+availabilityHarness.setNow(BOUNDARY_NOW);
+const offered = () => {
+  const occupiedList = availabilityHarness.context.availability_({ parameter: { date: '2026-09-18' } });
+  const taken = new Set(occupiedList.map((slot) => slot.time));
+  return ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']
+    .filter((time) => !taken.has(time));
+};
+const atBoundary = offered();
+check(!atBoundary.includes('10:00') && !atBoundary.includes('11:00'),
+  'AVAILABILITY_LEAD_FILTER: the endpoint withholds every hour inside the lead time');
+check(atBoundary.includes('12:00') && atBoundary[0] === '12:00',
+  'AVAILABILITY_120M: the hour exactly 120 minutes away is the first one offered');
+availabilityHarness.setNow(BOUNDARY_NOW + 1);
+check(!offered().includes('12:00'),
+  'AVAILABILITY_119M59S: one millisecond later the boundary hour is withheld too');
+availabilityHarness.setNow(BOUNDARY_NOW - 1);
+check(offered().includes('12:00'),
+  'AVAILABILITY_LEAD_FILTER: and one millisecond earlier it is still offered');
+availabilityHarness.setNow(BOUNDARY_NOW);
+
+// A withheld slot is not made authoritative by the browser: booking it and
+// rescheduling into it are both still refused by the server.
+availabilityHarness.setNow(Date.parse('2026-09-18T13:00:00.000Z'));
+const bookTooSoon = () => availabilityHarness.context.createFlowPayment_({
+  postData: { contents: JSON.stringify({
+    action: 'create_flow_payment', idempotencyKey: 'fran-booking-cccccc01-e89b-12d3-a456-426614174000',
+    serviceType: 'initial', modality: 'online', date: '2026-09-18', time: '10:00',
+    name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+  }) },
+});
+assert.throws(bookTooSoon, /REQUEST_REJECTED/);
+assertions += 1;
+check(availabilityHarness.currentRows().length === 0,
+  'BROWSER_CANNOT_MAKE_A_WITHHELD_SLOT_AUTHORITATIVE: the refused booking persisted no row');
+// The 12:00 boundary hour the picker DID offer is genuinely bookable, so the
+// filter withholds only what the mutation guard would refuse — no more.
+const bookBoundary = availabilityHarness.context.createFlowPayment_({
+  postData: { contents: JSON.stringify({
+    action: 'create_flow_payment', idempotencyKey: 'fran-booking-cccccc02-e89b-12d3-a456-426614174000',
+    serviceType: 'initial', modality: 'online', date: '2026-09-18', time: '12:00',
+    name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+  }) },
+});
+check(bookBoundary.ok === true && availabilityHarness.currentRows().length === 1,
+  'the offered boundary hour is actually bookable: the filter is exact, not conservative');
+
+// ===========================================================================
+// PART 6 — Policy V2 is not regressed
 // ===========================================================================
 const policyProbe = (startMs, nowMs) => clean.context.getBookingManagementPolicy_(scheduled(startMs), nowMs);
 const PV2 = Date.parse('2026-09-25T18:00:00.000Z');
@@ -413,7 +511,7 @@ check(policyProbe(PV2, PV2).can_cancel === false && policyProbe(PV2, PV2).can_re
 check(phase.PATIENT_MANAGEMENT_CUTOFF_HOURS === 24, 'POLICY_V2 preserved: the cutoff is still 24 hours');
 
 // ===========================================================================
-// PART 6 — mutation / adversarial testing
+// PART 7 — mutation / adversarial testing
 // ===========================================================================
 function probes(h) {
   const results = [];
@@ -506,6 +604,13 @@ function probes(h) {
   // The session is 10 days out, so the 24-hour policy is OPEN and only the
   // lead-time floor can refuse this target. Without that isolation the probe
   // would be satisfied by the cutoff guard and could not see the floor at all.
+  probe('availability_withholds_inside_lead', () => {
+    // Friday 2026-09-18, 13:00Z = 10:00 Chile (UTC-3); +120m lands on 12:00.
+    h.setNow(Date.parse('2026-09-18T13:00:00.000Z'));
+    const taken = new Set(h.context.availability_({ parameter: { date: '2026-09-18' } }).map((s) => s.time));
+    // Withheld inside the lead time, offered exactly at the boundary.
+    return taken.has('10:00') && taken.has('11:00') && !taken.has('12:00');
+  });
   probe('target_endpoint_ignores_client_claims', () => {
     const b = h.paidBooking(66, '2026-09-25', '15:00', 10 * DAY_MS + 5 * HOUR_MS);
     const at = Date.parse('2026-09-15T13:30:00.000Z');
@@ -583,6 +688,17 @@ const MUTATIONS = [
       'Lifecycle.js': [['if (targetStartMs < now + rescheduleTargetMinLeadMs_()) {', 'if (false) {']],
     },
     mustFail: ['target_lead_floor_server_side', 'target_endpoint_ignores_client_claims'],
+  },
+  {
+    key: 'MUTATION_AVAILABILITY_LEAD_FILTER',
+    label: 'G. stop withholding slots inside the booking lead time from availability',
+    patches: {
+      'CalendarGateway.js': [[
+        "const insideLead = leadCutoffMs !== null && Date.parse(slot.start) < leadCutoffMs;",
+        'const insideLead = false;',
+      ]],
+    },
+    mustFail: ['availability_withholds_inside_lead'],
   },
   {
     key: 'MUTATION_TARGET_CLIENT_AUTHORITY',

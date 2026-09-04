@@ -265,18 +265,34 @@ function localDateLabel_(value) {
   return String(parts.year) + '-' + String(parts.month).padStart(2, '0') + '-' + String(parts.day).padStart(2, '0');
 }
 
+/**
+ * The slots a client must not offer.
+ *
+ * `leadCutoffMs` is optional and, when supplied, reports a slot starting before
+ * it as occupied. A slot inside the canonical booking lead time is not bookable,
+ * so it is withheld here rather than offered and then refused on submit. The
+ * comparison is deliberately the same one assertBookableSlot_ applies, so the
+ * picker and the mutation guards agree at the millisecond: a slot exactly
+ * BOOKING_LEAD_MINUTES away stays eligible, one millisecond nearer does not.
+ *
+ * Omitting it preserves the original behaviour for every other caller.
+ */
 function computeOccupiedSlots_(input) {
   const busy = Array.isArray(input && input.busyIntervals) ? input.busyIntervals : [];
   const reservations = Array.isArray(input && input.reservations) ? input.reservations : [];
   const slots = Array.isArray(input && input.workingSlots) ? input.workingSlots : [];
+  const leadCutoff = input && input.leadCutoffMs;
+  const leadCutoffMs = Number.isFinite(Number(leadCutoff)) && leadCutoff !== null && leadCutoff !== ''
+    ? Number(leadCutoff) : null;
   const occupied = {};
   slots.forEach(function(slot) {
+    const insideLead = leadCutoffMs !== null && Date.parse(slot.start) < leadCutoffMs;
     const calendarBusy = busy.some(function(interval) { return intervalOverlap_(slot.start, slot.end, interval.start, interval.end); });
     const internalBusy = reservations.some(function(record) {
       return reservationOccupiesSlot_(record) && record.current_start_at && record.current_end_at
         && intervalOverlap_(slot.start, slot.end, record.current_start_at, record.current_end_at);
     });
-    if (calendarBusy || internalBusy) occupied[slot.date + 'T' + slot.time] = { date: slot.date, time: slot.time };
+    if (insideLead || calendarBusy || internalBusy) occupied[slot.date + 'T' + slot.time] = { date: slot.date, time: slot.time };
   });
   return Object.keys(occupied).sort().map(function(key) { return occupied[key]; });
 }

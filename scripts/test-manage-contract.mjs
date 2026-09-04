@@ -45,6 +45,14 @@ const COPY = [
 ];
 COPY.forEach((text) => check(() => assert.ok(script.includes(text), 'missing approved copy: ' + text)));
 
+// A reservation that already moved once is told the TRUE reason — the one-move
+// cap — and never has it misattributed to the 24-hour cutoff. The note order
+// puts the rescheduled case ahead of the cutoff case for exactly that reason.
+check(() => assert.match(script, /rescheduleUsed: 'Ya usaste el cambio de horario disponible para esta sesión\./));
+check(() => assert.ok(
+  script.indexOf("reserva.status === 'rescheduled'") < script.indexOf("reserva.managementWindow === 'cancel_only' && reserva.status === 'active'"),
+  'the rescheduled note must be evaluated before the 24-hour cutoff note'));
+
 // Non-alarmist, non-punitive: the page never threatens or blames.
 check(() => assert.doesNotMatch(script, /multa|penalizaci[oó]n|castigo|no tienes derecho|perder[aá]s/i));
 

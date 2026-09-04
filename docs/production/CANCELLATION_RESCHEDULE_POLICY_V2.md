@@ -159,7 +159,31 @@ schedule-derived `expiresAt`; falling back to that fixed TTL is the defect this
 design exists to prevent, which is why a mutation restoring it must fail the
 suite.
 
-## Reschedule target lead time
+## Booking lead time — 120 minutes, one constant, three surfaces
+
+```
+bookable  iff  slot_start >= server_now + BOOKING_LEAD_MINUTES (120)
+```
+
+The same canonical constant and the same comparison govern all three places a
+slot can be chosen, so they cannot disagree:
+
+| surface | behaviour |
+| --- | --- |
+| `assertBookableSlot_` (new booking) | refuses a too-soon slot |
+| `patientRescheduleTransaction_` (target) | refuses with `TARGET_LEAD_TIME_TOO_SHORT` |
+| `availability_` (both pickers) | reports a too-soon slot as occupied, so it is never offered |
+
+`availability_` returns the **occupied** slots and the client subtracts them, so
+withholding a slot means reporting it occupied. Passing `leadCutoffMs` into
+`computeOccupiedSlots_` is what does it; the parameter is optional, so every
+other caller keeps its original behaviour. The filter is exact rather than
+conservative: the hour exactly 120 minutes away is still offered *and* is
+genuinely bookable, and one millisecond nearer is withheld. The picker's own
+browser-time filter remains as defence in depth — it can only narrow further,
+never widen.
+
+### Reschedule target
 
 ```
 target_start_at >= server_now + BOOKING_LEAD_MINUTES (120)
@@ -187,10 +211,12 @@ refund_status=refund_requested   -> refund/create ×1 -> refund_pending
                                  -> booking_status=cancelled + ONE final email
 ```
 
-`REFUND_CREATE_EFFECTIVE_MAX=1`. Amount is the full `consultationAmountClp_`
-against the original confirmed transaction. No patient email claims a refund
-before the provider confirms; a refund failure parks the reservation for manual
-review and still claims nothing.
+`REFUND_CREATE_EFFECTIVE_MAX=1` and `FINAL_PATIENT_CANCELLATION_EMAIL_MAX=1`.
+Amount is the full `consultationAmountClp_` against the original confirmed
+transaction. No patient email claims a refund before the provider confirms; a
+refund failure parks the reservation for manual review and still claims nothing.
+A replayed cancellation, a double click and a replayed provider callback each
+add neither a refund nor a second email.
 
 ### `< 24h` cancellation
 
@@ -278,6 +304,16 @@ cutoffHours      : 24
 state name is exposed. The Worker clamps an unrecognised window to `closed`, so a
 degraded upstream response cannot render an action the server did not authorize.
 
+The explanatory note on the page must name the **true** reason an action is
+missing, so it is evaluated most-restrictive-first:
+
+1. window `closed` — the session no longer accepts online changes
+2. status `rescheduled` — the one-move cap is spent; this is the binding reason
+   in *any* window, so attributing it to the 24-hour cutoff would be false
+3. window `cancel_only` — here the cutoff genuinely is the reason
+
+A cancelled reservation carries no note; its own state says it.
+
 New rejection codes, all mapped to non-alarmist copy in `manage.html`:
 
 ```
@@ -285,6 +321,18 @@ RESCHEDULE_WINDOW_CLOSED   — reschedule requested inside the cutoff, or past s
 MANAGEMENT_WINDOW_CLOSED   — cancel requested on a started/past or undeterminable session
 TARGET_LEAD_TIME_TOO_SHORT — reschedule target inside the 120-minute lead time
 ```
+
+## Residual decisions at deploy-readiness
+
+Audited and closed before deployment:
+
+| # | residual | decision |
+| --- | --- | --- |
+| 1 | A management capability can live up to the 90-day booking horizon | **Accepted by design.** Shortening it reintroduces the reachability defect. Mitigated by: one reservation, one purpose, an opaque 96-hex-character bearer (three UUIDv4s, ~366 bits of entropy), HMAC-at-rest with constant-time compare, rotation on every lifecycle send retiring the previous bearer, revocation on use for reschedule, a hard clamp to the booking horizon, and every action re-authorized by policy under the lock. No PII in the response. |
+| 2 | Capability may stay valid one slot interval past the session start | **Accepted by design.** Read-only only: `/manage` resolves so the patient sees a neutral closed state instead of a broken link, while reschedule, cancel and refund are all refused as policy decisions. |
+| 3 | Availability could list a slot inside the 120-minute lead time | **Fixed.** `availability_` now withholds them at source; see the lead-time section above. |
+| 4 | A patient may reschedule once into the `<24h` band | **Accepted by design**, plus accurate copy. Behaviour unchanged: `current_start_at` becomes authoritative, the one-move cap blocks a second move, and cancellation/refund follow the new schedule. The page now states the true reason ("ya usaste el cambio de horario disponible") instead of misattributing it to the cutoff. |
+| 5 | `docs/booking/` is gitignored | **Governance only.** The ignore rule is unchanged; this page is the tracked document of record and is self-contained. |
 
 ## Out of scope, unchanged
 
@@ -317,8 +365,10 @@ valid at the policy boundary for bookings 7 and 30 days out, the
 token-validity-vs-authorization separation at 23h59m, re-scoping on both patient
 and clinician reschedules, the refusal to resurrect a dead bearer, the bounded
 ceiling, the fail-closed reads of both canonical constants, and the 120-minute
-target floor to the millisecond through both the transaction and the endpoint.
-Six further mutations must each be detected.
+target floor to the millisecond through both the transaction and the endpoint,
+and the availability lead filter at the boundary — including that a withheld
+slot cannot be booked while an offered boundary slot can.
+Seven further mutations must each be detected.
 
 Both suites share one VM harness, `test/helpers/policy-harness.mjs`, so the
 fake gateways and the mutation machinery cannot drift between them.

@@ -748,6 +748,7 @@
     cancelRefundable: 'Puedes cancelar esta sesión y recibir el reembolso completo al mismo medio de pago utilizado.',
     cancelNonRefundable: 'Esta sesión comienza en menos de 24 horas. Puedes cancelarla para informarnos que no asistirás, pero de acuerdo con la política de cancelación no corresponde reembolso.',
     targetTooSoon: 'Ese horario es demasiado próximo. Elige una hora con al menos 2 horas de anticipación.',
+    rescheduleUsed: 'Ya usaste el cambio de horario disponible para esta sesión. Si necesitas otro ajuste, escríbeme y lo vemos.',
     closed: 'Esta sesión ya no admite cambios en línea. Si necesitas ayuda, escríbeme directamente.',
     cancelledRefundPending: 'Tu sesión fue cancelada y el horario quedó disponible. El reembolso está en proceso. Te enviaremos un correo cuando el reembolso sea confirmado.',
     cancelledNonRefundable: 'Recibimos tu aviso: la sesión fue cancelada y el horario quedó disponible. Como la cancelación ocurrió con menos de 24 horas de anticipación, no corresponde reembolso.',
@@ -853,17 +854,22 @@
     document.getElementById('btn-cancel').style.display = showCancel ? '' : 'none';
     document.getElementById('btn-reschedule').style.display = showReschedule ? '' : 'none';
 
-    // La nota explica por qué falta una acción. Sólo se ofrece la explicación de
-    // corte a una reserva que de otro modo podría reagendar: en una ya reagendada
-    // el motivo es el tope de un movimiento, no el corte de 24 horas, y decir lo
-    // contrario sería una explicación falsa. Una reserva ya cancelada habla por
-    // su propio estado.
+    // La nota explica por qué falta una acción, y debe nombrar el motivo REAL.
+    // Orden deliberado, de más restrictivo a menos:
+    //   1. sesión cerrada  -> ya no admite cambios en línea
+    //   2. ya reagendada    -> el motivo vinculante es el tope de un movimiento,
+    //      no el corte de 24 h, en cualquier ventana; atribuirlo al corte sería
+    //      una explicación falsa
+    //   3. dentro del corte -> ahí sí el motivo es el corte de 24 h
+    // Una reserva ya cancelada habla por su propio estado y no lleva nota.
     var note = document.getElementById('det-policy-note');
     var noteText = '';
-    if (reserva.managementWindow === 'cancel_only' && reserva.status === 'active') {
-      noteText = POLICY_COPY.rescheduleClosed;
-    } else if (reserva.managementWindow === 'closed' && reserva.status !== 'cancelled') {
+    if (reserva.managementWindow === 'closed' && reserva.status !== 'cancelled') {
       noteText = POLICY_COPY.closed;
+    } else if (reserva.status === 'rescheduled') {
+      noteText = POLICY_COPY.rescheduleUsed;
+    } else if (reserva.managementWindow === 'cancel_only' && reserva.status === 'active') {
+      noteText = POLICY_COPY.rescheduleClosed;
     }
     note.textContent = noteText;
     note.hidden = !noteText;

@@ -643,6 +643,10 @@ function availability_(e) {
     workingSlots: workingSlots_(bounds.start, bounds.end, requestedDate),
     busyIntervals: busyIntervals,
     reservations: reservationRecords_(resources.sheet, schema),
+    // Server time, canonical constant, same comparison as assertBookableSlot_.
+    // A slot inside the lead time is withheld here as well as refused on
+    // submit, so the picker never offers an hour the server would reject.
+    leadCutoffMs: Date.now() + (BOOKING_LEAD_MINUTES * 60 * 1000),
   });
   return occupied.map(function(slot) { return { date: slot.date, time: slot.time }; });
 }
