@@ -255,8 +255,13 @@ check(garbage.outcome.code === 'CALENDAR_BAD_INTERVAL' && garbage.notifications 
   'unparseable datastore interval fails closed without a clinician notification');
 
 const patientCap = phase.createCapability_('RESCHEDULE', { secret, now: Date.parse('2026-09-03T12:00:00Z'), expiresAt: '2026-09-04T12:00:00Z' });
+// The pre-reschedule session sits well outside the 24-hour management cutoff
+// relative to the transaction clock below, so this fixture keeps exercising
+// metadata-vs-genuine reconciliation rather than the policy window. The
+// transaction overwrites current_start_at/current_end_at with the moved event.
 let patientRecord = persistConfirmed(linkedEvent({ conferenceData: availableMeet }), {
   ...phase.capabilityFields_(phase.capabilityForStorage_(patientCap)),
+  current_start_at: '2026-09-05T19:00:00.000Z', current_end_at: '2026-09-05T20:00:00.000Z',
 });
 const patientMovedEvent = linkedEvent({
   etag: 'etag-patient', updated: '2026-09-03T16:30:00.000Z', conferenceData: availableMeet,

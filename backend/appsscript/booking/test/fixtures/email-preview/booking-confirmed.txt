@@ -18,6 +18,8 @@ Entrar a la sesión: https://meet.google.com/opaque-meet
 Reagendar: https://franciscabustos.cl/manage.html?token=rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr&open=reschedule
 Cancelar: https://franciscabustos.cl/manage.html?token=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&open=cancel
 
+Puedes reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.
+
 No necesitas preparar nada especial para la sesión. Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.
 
 ¿Necesitas ayuda?

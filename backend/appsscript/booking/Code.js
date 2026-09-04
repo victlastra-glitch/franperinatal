@@ -1352,7 +1352,7 @@ function manageLookup_(e) {
   const found = cancel || store.loadByCapability(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, config.capabilityTokenSecret);
   const capabilityType = cancel ? LIFECYCLE.CAPABILITY_TYPE.CANCEL : (found ? LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE : '');
   if (!found || !managementTokenValidForRecord_(token, found, config.capabilityTokenSecret)) fail_('CAPABILITY_INVALID');
-  return publicManagementRecord_(found, capabilityType);
+  return publicManagementRecord_(found, capabilityType, Date.now());
 }
 
 function isLegacyV7ManageToken_(token) {
@@ -1375,11 +1375,25 @@ function managementTokenValidForRecord_(token, record, secret) {
     || verifyCapability_(token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, capabilityFromRecord_(record, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE), { secret: secret });
 }
 
-function publicManagementRecord_(record, capabilityType) {
+/**
+ * The /manage contract. Capabilities are SERVER-DERIVED from the canonical
+ * policy on every lookup; the page renders them and never computes a cutoff.
+ * `managementWindow` is a deliberately public vocabulary (open / cancel_only /
+ * closed) so no internal lifecycle state name is exposed.
+ */
+function publicManagementRecord_(record, capabilityType, nowMs) {
+  const policy = getBookingManagementPolicy_(record, nowMs);
   return { ok: true, status: publicManagementStatus_(record), date: String(record.current_start_at).slice(0, 10),
     time: String(record.current_start_at).slice(11, 16), serviceType: record.service_type, modality: record.modality,
     originalStart: record.original_start_at, currentStart: record.current_start_at, currentEnd: record.current_end_at,
-    meetUrl: record.meet_url || '', capabilityType: capabilityType || '' };
+    meetUrl: record.meet_url || '', capabilityType: capabilityType || '',
+    managementWindow: policy.window,
+    canReschedule: Boolean(policy.can_reschedule && lifecycleRecordReadyForReschedule_(record)),
+    canCancel: Boolean(policy.can_cancel),
+    refundEligible: Boolean(policy.refund_eligible),
+    refundPercent: policy.refund_percent,
+    cutoffAt: policy.cutoff_at,
+    cutoffHours: policy.cutoff_hours };
 }
 
 function publicManagementStatus_(record) {
@@ -1412,7 +1426,36 @@ function patientCancel_(e) {
     } } });
 }
 
+/**
+ * Refund states that descend from an authorized cancellation refund.
+ *
+ * patientCancelTransaction_ can only ever move refund_status from NOT_REQUIRED
+ * to REQUESTED (classified refundable) or leave it NOT_REQUIRED / MANUAL_REVIEW
+ * (classified NOT refundable). PENDING, REFUNDED and FAILED are reachable only
+ * downstream of REQUESTED, so they are re-entry, not authorization drift, and
+ * refundCreateOnce_ supplies the once-only semantics for them.
+ */
+var PATIENT_CANCELLATION_REFUND_AUTHORIZED_STATES = Object.freeze([
+  LIFECYCLE.REFUND_STATUS.REQUESTED,
+  LIFECYCLE.REFUND_STATUS.PENDING,
+  LIFECYCLE.REFUND_STATUS.REFUNDED,
+  LIFECYCLE.REFUND_STATUS.FAILED,
+]);
+
+function patientCancellationRefundAuthorized_(record) {
+  return PATIENT_CANCELLATION_REFUND_AUTHORIZED_STATES
+    .indexOf(String(record && record.refund_status || '')) !== -1;
+}
+
 function beginRefundForPaidCancellation_(resources, schema, record) {
+  // The durable authorization gate. A cancellation the canonical 24-hour policy
+  // classified as non-refundable persists refund NOT_REQUIRED, so this refuses
+  // before any Flow call — and a replay, callback or reconciliation pass cannot
+  // reclassify it, because the refusal reads persisted state rather than
+  // recomputing a window or trusting the caller.
+  if (!patientCancellationRefundAuthorized_(record)) {
+    return { ok: false, code: 'REFUND_NOT_AUTHORIZED' };
+  }
   return createProviderRefundOnce_(resources, schema, record, 'user_cancellation');
 }
 
@@ -1510,9 +1553,15 @@ function refundConfirmation_(e) {
 // ---------------------------------------------------------------------------
 // Refund policy — single source of truth.
 //
-// A normal patient-initiated cancellation of an already-paid FUTURE session is
-// refunded in full, automatically, exactly once, against the original confirmed
-// payment transaction.
+// A normal patient-initiated cancellation of an already-paid session is refunded
+// in full, automatically, exactly once, against the original confirmed payment
+// transaction — provided at least PATIENT_MANAGEMENT_CUTOFF_HOURS (24) remain
+// before the CURRENT persisted session start. Inside that cutoff the patient may
+// still cancel to tell us they will not attend, but no refund corresponds and
+// zero Flow refund calls are made.
+//
+// The window itself is owned by getBookingManagementPolicy_ (Lifecycle.js).
+// Nothing in this file re-derives it.
 //
 // Every other refund path is deliberately NOT covered by this policy and keeps
 // its prior BUSINESS_POLICY_TBD semantics: clinician cancellation reconciliation,
@@ -1522,23 +1571,27 @@ function refundConfirmation_(e) {
 var CANONICAL_REFUND_POLICY = 'PATIENT_CANCEL_FULL_AUTOMATIC_REFUND';
 var PATIENT_CANCEL_REFUND_PERCENT = 100;
 
-/** The four conditions the canonical patient-cancellation refund depends on. */
+/**
+ * Refund eligibility is NOT decided here. It is read from the single canonical
+ * authority, getBookingManagementPolicy_ in Lifecycle.js, so the 24-hour rule
+ * exists in exactly one place in the codebase.
+ */
 function patientCancelFullRefundEligible_(record, nowMs) {
-  if (!record) return false;
-  if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
-  const startMs = Date.parse(String(record.current_start_at || ''));
-  if (!Number.isFinite(startMs)) return false;
-  const now = Number.isFinite(nowMs) ? Number(nowMs) : Date.now();
-  return startMs > now;
+  return getBookingManagementPolicy_(record, nowMs).refund_eligible;
 }
 
 /** Evaluator for patientCancel_ only. Capability and cancellability are already
- *  enforced by patientCancelTransaction_ before this runs. */
+ *  enforced by patientCancelTransaction_ before this runs, which also re-ANDs
+ *  the canonical policy over whatever this returns. */
 function patientCancellationRefundPolicy_(record, nowMs) {
-  if (patientCancelFullRefundEligible_(record, nowMs)) {
-    return { decision: CANONICAL_REFUND_POLICY, eligible: true, percent: PATIENT_CANCEL_REFUND_PERCENT };
+  const policy = getBookingManagementPolicy_(record, nowMs);
+  if (policy.refund_eligible) {
+    return { decision: CANONICAL_REFUND_POLICY, eligible: true, percent: policy.refund_percent, window: policy.window };
   }
-  return { decision: 'BUSINESS_POLICY_TBD', eligible: false, percent: 0 };
+  if (policy.window === MANAGEMENT_WINDOW.CANCEL_ONLY) {
+    return { decision: PATIENT_CANCEL_LATE_NON_REFUNDABLE, eligible: false, percent: 0, window: policy.window };
+  }
+  return { decision: 'BUSINESS_POLICY_TBD', eligible: false, percent: 0, window: policy.window };
 }
 
 function refundPolicy_(record) {
@@ -1634,8 +1687,28 @@ function enqueuePatientCancellationNotificationOnce_(sheet, schema, record, even
   return enqueueLifecycleNotification_(sheet, schema, record, eventType, null, store);
 }
 
+/**
+ * When the economically-silent patient cancellation confirmation is owed.
+ *
+ * A refundable cancellation is NOT covered here: it stays in
+ * cancellation_requested until the provider confirms, and the final
+ * PATIENT_CANCELLED variant is the one that speaks. This variant covers the
+ * cancellations that are already terminal at cancellation time:
+ *
+ *  - refund NOT_REQUIRED  — decided non-refundable inside the 24-hour cutoff
+ *  - refund MANUAL_REVIEW — out of policy, parked for a human
+ */
+function patientCancellationConfirmationNeeded_(record) {
+  if (!record) return false;
+  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED) return false;
+  if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
+  const refund = String(record.refund_status || '');
+  return refund === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW
+    || refund === LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
+}
+
 function enqueueSessionCancelledNotification_(sheet, schema, record) {
-  if (!manualPolicyRefundNotificationNeeded_(record)) return null;
+  if (!patientCancellationConfirmationNeeded_(record)) return null;
   return enqueuePatientCancellationNotificationOnce_(sheet, schema, record,
     LIFECYCLE.NOTIFICATION_TYPE.SESSION_CANCELLED);
 }
@@ -2236,6 +2309,12 @@ var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   activeRefundPolicy_: activeRefundPolicy_,
   patientCancellationRefundPolicy_: patientCancellationRefundPolicy_,
   patientCancelFullRefundEligible_: patientCancelFullRefundEligible_,
+  publicManagementRecord_: publicManagementRecord_,
+  publicManagementStatus_: publicManagementStatus_,
+  beginRefundForPaidCancellation_: beginRefundForPaidCancellation_,
+  patientCancellationRefundAuthorized_: patientCancellationRefundAuthorized_,
+  PATIENT_CANCELLATION_REFUND_AUTHORIZED_STATES: PATIENT_CANCELLATION_REFUND_AUTHORIZED_STATES,
+  createProviderRefundOnce_: createProviderRefundOnce_,
   CANONICAL_REFUND_POLICY: CANONICAL_REFUND_POLICY,
   PATIENT_CANCEL_REFUND_PERCENT: PATIENT_CANCEL_REFUND_PERCENT,
   remediatePaidAfterHoldExpiry_: remediatePaidAfterHoldExpiry_,
@@ -2263,6 +2342,7 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   enqueueSessionCancelledNotification_: enqueueSessionCancelledNotification_,
   enqueuePatientCancellationNotificationOnce_: enqueuePatientCancellationNotificationOnce_,
   patientCancellationNotificationExists_: patientCancellationNotificationExists_,
+  patientCancellationConfirmationNeeded_: patientCancellationConfirmationNeeded_,
   PATIENT_CANCELLATION_NOTIFICATION_TYPES: PATIENT_CANCELLATION_NOTIFICATION_TYPES,
   lifecycleNotificationRecipient_: lifecycleNotificationRecipient_,
   notificationAttemptFailureFields_: notificationAttemptFailureFields_,

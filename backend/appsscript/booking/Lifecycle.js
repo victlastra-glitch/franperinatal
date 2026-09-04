@@ -58,6 +58,186 @@ var LIFECYCLE_TRANSITIONS = Object.freeze({
   }),
 });
 
+// ---------------------------------------------------------------------------
+// PATIENT MANAGEMENT POLICY V2 — the one canonical 24-hour authority.
+//
+// getBookingManagementPolicy_(reservation, serverNow) is the ONLY place in this
+// repository that decides how long before a session a patient may still
+// reschedule, cancel, or be refunded. Endpoints, email templates, the Worker
+// and the /manage page all consume its decision; none of them re-derive it.
+//
+// The cutoff is exactly 24 chronological hours before the CURRENT persisted
+// session start:
+//
+//     cutoff_at = current_start_at - 24h
+//
+// It is deliberately NOT "the previous calendar day" and NOT "the same date
+// minus one", so a Chile DST transition inside the window cannot move it: the
+// arithmetic is absolute-instant subtraction and never touches a wall clock.
+//
+// Time authority is the server. `serverNow` defaults to the server clock; an
+// explicitly supplied but unusable value fails closed rather than falling back,
+// so no caller — least of all a browser — can widen the window by supplying a
+// bad clock.
+//
+// Schedule authority is `current_start_at` only. `original_start_at` is the
+// pre-reschedule appointment and must never drive the cutoff, so after a valid
+// reschedule the cutoff recomputes from the newly persisted start.
+// ---------------------------------------------------------------------------
+
+var PATIENT_MANAGEMENT_CUTOFF_HOURS = 24;
+var PATIENT_MANAGEMENT_CUTOFF_MS = PATIENT_MANAGEMENT_CUTOFF_HOURS * 60 * 60 * 1000;
+var PATIENT_MANAGEMENT_REFUND_PERCENT_FULL = 100;
+var PATIENT_MANAGEMENT_REFUND_PERCENT_NONE = 0;
+
+/** Durable audit code for a cancellation the 24-hour policy decided is not
+ *  refundable. It is an outcome, not a pending question, so it never routes to
+ *  manual review the way BUSINESS_POLICY_TBD does. */
+var PATIENT_CANCEL_LATE_NON_REFUNDABLE = 'PATIENT_CANCEL_LATE_NON_REFUNDABLE';
+
+/** Public, non-leaky vocabulary for the /manage surface. Never a stored state name. */
+var MANAGEMENT_WINDOW = Object.freeze({
+  OPEN: 'open',               // >= 24h: reschedule + cancel + full refund
+  CANCEL_ONLY: 'cancel_only', // 0 < remaining < 24h: cancel to notify, no refund
+  CLOSED: 'closed',           // started/past, or nothing can be determined safely
+});
+
+/** Why the policy decided what it decided. Operational/diagnostic, not UI copy. */
+var BOOKING_MANAGEMENT_REASON = Object.freeze({
+  OPEN_FULL: 'MANAGEMENT_OPEN_FULL',
+  CANCEL_ONLY_NON_REFUNDABLE: 'MANAGEMENT_CANCEL_ONLY_NON_REFUNDABLE',
+  SESSION_STARTED: 'MANAGEMENT_CLOSED_SESSION_STARTED',
+  RESERVATION_UNKNOWN: 'MANAGEMENT_CLOSED_RESERVATION_UNKNOWN',
+  SCHEDULE_UNKNOWN: 'MANAGEMENT_CLOSED_SCHEDULE_UNKNOWN',
+  CLOCK_UNKNOWN: 'MANAGEMENT_CLOSED_CLOCK_UNKNOWN',
+  NOT_ACTIVE: 'MANAGEMENT_CLOSED_NOT_ACTIVE',
+});
+
+/** Booking states in which normal patient self-management is even conceivable. */
+var PATIENT_MANAGEABLE_BOOKING_STATUSES = Object.freeze([
+  LIFECYCLE.BOOKING_STATUS.INITIATED,
+  LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING,
+  LIFECYCLE.BOOKING_STATUS.CONFIRMED,
+]);
+
+function managementPolicyClosed_(reason, extra) {
+  return Object.freeze(Object.assign({
+    can_reschedule: false,
+    can_cancel: false,
+    refund_eligible: false,
+    refund_percent: PATIENT_MANAGEMENT_REFUND_PERCENT_NONE,
+    cutoff_at: '',
+    cutoff_hours: PATIENT_MANAGEMENT_CUTOFF_HOURS,
+    remaining_ms: null,
+    session_start_at: '',
+    window: MANAGEMENT_WINDOW.CLOSED,
+    reason: reason,
+  }, extra || {}));
+}
+
+/**
+ * Resolve the server instant the policy is evaluated at.
+ *
+ * Absent  -> the server clock (production behaviour).
+ * Finite  -> that instant.
+ * Present but unusable -> null, which the caller turns into a fail-closed policy.
+ */
+function managementPolicyNow_(serverNow) {
+  if (serverNow === undefined || serverNow === null) return Date.now();
+  // Only a real instant counts. A numeric-looking string, a boolean or an object
+  // is refused outright rather than coerced, because coercion is how a garbage
+  // clock quietly becomes epoch 0 — an instant from which every session is in
+  // the future and every window looks open.
+  // Duck-typed rather than `instanceof Date`, so a Date from another realm (an
+  // Apps Script library, or a test harness clock) is still accepted.
+  const value = typeof serverNow === 'number' ? serverNow
+    : (serverNow && typeof serverNow.getTime === 'function' ? Number(serverNow.getTime()) : NaN);
+  return Number.isFinite(value) ? value : null;
+}
+
+/**
+ * THE canonical patient-management decision.
+ *
+ * @param {Object} reservation persisted reservation record (current_start_at is authoritative)
+ * @param {number|Date} [serverNow] server instant; omit to use the server clock
+ * @return {Object} frozen decision: can_reschedule, can_cancel, refund_eligible,
+ *   refund_percent, cutoff_at, remaining_ms, reason (+ window, cutoff_hours,
+ *   session_start_at for presentation)
+ */
+function getBookingManagementPolicy_(reservation, serverNow) {
+  if (!reservation || typeof reservation !== 'object') {
+    return managementPolicyClosed_(BOOKING_MANAGEMENT_REASON.RESERVATION_UNKNOWN);
+  }
+  const now = managementPolicyNow_(serverNow);
+  if (now === null) return managementPolicyClosed_(BOOKING_MANAGEMENT_REASON.CLOCK_UNKNOWN);
+
+  // Current persisted start only. original_start_at is never consulted here.
+  const startMs = Date.parse(String(reservation.current_start_at || ''));
+  if (!Number.isFinite(startMs)) {
+    return managementPolicyClosed_(BOOKING_MANAGEMENT_REASON.SCHEDULE_UNKNOWN);
+  }
+
+  const startIso = new Date(startMs).toISOString();
+  const cutoffAt = new Date(startMs - PATIENT_MANAGEMENT_CUTOFF_MS).toISOString();
+  const remainingMs = startMs - now;
+  const timing = {
+    cutoff_at: cutoffAt,
+    cutoff_hours: PATIENT_MANAGEMENT_CUTOFF_HOURS,
+    remaining_ms: remainingMs,
+    session_start_at: startIso,
+  };
+
+  // C) the session has started or is in the past: normal self-management closed.
+  if (remainingMs <= 0) {
+    return managementPolicyClosed_(BOOKING_MANAGEMENT_REASON.SESSION_STARTED, timing);
+  }
+
+  // Refund eligibility is a function of the schedule window and the confirmed
+  // payment alone. It intentionally ignores booking_status, because the refund
+  // decision is taken for a reservation that is being cancelled right now and
+  // is re-read afterwards for audit while it sits in cancellation_requested.
+  const paid = String(reservation.payment_status || '') === LIFECYCLE.PAYMENT_STATUS.PAID;
+  const beforeCutoff = remainingMs >= PATIENT_MANAGEMENT_CUTOFF_MS;
+
+  // The single refund decision. Every branch below reads it rather than
+  // restating a literal, so there is exactly one expression in the codebase
+  // that can make a cancellation refundable.
+  const refundEligible = beforeCutoff && paid;
+  const money = {
+    refund_eligible: refundEligible,
+    refund_percent: refundEligible ? PATIENT_MANAGEMENT_REFUND_PERCENT_FULL : PATIENT_MANAGEMENT_REFUND_PERCENT_NONE,
+  };
+
+  // Actions additionally require a booking that is still self-manageable.
+  const active = PATIENT_MANAGEABLE_BOOKING_STATUSES.indexOf(String(reservation.booking_status || '')) !== -1;
+  if (!active) {
+    return Object.freeze(Object.assign({
+      can_reschedule: false,
+      can_cancel: false,
+      window: MANAGEMENT_WINDOW.CLOSED,
+      reason: BOOKING_MANAGEMENT_REASON.NOT_ACTIVE,
+    }, money, timing));
+  }
+
+  // A) remaining >= 24h — reschedule, cancel, 100% refund.
+  if (beforeCutoff) {
+    return Object.freeze(Object.assign({
+      can_reschedule: true,
+      can_cancel: true,
+      window: MANAGEMENT_WINDOW.OPEN,
+      reason: BOOKING_MANAGEMENT_REASON.OPEN_FULL,
+    }, money, timing));
+  }
+
+  // B) 0 < remaining < 24h — cancel to notify, no reschedule, no refund.
+  return Object.freeze(Object.assign({
+    can_reschedule: false,
+    can_cancel: true,
+    window: MANAGEMENT_WINDOW.CANCEL_ONLY,
+    reason: BOOKING_MANAGEMENT_REASON.CANCEL_ONLY_NON_REFUNDABLE,
+  }, money, timing));
+}
+
 var CAPABILITY_TTL_MS = 1000 * 60 * 60 * 24;
 var CAPABILITY_RANDOM_UUID_COUNT = 3;
 var CAPABILITY_SECRET_MIN_LENGTH = 32;
@@ -413,6 +593,15 @@ function patientRescheduleTransaction_(input) {
     if (!lifecycleTokenAuthorized_(input.token, LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, stored, secret, now, record)) {
       return { ok: false, code: 'CAPABILITY_INVALID' };
     }
+    // Stale-page / direct-call guard. The window is recomputed HERE, under the
+    // lock, from the record just read from the store. A browser that rendered
+    // REAGENDAR while 26 hours remained cannot carry that button past the
+    // cutoff, and neither can a hand-rolled request to this endpoint.
+    const policy = getBookingManagementPolicy_(record, now);
+    if (!policy.can_reschedule) {
+      return { ok: false, code: 'RESCHEDULE_WINDOW_CLOSED', window: policy.window,
+        cutoffAt: policy.cutoff_at, cutoffHours: policy.cutoff_hours };
+    }
     const targetEnd = targetEndAt_(input.targetStartAt, input.targetEndAt);
     if (!targetSlotAvailable_(record, input.targetStartAt, targetEnd, deps)) return { ok: false, code: 'SLOT_TAKEN' };
     const operationId = input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_RESCHEDULE, record.reservation_id + ':' + input.targetStartAt);
@@ -461,7 +650,7 @@ function patientCancelTransaction_(input) {
     const record = deps.store.loadByReservationId(String(input.reservationId));
     if (!record) return { ok: false, code: 'CAPABILITY_INVALID' };
     if (record.booking_status === LIFECYCLE.BOOKING_STATUS.CANCELLED) {
-      enqueueManualPolicyRefundNotificationBestEffort_(deps, record);
+      enqueueTerminalCancellationNotificationBestEffort_(deps, record);
       return { ok: true, replay: true, status: 'cancelled' };
     }
     if (record.booking_status === LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED) {
@@ -476,6 +665,14 @@ function patientCancelTransaction_(input) {
     if (!lifecycleTokenAuthorized_(input.token, LIFECYCLE.CAPABILITY_TYPE.CANCEL, stored, secret, now, record)) {
       return { ok: false, code: 'CAPABILITY_INVALID' };
     }
+    // Same revalidation as reschedule, on the same freshly read record. Cancel
+    // stays open right up to the session start; only a started/past session, a
+    // non-self-manageable booking or an undeterminable schedule closes it.
+    const managementPolicy = getBookingManagementPolicy_(record, now);
+    if (!managementPolicy.can_cancel) {
+      return { ok: false, code: 'MANAGEMENT_WINDOW_CLOSED', window: managementPolicy.window,
+        cutoffAt: managementPolicy.cutoff_at, cutoffHours: managementPolicy.cutoff_hours };
+    }
     const operationId = input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_CANCEL, record.reservation_id);
     if (deps.calendar && typeof deps.calendar.cancelLinkedEvent === 'function') {
       try { deps.calendar.cancelLinkedEvent(record); }
@@ -489,13 +686,27 @@ function patientCancelTransaction_(input) {
     assertCancellationTransition_(record);
     assertTransition_('schedule_status', record.schedule_status, LIFECYCLE.SCHEDULE_STATUS.CANCELLED);
     const revoked = revokeCapability_(stored, new Date(now).toISOString());
-    const policy = deps.policyEvaluator ? deps.policyEvaluator(record, now) : { decision: 'BUSINESS_POLICY_TBD', eligible: false };
-    const refundEligible = Boolean(policy.eligible && record.payment_status === LIFECYCLE.PAYMENT_STATUS.PAID);
+    const evaluated = deps.policyEvaluator ? deps.policyEvaluator(record, now) : { decision: 'BUSINESS_POLICY_TBD', eligible: false };
+    // An injected evaluator may only ever NARROW eligibility. The canonical
+    // policy is ANDed in unconditionally, so no wiring — a test fake, a
+    // callback, reconciliation, or a future caller — can authorise a refund the
+    // 24-hour policy refuses. managementPolicy.refund_eligible already requires
+    // a confirmed `paid` payment, so payment state is not re-derived here.
+    const refundEligible = Boolean(evaluated.eligible && managementPolicy.refund_eligible);
+    // A cancellation inside the cutoff is a DECIDED non-refundable outcome, not
+    // an open question: it persists refund NOT_REQUIRED and never reaches the
+    // operational manual-review path. Everything else that is not eligible
+    // keeps its prior BUSINESS_POLICY_TBD manual-review semantics.
+    const lateNonRefundable = !refundEligible
+      && managementPolicy.window === MANAGEMENT_WINDOW.CANCEL_ONLY
+      && String(record.payment_status || '') === LIFECYCLE.PAYMENT_STATUS.PAID;
     const updates = atomicCancellationTransitionFields_(record, { schedule_status: LIFECYCLE.SCHEDULE_STATUS.CANCELLED,
       cancellation_source: 'patient', cancelled_at: new Date(now).toISOString(), last_operation_id: operationId,
-      reconciliation_state: '', cancel_capability_revoked_at: revoked.revokedAt, refund_last_error_code: refundEligible ? '' : (policy.eligible ? '' : 'BUSINESS_POLICY_TBD') },
+      reconciliation_state: '', cancel_capability_revoked_at: revoked.revokedAt,
+      refund_last_error_code: refundEligible ? '' : (lateNonRefundable ? PATIENT_CANCEL_LATE_NON_REFUNDABLE : 'BUSINESS_POLICY_TBD') },
       { terminal: !refundEligible });
     if (refundEligible) updates.refund_status = LIFECYCLE.REFUND_STATUS.REQUESTED;
+    else if (lateNonRefundable) updates.refund_status = LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
     else updates.refund_status = LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW;
     let updated;
     try { updated = storeUpdateWithRetry_(deps.store, record, updates); }
@@ -514,9 +725,10 @@ function patientCancelTransaction_(input) {
       bestEffortReconciliationUpdate_(deps, updated, { reconciliation_state: 'notification_cancel_retry', last_operation_id: operationId });
       return { ok: false, code: 'NOTIFICATION_RETRY_REQUIRED' };
     }
-    enqueueManualPolicyRefundNotificationBestEffort_(deps, updated);
+    enqueueTerminalCancellationNotificationBestEffort_(deps, updated);
     return { ok: true, replay: false, status: refundEligible ? 'cancellation_pending' : 'cancelled',
-      refund: refundEligible ? 'requested' : 'BUSINESS_POLICY_TBD' };
+      refund: refundEligible ? 'requested' : (lateNonRefundable ? 'not_required' : 'BUSINESS_POLICY_TBD'),
+      refundPercent: refundEligible ? managementPolicy.refund_percent : PATIENT_MANAGEMENT_REFUND_PERCENT_NONE };
   });
 }
 
@@ -532,9 +744,30 @@ function manualPolicyRefundNotificationNeeded_(record) {
     && record.refund_status === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW;
 }
 
-function enqueueManualPolicyRefundNotificationBestEffort_(deps, record) {
+/**
+ * A cancellation that is ALREADY terminal at cancellation time and owes a
+ * notification. Two shapes qualify:
+ *
+ *  - refund MANUAL_REVIEW — out of policy, an operator has to look
+ *  - refund NOT_REQUIRED  — decided non-refundable inside the 24-hour cutoff
+ *
+ * A refundable cancellation is excluded on purpose: it is still
+ * cancellation_requested here and is spoken for by the provider-confirmed
+ * final email. The consumer decides which patient/operator notifications the
+ * shape actually earns.
+ */
+function terminalCancellationNotificationNeeded_(record) {
+  if (!record) return false;
+  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED) return false;
+  if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
+  const refund = String(record.refund_status || '');
+  return refund === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW
+    || refund === LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
+}
+
+function enqueueTerminalCancellationNotificationBestEffort_(deps, record) {
   if (!deps || typeof deps.enqueueNotification !== 'function') return;
-  if (!manualPolicyRefundNotificationNeeded_(record)) return;
+  if (!terminalCancellationNotificationNeeded_(record)) return;
   try { deps.enqueueNotification(record); } catch (_) {}
 }
 
@@ -900,8 +1133,19 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   isRetryableNotificationState_: isRetryableNotificationState_,
   retryLifecycleNotification_: retryLifecycleNotification_, assertCancellationTransition_: assertCancellationTransition_, atomicCancellationTransitionFields_: atomicCancellationTransitionFields_,
   patientRescheduleTransaction_: patientRescheduleTransaction_, patientCancelTransaction_: patientCancelTransaction_,
+  getBookingManagementPolicy_: getBookingManagementPolicy_,
+  managementPolicyNow_: managementPolicyNow_,
+  PATIENT_MANAGEMENT_CUTOFF_HOURS: PATIENT_MANAGEMENT_CUTOFF_HOURS,
+  PATIENT_MANAGEMENT_CUTOFF_MS: PATIENT_MANAGEMENT_CUTOFF_MS,
+  PATIENT_MANAGEMENT_REFUND_PERCENT_FULL: PATIENT_MANAGEMENT_REFUND_PERCENT_FULL,
+  PATIENT_MANAGEMENT_REFUND_PERCENT_NONE: PATIENT_MANAGEMENT_REFUND_PERCENT_NONE,
+  PATIENT_CANCEL_LATE_NON_REFUNDABLE: PATIENT_CANCEL_LATE_NON_REFUNDABLE,
+  PATIENT_MANAGEABLE_BOOKING_STATUSES: PATIENT_MANAGEABLE_BOOKING_STATUSES,
+  MANAGEMENT_WINDOW: MANAGEMENT_WINDOW,
+  BOOKING_MANAGEMENT_REASON: BOOKING_MANAGEMENT_REASON,
   providerRefundAttempted_: providerRefundAttempted_,
   manualPolicyRefundNotificationNeeded_: manualPolicyRefundNotificationNeeded_,
+  terminalCancellationNotificationNeeded_: terminalCancellationNotificationNeeded_,
   withLifecycleLock_: withLifecycleLock_,
   notificationLogSafe_: notificationLogSafe_, reconstructLifecycleEventType_: reconstructLifecycleEventType_,
   notificationRetryStateField_: notificationRetryStateField_, selectRetryableNotificationWork_: selectRetryableNotificationWork_,

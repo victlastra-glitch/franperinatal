@@ -296,6 +296,8 @@ async function handlePaymentStatus(request, env) {
   });
 }
 
+const MANAGEMENT_WINDOWS = ['open', 'cancel_only', 'closed'];
+
 function safeManagementResponse(data) {
   if (!data || typeof data !== 'object') return { ok: false, code: 'upstream_bad_response' };
   if (!data.ok) return { ok: false, code: typeof data.code === 'string' ? data.code : 'management_rejected' };
@@ -304,7 +306,18 @@ function safeManagementResponse(data) {
     serviceType: typeof data.serviceType === 'string' ? data.serviceType : '', modality: typeof data.modality === 'string' ? data.modality : '',
     originalStart: typeof data.originalStart === 'string' ? data.originalStart : '', currentStart: typeof data.currentStart === 'string' ? data.currentStart : '',
     currentEnd: typeof data.currentEnd === 'string' ? data.currentEnd : '', meetUrl: typeof data.meetUrl === 'string' ? data.meetUrl : '',
-    capabilityType: data.capabilityType === 'RESCHEDULE' || data.capabilityType === 'CANCEL' ? data.capabilityType : '' };
+    capabilityType: data.capabilityType === 'RESCHEDULE' || data.capabilityType === 'CANCEL' ? data.capabilityType : '',
+    // Patient management policy V2: the Worker forwards the upstream decision
+    // and never derives one. Unknown or missing values clamp CLOSED, so a
+    // degraded upstream response cannot render an action the server did not
+    // authorize, and the mutation endpoints revalidate regardless.
+    managementWindow: MANAGEMENT_WINDOWS.includes(data.managementWindow) ? data.managementWindow : 'closed',
+    canReschedule: data.canReschedule === true,
+    canCancel: data.canCancel === true,
+    refundEligible: data.refundEligible === true,
+    refundPercent: data.refundPercent === 100 ? 100 : 0,
+    cutoffAt: typeof data.cutoffAt === 'string' ? data.cutoffAt : '',
+    cutoffHours: Number.isInteger(data.cutoffHours) && data.cutoffHours > 0 ? data.cutoffHours : 24 };
 }
 
 async function handleManageLookup(request, env) {
@@ -342,7 +355,11 @@ async function handleManageCancel(request, env) {
   return data && data.ok ? jsonResp({
     ok: true,
     status: data.status === 'cancellation_pending' ? 'cancellation_pending' : 'cancelled',
-    refund: data.refund === 'requested' || data.refund === 'pending' ? 'requested' : 'BUSINESS_POLICY_TBD'
+    // 'not_required' is the decided non-refundable outcome inside the 24-hour
+    // cutoff. It must stay distinguishable from BUSINESS_POLICY_TBD so the page
+    // never promises a refund review that will not happen.
+    refund: data.refund === 'requested' || data.refund === 'pending' ? 'requested'
+      : (data.refund === 'not_required' ? 'not_required' : 'BUSINESS_POLICY_TBD')
   }, 200)
     : jsonResp({ ok: false, code: data && data.code ? data.code : 'management_rejected' }, 200);
 }

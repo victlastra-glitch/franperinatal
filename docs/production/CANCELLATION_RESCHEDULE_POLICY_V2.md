@@ -1,0 +1,240 @@
+# Cancellation & Reschedule Policy V2 — patient self-management
+
+Status: implemented on `feat/production-booking-lifecycle-v2-port`, **not deployed**.
+Baseline it builds on: `bf62852`.
+
+## The rule
+
+```
+PATIENT_MANAGEMENT_CUTOFF_HOURS=24
+cutoff_at = current_start_at - 24 chronological hours
+```
+
+| remaining time to the CURRENT session start | reschedule | cancel | refund | refund % |
+| --- | --- | --- | --- | --- |
+| `>= 24h` | YES | YES | YES | 100 |
+| `0 < r < 24h` | NO | YES | NO | 0 |
+| `<= 0` (started / past) | NO | NO | NO | 0 |
+
+Cancellation stays available right up to the session start so a patient can
+always tell us they will not attend. Only the money and the reschedule change.
+
+### Boundary contract
+
+Session start Friday 15:00 (America/Santiago):
+
+| clock | remaining | reschedule | cancel | refund |
+| --- | --- | --- | --- | --- |
+| Thursday 14:59 | 24h01m | YES | YES | YES |
+| Thursday 15:00 | exactly 24h | **YES** | YES | **YES** |
+| Thursday 15:00:01 | 23h59m59s | **NO** | YES | **NO** |
+| Friday 14:30 | 30m | NO | YES | NO |
+| Friday 15:00 or later | — | NO | NO | NO |
+
+Exactly 24 hours is **inclusive**. The boundary is asserted to millisecond
+precision in `test/management-policy-24h.test.mjs`.
+
+## Canonical source
+
+```
+getBookingManagementPolicy_(reservation, serverNow)
+  backend/appsscript/booking/Lifecycle.js
+```
+
+Returns a frozen decision:
+
+```
+can_reschedule  can_cancel  refund_eligible  refund_percent
+cutoff_at  cutoff_hours  remaining_ms  session_start_at
+window  reason
+```
+
+Nothing else in the repository derives a 24-hour window. Every consumer reads
+this function:
+
+| consumer | what it reads |
+| --- | --- |
+| `patientRescheduleTransaction_` | `can_reschedule`, re-evaluated under the lock |
+| `patientCancelTransaction_` | `can_cancel`, and `refund_eligible` ANDed over the evaluator |
+| `patientCancellationRefundPolicy_` | `refund_eligible`, `refund_percent` |
+| `patientCancelFullRefundEligible_` | `refund_eligible` |
+| `publicManagementRecord_` (`/manage` lookup) | the whole decision, projected |
+| `_worker.js` | forwards the upstream projection; clamps unknown values CLOSED |
+| `manage.html` | renders the projection; computes nothing |
+| `EmailTemplates.js` | reads `PATIENT_MANAGEMENT_CUTOFF_HOURS` for the copy |
+
+There is exactly one expression that can make a cancellation refundable:
+
+```js
+const refundEligible = beforeCutoff && paid;
+```
+
+Every branch of the policy reads it rather than restating a literal, so a
+mutation there is detected by the suite.
+
+## Authority rules
+
+**Server time.** `serverNow` defaults to the server clock. A value that is not a
+real instant (a numeric string, a boolean, `NaN`) is refused, not coerced —
+coercion is how a garbage clock quietly becomes epoch 0, an instant from which
+every window looks open. No public payload field carries a clock: neither
+`CREATE_FLOW_FIELDS` nor the management token parsers accept one, and the Worker
+forwards only `token` / `fecha` / `hora`.
+
+**Current schedule.** Only `current_start_at` is read. `original_start_at` is the
+pre-reschedule appointment and never drives the cutoff, so after a valid
+reschedule the window recomputes from the newly persisted start.
+
+**Stale pages and direct calls.** Both mutations re-read the reservation from the
+store inside the lock and re-evaluate the policy there, immediately before
+writing. A page that rendered REAGENDAR with 26 hours left and is submitted four
+hours later is rejected with `RESCHEDULE_WINDOW_CLOSED`. Links in
+already-delivered emails still resolve to `/manage`; the server refuses the
+action. `manage.html` contains no 24-hour arithmetic at all, which the
+`test-manage-contract` gate asserts.
+
+**DST.** The cutoff is absolute-instant subtraction, never "previous calendar
+day" or "same date minus one". The suite locates both real America/Santiago
+transitions and asserts that a window straddling one stays exactly 24
+chronological hours — and that the Santiago wall-clock hour of the cutoff
+therefore *differs* from the session hour, which a calendar-based implementation
+would not produce.
+
+**Fail closed.** Missing reservation, unusable `current_start_at`, unusable
+policy timestamp, or a booking that is no longer self-manageable all authorize
+nothing. Refund eligibility additionally requires `payment_status === 'paid'`.
+
+## Money
+
+### `>= 24h` cancellation
+
+```
+schedule_status=cancelled            (slot released immediately)
+booking_status=cancellation_requested
+refund_status=refund_requested   -> refund/create ×1 -> refund_pending
+                                 -> provider acceptance in Flow
+                                 -> callback REFUNDED
+                                 -> booking_status=cancelled + ONE final email
+```
+
+`REFUND_CREATE_EFFECTIVE_MAX=1`. Amount is the full `consultationAmountClp_`
+against the original confirmed transaction. No patient email claims a refund
+before the provider confirms; a refund failure parks the reservation for manual
+review and still claims nothing.
+
+### `< 24h` cancellation
+
+```
+schedule_status=cancelled            (slot released immediately)
+booking_status=cancelled             (terminal at once)
+refund_status=not_required
+refund_last_error_code=PATIENT_CANCEL_LATE_NON_REFUNDABLE
+Flow refund/create calls = 0
+patient emails = exactly 1, economically silent
+operator manual-review notices = 0
+```
+
+`not_required` is the durable record that this cancellation was **decided**
+non-refundable, as opposed to `manual_review`, which means "a human still has to
+look". That distinction is what keeps a normal late cancellation out of
+Francisca's operational queue.
+
+### Why a callback cannot resurrect a refund
+
+`beginRefundForPaidCancellation_` authorizes a Flow call only when the persisted
+`refund_status` is one of `refund_requested / refund_pending / refunded /
+refund_failed` — all of which are reachable only downstream of a policy-approved
+`refund_requested`. A late cancellation persists `not_required`, so any replay,
+reconciliation pass or callback attempt is refused with `REFUND_NOT_AUTHORIZED`
+before a request is built. The refusal reads stored state; it does not recompute
+a window and does not trust its caller. A spoofed refund callback additionally
+cannot find the row, because no `refund_provider_reference` was ever stored.
+
+## Patient-facing copy (approved)
+
+**Before payment** — `reserva.html`, review step, above "Continuar al pago":
+
+> Puedes reagendar o cancelar tu sesión sin costo con al menos 24 horas de
+> anticipación. Si cancelas con menos de 24 horas, puedes igualmente avisarnos
+> que no asistirás, pero la sesión no será reembolsable ni podrá reagendarse.
+
+**Confirmation email** — under the REAGENDAR / CANCELAR actions it explains:
+
+> Puedes reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.
+
+Confirmation only. After a patient reschedule the state machine has spent the
+single allowed move, so the reminder would be untrue and is not rendered.
+
+**`/manage`, reschedule closed:**
+
+> Ya no es posible reagendar esta sesión porque faltan menos de 24 horas para el
+> horario agendado.
+
+**`/manage`, cancellation with a refund:**
+
+> Puedes cancelar esta sesión y recibir el reembolso completo al mismo medio de
+> pago utilizado.
+
+**`/manage`, cancellation without a refund:**
+
+> Esta sesión comienza en menos de 24 horas. Puedes cancelarla para informarnos
+> que no asistirás, pero de acuerdo con la política de cancelación no corresponde
+> reembolso.
+
+**Refund confirmed** (unchanged from V3):
+
+> El reembolso fue procesado al mismo medio de pago utilizado. Dependiendo de tu
+> banco o emisor, puede tardar hasta 10 días hábiles en verse reflejado.
+
+`faq.html` previously claimed late cancellations "se cobran en un 50%". That
+contradicted the approved policy and was corrected in both the visible FAQ and
+its JSON-LD.
+
+## Public `/manage` contract
+
+`manage_lookup` returns, in addition to the existing fields:
+
+```
+managementWindow : 'open' | 'cancel_only' | 'closed'
+canReschedule    : boolean   (policy AND one-move-remaining)
+canCancel        : boolean
+refundEligible   : boolean
+refundPercent    : 100 | 0
+cutoffAt         : ISO instant
+cutoffHours      : 24
+```
+
+`managementWindow` is a deliberately public vocabulary: no internal lifecycle
+state name is exposed. The Worker clamps an unrecognised window to `closed`, so a
+degraded upstream response cannot render an action the server did not authorize.
+
+New rejection codes, both mapped to non-alarmist copy in `manage.html`:
+
+```
+RESCHEDULE_WINDOW_CLOSED   — reschedule requested inside the cutoff, or past session
+MANAGEMENT_WINDOW_CLOSED   — cancel requested on a started/past or undeterminable session
+```
+
+## Out of scope, unchanged
+
+```
+CLINICIAN_CANCELLATION=BUSINESS_POLICY_TBD
+```
+
+Clinician cancellation economics are a separate, still-open product decision.
+`reconcileClinicianCancellation_` keeps evaluating through
+`refundPolicy_` / `activeRefundPolicy_` and keeps parking paid clinician
+cancellations in `manual_review`. Also unchanged: `paid_after_hold_expiry`
+remediation, chargebacks, administrative refunds, Flow signing and endpoints,
+`payment/create`, status mapping. There is no no-show workflow and none was added.
+
+## Regression coverage
+
+`node backend/appsscript/booking/test/management-policy-24h.test.mjs`
+
+Covers the boundary to the millisecond, both DST transitions, current-start
+authority, the stale-page and direct-call races, browser-clock spoofing, the
+fail-closed inputs, refund counts on both sides of the cutoff, email counts,
+replay/double-click, the callback guard, and the `/manage` projection. It then
+re-runs the load-bearing subset against seven deliberately broken builds and
+requires each mutation to be detected.

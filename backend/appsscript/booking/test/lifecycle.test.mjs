@@ -172,7 +172,10 @@ check(cancelOutcome.changed && storedRecord.booking_status === 'cancelled' && st
 propertyValues.CAPABILITY_TOKEN_SECRET = secret;
 const cap = phase.createCapability_('RESCHEDULE', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
 const cancelCap = phase.createCapability_('CANCEL', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
+// fixedNow is 2026-08-23T12:00Z, so a 2026-08-24T14:00Z session leaves 26h:
+// inside the >=24h management window, which is what these transactions exercise.
 let txnRecord = { reservation_id: 'fran-booking-reservation-txn', booking_status: 'confirmed', payment_status: 'paid', schedule_status: 'scheduled', patient_reschedule_count: '0',
+  current_start_at: '2026-08-24T14:00:00.000Z', current_end_at: '2026-08-24T14:50:00.000Z',
   calendar_event_id: event.id, calendar_event_etag: 'etag-1', calendar_event_updated_at: event.updated, calendar_sync_hash: 'hash', calendar_link_key: recordTemplate.calendar_link_key,
   ...phase.capabilityFields_(phase.capabilityForStorage_(cap)), ...phase.capabilityFields_(phase.capabilityForStorage_(cancelCap)), refund_status: 'not_required', notification_version: '1' };
 let updateCount = 0; const txnStore = { loadByReservationId: () => txnRecord, records: () => [txnRecord], update: (_record, fields) => { updateCount += 1; txnRecord = { ...txnRecord, ...fields }; return txnRecord; } };
@@ -281,6 +284,7 @@ assert.throws(() => raceGateway.updateSameEvent({ calendar_event_id: 'race-event
 check(raceUpdates === 1, 'clinician edit between GET and UPDATE is surfaced as 412');
 const raceCapability = phase.createCapability_('RESCHEDULE', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
 const raceRecord = { reservation_id: 'fran-booking-reservation-412', booking_status: 'confirmed', payment_status: 'paid', schedule_status: 'scheduled', patient_reschedule_count: '0',
+  current_start_at: '2026-08-24T14:00:00.000Z', current_end_at: '2026-08-24T14:50:00.000Z',
   calendar_event_id: 'race-event', calendar_event_etag: 'race-etag-1', calendar_link_key: event.extendedProperties.private.link_key,
   ...phase.capabilityFields_(phase.capabilityForStorage_(raceCapability)) };
 let raceTxnUpdates = 0; let raceTxnCalls = 0; let raceTxnCreates = 0;
@@ -296,6 +300,7 @@ check(!raceTxnResult.ok && raceTxnResult.code === 'RECONCILIATION_REQUIRED' && r
 // I. Failure-injection boundaries: Calendar success never becomes silent success when storage fails.
 const failureCap = phase.createCapability_('RESCHEDULE', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
 const failureRecord = { reservation_id: 'fran-booking-reservation-store-failure', booking_status: 'confirmed', payment_status: 'paid', schedule_status: 'scheduled', patient_reschedule_count: '0',
+  current_start_at: '2026-08-24T14:00:00.000Z', current_end_at: '2026-08-24T14:50:00.000Z',
   calendar_event_id: 'race-event', calendar_event_etag: 'race-etag-1', calendar_link_key: event.extendedProperties.private.link_key,
   ...phase.capabilityFields_(phase.capabilityForStorage_(failureCap)) };
 let failureCalendarCalls = 0; let failureNotifications = 0;
@@ -308,6 +313,7 @@ check(!failureResult.ok && failureResult.code === 'RECONCILIATION_REQUIRED' && f
   && failureResult.reconciliation.calendarEventId === 'race-event', 'reschedule store failure is explicit and does not claim success');
 const cancelFailureCap = phase.createCapability_('CANCEL', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
 const cancelFailureRecord = { reservation_id: 'fran-booking-reservation-cancel-store-failure', booking_status: 'confirmed', payment_status: 'paid', schedule_status: 'scheduled', refund_status: 'not_required',
+  current_start_at: '2026-08-24T14:00:00.000Z', current_end_at: '2026-08-24T14:50:00.000Z',
   calendar_event_id: 'race-event', ...phase.capabilityFields_(phase.capabilityForStorage_(cancelFailureCap)) };
 let cancelRemoves = 0; let failureCancelNotifications = 0;
 const cancelFailure = phase.patientCancelTransaction_({ reservationId: cancelFailureRecord.reservation_id, token: cancelFailureCap.token, now: fixedNow,

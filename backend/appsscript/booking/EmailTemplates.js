@@ -56,6 +56,16 @@ var EMAIL_V3_SESSION_COPY = 'No necesitas preparar nada especial para la sesión
 var EMAIL_V3_REFUND_COPY = 'El reembolso fue procesado al mismo medio de pago utilizado. '
   + 'Dependiendo de tu banco o emisor, puede tardar hasta 10 días hábiles en verse reflejado.';
 
+// Approved policy reminder. Rendered on the confirmation only, immediately under
+// the REAGENDAR / CANCELAR actions it explains. The hour count is read from the
+// canonical policy constant so the copy cannot drift from the enforced cutoff.
+// It is deliberately not shown on PATIENT_RESCHEDULED: the state machine caps a
+// patient at one move, so there is no second reschedule left to offer.
+function emailV3ManagementPolicyCopy_() {
+  return 'Puedes reagendar o cancelar tu sesión hasta ' + PATIENT_MANAGEMENT_CUTOFF_HOURS
+    + ' horas antes del horario agendado.';
+}
+
 function escapeEmailText_(value) {
   return String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -537,6 +547,10 @@ function renderLifecycleEmailHtml_(input) {
     }
 
     const humanCopy = kind === 'confirmed' ? emailV3Body_(EMAIL_V3_SESSION_COPY, 32) : '';
+    // 16px under the actions, muted: it reads as a caption on the buttons rather
+    // than a new block, so it adds no spacing token and no visual weight.
+    const policyReminder = kind === 'confirmed'
+      ? emailV3Body_(escapeEmailText_(emailV3ManagementPolicyCopy_()), 16, EMAIL_V3.textMuted) : '';
 
     return emailV3Document_({
       title: subject,
@@ -551,6 +565,7 @@ function renderLifecycleEmailHtml_(input) {
         + emailV3PrimaryRow_(meetUrl, 'ENTRAR A LA SESIÓN')
         + emailV3MeetFallback_(meetUrl)
         + emailV3SecondaryRow_(emailV3ScheduleActions_(kind, tokens, origin))
+        + policyReminder
         + humanCopy
         + emailV3Footer_(origin),
     });
@@ -676,7 +691,7 @@ function renderLifecycleEmailText_(input) {
     actions.forEach(function(action) {
       lines.push((action.label === 'REAGENDAR SESIÓN' ? 'Reagendar: ' : 'Cancelar: ') + action.href);
     });
-    if (kind === 'confirmed') lines.push('', EMAIL_V3_SESSION_COPY);
+    if (kind === 'confirmed') lines.push('', emailV3ManagementPolicyCopy_(), '', EMAIL_V3_SESSION_COPY);
     return lines.concat(emailV3TextFooter_(origin)).join('\n');
   }
 
@@ -692,6 +707,7 @@ var __EMAIL_TEMPLATE_TEST_EXPORTS__ = Object.freeze({
   EMAIL_V3_PREHEADER: EMAIL_V3_PREHEADER,
   EMAIL_V3_SESSION_COPY: EMAIL_V3_SESSION_COPY,
   EMAIL_V3_REFUND_COPY: EMAIL_V3_REFUND_COPY,
+  emailV3ManagementPolicyCopy_: emailV3ManagementPolicyCopy_,
   emailV3RefundConfirmed_: emailV3RefundConfirmed_,
   lifecycleEmailDateParts_: lifecycleEmailDateParts_,
   lifecycleNotificationSubject_: lifecycleNotificationSubject_,
