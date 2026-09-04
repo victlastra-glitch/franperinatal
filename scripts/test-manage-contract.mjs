@@ -15,6 +15,7 @@ check(() => assert.match(source, /capabilityType === 'RESCHEDULE'/));
 check(() => assert.match(source, /managementErrorMessage\(data\.code\)/));
 check(() => assert.match(script, /RESCHEDULE_WINDOW_CLOSED:/));
 check(() => assert.match(script, /MANAGEMENT_WINDOW_CLOSED:/));
+check(() => assert.match(script, /TARGET_LEAD_TIME_TOO_SHORT:/));
 
 // PATIENT MANAGEMENT POLICY V2 — capabilities are the server's decision.
 check(() => assert.match(script, /reserva\.canReschedule === true/));
@@ -53,3 +54,4 @@ check(() => assert.doesNotMatch(script, /cancellation_requested|payment_pending|
 console.log('MANAGE_ERROR_CODE_CONTRACT=PASS assertions=' + assertions);
 console.log('MANAGE_SERVER_POLICY_AUTHORITY=PASS');
 console.log('MANAGE_CLIENT_SIDE_CUTOFF_ARITHMETIC=NONE');
+console.log('MANAGE_SERVER_REJECTION_CODES=RESCHEDULE_WINDOW_CLOSED,MANAGEMENT_WINDOW_CLOSED,TARGET_LEAD_TIME_TOO_SHORT');

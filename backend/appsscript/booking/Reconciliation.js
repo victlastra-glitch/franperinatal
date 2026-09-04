@@ -123,10 +123,18 @@ function reconcileCalendarChange_(input) {
     }
   }
   const eventFields = calendarEventFields_(calendarEventResult_(event));
-  const updated = input.store.update(record, Object.assign({}, eventFields, { current_start_at: interval.start, current_end_at: interval.end,
+  const moveNow = Date.now();
+  const moveFields = Object.assign({}, eventFields, { current_start_at: interval.start, current_end_at: interval.end,
     calendar_event_id: String(event.id), calendar_event_etag: String(event.etag || ''), calendar_event_updated_at: String(event.updated || ''),
-    calendar_sync_hash: hash, calendar_change_source: 'clinician', schedule_changed_at: new Date().toISOString(),
-    last_operation_id: operationId, reconciliation_state: '', schedule_status: LIFECYCLE.SCHEDULE_STATUS.SCHEDULED }));
+    calendar_sync_hash: hash, calendar_change_source: 'clinician', schedule_changed_at: new Date(moveNow).toISOString(),
+    last_operation_id: operationId, reconciliation_state: '', schedule_status: LIFECYCLE.SCHEDULE_STATUS.SCHEDULED });
+  // A clinician move changes the current session start, so the live management
+  // capabilities are re-scoped onto the new horizon: extended when the session
+  // moves later, contracted when it moves earlier. Revoked or already-expired
+  // capabilities are left dead. The lifecycle email that follows mints its own
+  // capability from the same new start.
+  Object.assign(moveFields, alignedCapabilityExpiryFields_(Object.assign({}, record, moveFields), moveNow));
+  const updated = input.store.update(record, moveFields);
   if (input.enqueueNotification) input.enqueueNotification(updated);
   return { ok: true, changed: true, source: 'clinician', patientRescheduleCount: String(updated.patient_reschedule_count) };
 }

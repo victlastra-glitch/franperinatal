@@ -1075,8 +1075,15 @@ function ensureManagementCapabilities_(sheet, schema, record) {
   if (record.reschedule_capability_hash && record.cancel_capability_hash) return null;
   try {
     const secret = requireCapabilitySecret_(); const now = Date.now();
-    const reschedule = createCapability_(LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, { secret: secret, now: now });
-    const cancel = createCapability_(LIFECYCLE.CAPABILITY_TYPE.CANCEL, { secret: secret, now: now });
+    // Lifetime comes from the current persisted session start, never a fixed
+    // TTL, so a booking made weeks ahead gets links that stay usable for as
+    // long as the business policy leaves management open. An undeterminable
+    // horizon fails closed into the capability_configuration_required path
+    // below rather than minting something arbitrary.
+    const horizon = capabilityManagementHorizonIso_(record, now);
+    if (!horizon) fail_('CAPABILITY_SCHEDULE_UNKNOWN');
+    const reschedule = createCapability_(LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, { secret: secret, now: now, expiresAt: horizon });
+    const cancel = createCapability_(LIFECYCLE.CAPABILITY_TYPE.CANCEL, { secret: secret, now: now, expiresAt: horizon });
     updateRecord_(sheet, schema, record.rowNumber, Object.assign({}, capabilityFields_(reschedule), capabilityFields_(cancel)));
     return { tokens: { RESCHEDULE: reschedule.token, CANCEL: cancel.token } };
   } catch (_) {

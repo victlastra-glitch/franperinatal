@@ -3,7 +3,7 @@ import { createHash, createHmac, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 
-const files = ['../Code.js', '../Lifecycle.js', '../EmailTemplates.js'];
+const files = ['../Code.js', '../Lifecycle.js', '../EmailTemplates.js', '../CalendarGateway.js'];
 const sources = await Promise.all(files.map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
 const secret = 'synthetic-capability-secret-20260823-abcdefghijklmnopqrstuvwxyz';
 const allowlisted = 'ops@example.test';

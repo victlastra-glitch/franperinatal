@@ -104,6 +104,76 @@ would not produce.
 policy timestamp, or a booking that is no longer self-manageable all authorize
 nothing. Refund eligibility additionally requires `payment_status === 'paid'`.
 
+## Management link lifetime
+
+A management capability lives as long as the business policy leaves management
+open, and not one moment longer:
+
+```
+capability_expires_at = current_start_at + one slot interval (60 min)
+```
+
+It is **not** a fixed TTL. A fixed 24-hour TTL — what this branch shipped before
+`43a55bb` was hardened — handed a patient who booked three weeks out a link that
+died while REAGENDAR and the full refund were still legitimately available,
+making the `>=24h` branch unreachable in practice for normal future bookings.
+
+The grace is what keeps the POLICY the authority that speaks at the boundary. A
+patient who opens `/manage` a minute before the session gets a neutral closed
+state from `getBookingManagementPolicy_` rather than a broken link, and a
+mutation attempted seconds after the start is refused as
+`MANAGEMENT_WINDOW_CLOSED` — a policy decision — not as a bad token.
+
+**Where it is minted.** Every outbox delivery calls
+`retryLifecycleNotification_`, which mints the CTA capabilities from the record
+it just read under the lock. So each lifecycle email — confirmation, patient
+reschedule, clinician reschedule — carries a capability scoped to the session
+start current *at send time*, and rotation invalidates the previous bearer.
+`ensureManagementCapabilities_` pre-provisions on confirmation using the same
+horizon. `original_start_at` is never consulted.
+
+**When the schedule moves.** `alignedCapabilityExpiryFields_` re-scopes the live
+stored capabilities onto the new horizon on both a patient reschedule and a
+clinician move: extended when the session moves later, contracted when it moves
+earlier. It never resurrects a capability that is already revoked or expired — a
+schedule change must not give a dead bearer a second life.
+
+**Bounded.** `CAPABILITY_UNBOUNDED=NO`. The lifetime is pinned to one concrete
+instant, and clamped to the canonical `AVAILABILITY_HORIZON_DAYS` (90) so a
+corrupted far-future `current_start_at` cannot mint a capability that outlives
+the window such a booking could have come from. An unusable or already-passed
+horizon mints nothing: the email still sends, simply without management buttons
+it could not honour.
+
+**Token validity is never authorization.** A cryptographically valid capability
+is necessary and never sufficient. At `current_start - 23h59m` the bearer is
+still valid and the policy still refuses the reschedule and the refund. Every
+action is authorized by `getBookingManagementPolicy_`, re-evaluated under the
+lock at action time, and a valid capability alone bypasses none of: the 24-hour
+reschedule cutoff, the 24-hour refund cutoff, the one-move reschedule cap, the
+cancellation state, or a session that has already started.
+
+`CAPABILITY_TTL_MS` (24h) survives only as the fallback for a primitive caller
+with no schedule context. Every production mint passes an explicit
+schedule-derived `expiresAt`; falling back to that fixed TTL is the defect this
+design exists to prevent, which is why a mutation restoring it must fail the
+suite.
+
+## Reschedule target lead time
+
+```
+target_start_at >= server_now + BOOKING_LEAD_MINUTES (120)
+```
+
+Enforced inside `patientRescheduleTransaction_`, under the lock, using the same
+canonical `BOOKING_LEAD_MINUTES` and the same comparison that
+`assertBookableSlot_` applies to a new booking — one number, one meaning, no
+duplicate constant. The picker enforces it client-side too, but a browser is not
+authority: a hand-rolled payload, a tampered page and a stale tab are all
+refused here with `TARGET_LEAD_TIME_TOO_SHORT`. Exactly `+120m` is allowed;
+`+119m59s`, `now`, and any past instant are refused. Availability and
+slot-collision behaviour is unchanged — a taken slot still reports `SLOT_TAKEN`.
+
 ## Money
 
 ### `>= 24h` cancellation
@@ -208,11 +278,12 @@ cutoffHours      : 24
 state name is exposed. The Worker clamps an unrecognised window to `closed`, so a
 degraded upstream response cannot render an action the server did not authorize.
 
-New rejection codes, both mapped to non-alarmist copy in `manage.html`:
+New rejection codes, all mapped to non-alarmist copy in `manage.html`:
 
 ```
 RESCHEDULE_WINDOW_CLOSED   — reschedule requested inside the cutoff, or past session
 MANAGEMENT_WINDOW_CLOSED   — cancel requested on a started/past or undeterminable session
+TARGET_LEAD_TIME_TOO_SHORT — reschedule target inside the 120-minute lead time
 ```
 
 ## Out of scope, unchanged
@@ -238,3 +309,62 @@ fail-closed inputs, refund counts on both sides of the cutoff, email counts,
 replay/double-click, the callback guard, and the `/manage` projection. It then
 re-runs the load-bearing subset against seven deliberately broken builds and
 requires each mutation to be detected.
+
+`node backend/appsscript/booking/test/capability-reachability.test.mjs`
+
+Covers the horizon primitive, a real emailed link surviving 24h and remaining
+valid at the policy boundary for bookings 7 and 30 days out, the
+token-validity-vs-authorization separation at 23h59m, re-scoping on both patient
+and clinician reschedules, the refusal to resurrect a dead bearer, the bounded
+ceiling, the fail-closed reads of both canonical constants, and the 120-minute
+target floor to the millisecond through both the transaction and the endpoint.
+Six further mutations must each be detected.
+
+Both suites share one VM harness, `test/helpers/policy-harness.mjs`, so the
+fake gateways and the mutation machinery cannot drift between them.
+
+Note: `docs/booking/` is gitignored in this repository, so the operational
+notes there are local only. This page is the tracked document of record.
+
+### Running the gates
+
+Local only; no Production call, no Flow call, no email, no booking.
+
+```
+# the two policy suites
+node backend/appsscript/booking/test/management-policy-24h.test.mjs
+node backend/appsscript/booking/test/capability-reachability.test.mjs
+
+# the rest of the booking suite
+for t in phase-a booking-clock-contract lifecycle notification-outbox-worker \
+         notification-outbox-sheet sequential-notification-harness \
+         no-drain-notification-harness pre-transaction-contract flow-contract \
+         lifecycle-harness calendar-metadata-reconciliation \
+         email-design-system-v3 lifecycle-email-v2 \
+         production-derived-integration session-duration-contract \
+         property-compatibility calendar-manifest-contract \
+         production-trigger-contract v7-schema-compatibility \
+         preview-host-validation clasp-fileset-release-gate \
+         clasp-staging-release-gate; do
+  node backend/appsscript/booking/test/$t.test.mjs || echo "FAIL $t"
+done
+
+# static and privacy gates
+node scripts/assert-production-secret-scan.mjs
+node scripts/assert-production-legacy-price-scan.mjs
+node scripts/assert-production-contamination-firewall.mjs
+node scripts/assert-production-clasp-staging-gate.mjs
+node scripts/assert-production-worker-structure.mjs _worker.js
+node scripts/test-production-worker-routes.mjs
+node scripts/test-production-payment-status-privacy.mjs
+node scripts/test-manage-contract.mjs
+git diff --check
+
+# email previews (needs local Chrome; deterministic, offline)
+node scripts/render-email-v3-previews.mjs
+```
+
+The `*-nonprod-*` scripts and `scripts/validate-nonprod-boundary.sh` /
+`scripts/validate-recovery-docs.sh` validate the NONPROD artifact, which does
+not exist on this Production-derived branch. They fail identically at the
+accepted baseline and are not gates for this work.

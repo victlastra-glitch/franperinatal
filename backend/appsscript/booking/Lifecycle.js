@@ -238,6 +238,101 @@ function getBookingManagementPolicy_(reservation, serverNow) {
   }, money, timing));
 }
 
+// ---------------------------------------------------------------------------
+// MANAGEMENT CAPABILITY LIFETIME — derived from the current schedule.
+//
+// A management link must stay usable for as long as the business policy leaves
+// management open, and not one moment longer. A fixed TTL cannot express that:
+// a session booked three weeks out would hand the patient a link that dies
+// while REAGENDAR and the full refund are still legitimately available.
+//
+// So the lifetime is derived from the CURRENT persisted session start:
+//
+//     capability_expires_at = current_start_at + one slot interval
+//
+// The grace is what keeps the POLICY the authority that speaks at the boundary.
+// A patient who opens /manage a minute before the session start gets a neutral
+// "closed" state from getBookingManagementPolicy_ rather than a broken link,
+// and a mutation attempted seconds after the start is refused as
+// MANAGEMENT_WINDOW_CLOSED — a policy decision — instead of as a bad token.
+//
+// This is not an unbounded capability. It is pinned to one concrete instant,
+// and clamped to the booking horizon so a corrupted far-future start cannot
+// mint a capability that outlives the window such a booking could have come
+// from. Token validity is necessary but never sufficient: every action is
+// authorized by the policy, re-evaluated under the lock at action time.
+// ---------------------------------------------------------------------------
+
+var CAPABILITY_POST_SESSION_GRACE_MS = SLOT_INTERVAL_MS;
+
+/**
+ * The minimum lead time a reschedule TARGET must satisfy. Reuses the canonical
+ * BOOKING_LEAD_MINUTES that assertBookableSlot_ applies to a new booking — one
+ * number, one meaning — and fails closed if its owner is not loaded.
+ */
+function rescheduleTargetMinLeadMinutes_() {
+  if (typeof BOOKING_LEAD_MINUTES !== 'number') fail_('BOOKING_LEAD_CONFIGURATION_MISSING');
+  return BOOKING_LEAD_MINUTES;
+}
+
+function rescheduleTargetMinLeadMs_() {
+  return rescheduleTargetMinLeadMinutes_() * 60 * 1000;
+}
+
+/**
+ * The booking horizon is the longest legitimate distance to a session, so no
+ * capability may outlive it. Read at call time from its canonical owner
+ * (CalendarGateway.js) rather than duplicated here, and fail closed with a
+ * diagnosable code if that owner is not loaded.
+ */
+function capabilityHorizonCeilingMs_(nowMs) {
+  if (typeof AVAILABILITY_HORIZON_DAYS !== 'number') fail_('BOOKING_HORIZON_CONFIGURATION_MISSING');
+  return nowMs + (AVAILABILITY_HORIZON_DAYS * 24 * 60 * 60 * 1000) + CAPABILITY_POST_SESSION_GRACE_MS;
+}
+
+/**
+ * The instant a management capability for this reservation stops being useful.
+ *
+ * Returns '' — never a fallback — when the current schedule is unusable or the
+ * horizon has already passed, so every caller fails closed rather than minting
+ * a capability it cannot justify.
+ */
+function capabilityManagementHorizonIso_(record, nowMs) {
+  const startMs = Date.parse(String(record && record.current_start_at || ''));
+  if (!Number.isFinite(startMs)) return '';
+  const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+  const horizonMs = startMs + CAPABILITY_POST_SESSION_GRACE_MS;
+  if (horizonMs <= now) return '';
+  return new Date(Math.min(horizonMs, capabilityHorizonCeilingMs_(now))).toISOString();
+}
+
+/**
+ * Re-align the stored capability expiries onto the horizon of a schedule that
+ * just moved, so an already-delivered link tracks the CURRENT session:
+ * it is extended when the session moves later, and contracted when it moves
+ * earlier. Never resurrects a capability that is already revoked or expired —
+ * a schedule change must not give a dead bearer a second life.
+ */
+function alignedCapabilityExpiryFields_(record, nowMs) {
+  const horizon = capabilityManagementHorizonIso_(record, nowMs);
+  if (!horizon) return {};
+  const now = Number.isFinite(Number(nowMs)) ? Number(nowMs) : Date.now();
+  const fields = {};
+  [LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE, LIFECYCLE.CAPABILITY_TYPE.CANCEL].forEach(function(type) {
+    const prefix = type === LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE ? 'reschedule' : 'cancel';
+    const stored = capabilityFromRecord_(record, type);
+    if (!stored.hash || stored.revokedAt) return;
+    const currentExpiry = Date.parse(String(stored.expiresAt || ''));
+    if (!Number.isFinite(currentExpiry) || currentExpiry <= now) return;
+    if (stored.expiresAt === horizon) return;
+    fields[prefix + '_capability_expires_at'] = horizon;
+  });
+  return fields;
+}
+
+// Fallback only, for a caller with no schedule context (primitives and unit
+// tests). Every production mint passes an explicit schedule-derived expiresAt;
+// falling back to this fixed TTL is the defect this section exists to prevent.
 var CAPABILITY_TTL_MS = 1000 * 60 * 60 * 24;
 var CAPABILITY_RANDOM_UUID_COUNT = 3;
 var CAPABILITY_SECRET_MIN_LENGTH = 32;
@@ -602,6 +697,16 @@ function patientRescheduleTransaction_(input) {
       return { ok: false, code: 'RESCHEDULE_WINDOW_CLOSED', window: policy.window,
         cutoffAt: policy.cutoff_at, cutoffHours: policy.cutoff_hours };
     }
+    // Server-side minimum lead time on the TARGET slot, using the same canonical
+    // BOOKING_LEAD_MINUTES and the same comparison as assertBookableSlot_ uses
+    // for a new booking. The picker enforces this client-side too, but a browser
+    // is not authority: a hand-rolled payload, a tampered page or a stale tab
+    // must all be refused here.
+    const targetStartMs = Date.parse(String(input.targetStartAt || ''));
+    if (!Number.isFinite(targetStartMs)) return { ok: false, code: 'REQUEST_REJECTED' };
+    if (targetStartMs < now + rescheduleTargetMinLeadMs_()) {
+      return { ok: false, code: 'TARGET_LEAD_TIME_TOO_SHORT', minLeadMinutes: rescheduleTargetMinLeadMinutes_() };
+    }
     const targetEnd = targetEndAt_(input.targetStartAt, input.targetEndAt);
     if (!targetSlotAvailable_(record, input.targetStartAt, targetEnd, deps)) return { ok: false, code: 'SLOT_TAKEN' };
     const operationId = input.operationId || makeOperationId_(LIFECYCLE.OPERATION_TYPE.PATIENT_RESCHEDULE, record.reservation_id + ':' + input.targetStartAt);
@@ -622,6 +727,10 @@ function patientRescheduleTransaction_(input) {
       calendar_event_updated_at: event.updated, calendar_sync_hash: event.syncHash, meet_url: event.meetUrl,
       meet_conference_id: event.meetConferenceId, meet_status: event.meetStatus };
     Object.assign(updates, persistedRevocationFields_(revoked));
+    // Applied over the revocation, and computed from the merged post-move view,
+    // so the just-revoked RESCHEDULE capability is never extended and the
+    // surviving CANCEL capability tracks the new session start.
+    Object.assign(updates, alignedCapabilityExpiryFields_(Object.assign({}, record, updates), now));
     let updated;
     try { updated = storeUpdateWithRetry_(deps.store, record, updates); }
     catch (_) {
@@ -1067,12 +1176,19 @@ function retryLifecycleNotification_(input) {
     const secret = lifecycleCapabilitySecret_(input);
     const now = lifecycleNow_(input.now); const nowIso = new Date(now).toISOString(); const fields = {}; const tokens = {};
     const notification = makeLifecycleNotification_(input.eventType, record, { now: nowIso });
+    // The horizon comes from the record just read under the lock, so a lifecycle
+    // email emitted after ANY schedule change — patient or clinician — carries a
+    // capability scoped to the NEW current session start. original_start_at is
+    // never consulted. An unusable or already-passed horizon mints nothing: the
+    // email still sends, simply without management buttons it could not honour.
+    const horizon = capabilityManagementHorizonIso_(record, now);
     notification.ctas.forEach(function(cta) {
+      if (!horizon) return;
       const type = cta === 'RESCHEDULE' ? LIFECYCLE.CAPABILITY_TYPE.RESCHEDULE : LIFECYCLE.CAPABILITY_TYPE.CANCEL;
-      const fresh = createCapability_(type, { secret: secret, now: now });
+      const fresh = createCapability_(type, { secret: secret, now: now, expiresAt: horizon });
       Object.assign(fields, capabilityFields_(fresh)); tokens[cta] = fresh.token;
     });
-    if (!notification.ctas.length) return { ok: true, notification: notification, capabilityTokens: {} };
+    if (!Object.keys(fields).length) return { ok: true, notification: notification, capabilityTokens: {} };
     const updated = storeUpdateWithRetry_(input.store, record, fields);
     const refreshed = Object.assign({}, record, updated, fields);
     return { ok: true, notification: makeLifecycleNotification_(input.eventType, refreshed, { now: nowIso }),
@@ -1134,6 +1250,12 @@ var __PHASE_A_TEST_EXPORTS__ = Object.freeze({
   retryLifecycleNotification_: retryLifecycleNotification_, assertCancellationTransition_: assertCancellationTransition_, atomicCancellationTransitionFields_: atomicCancellationTransitionFields_,
   patientRescheduleTransaction_: patientRescheduleTransaction_, patientCancelTransaction_: patientCancelTransaction_,
   getBookingManagementPolicy_: getBookingManagementPolicy_,
+  capabilityManagementHorizonIso_: capabilityManagementHorizonIso_,
+  capabilityHorizonCeilingMs_: capabilityHorizonCeilingMs_,
+  rescheduleTargetMinLeadMinutes_: rescheduleTargetMinLeadMinutes_,
+  alignedCapabilityExpiryFields_: alignedCapabilityExpiryFields_,
+  CAPABILITY_POST_SESSION_GRACE_MS: CAPABILITY_POST_SESSION_GRACE_MS,
+  CAPABILITY_TTL_MS: CAPABILITY_TTL_MS,
   managementPolicyNow_: managementPolicyNow_,
   PATIENT_MANAGEMENT_CUTOFF_HOURS: PATIENT_MANAGEMENT_CUTOFF_HOURS,
   PATIENT_MANAGEMENT_CUTOFF_MS: PATIENT_MANAGEMENT_CUTOFF_MS,

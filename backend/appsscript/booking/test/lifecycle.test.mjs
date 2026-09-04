@@ -383,6 +383,7 @@ check(localParts(dstBeforeEnd).hour === '10' && localParts(dstAfterEnd).hour ===
 const retryReschedule = phase.createCapability_('RESCHEDULE', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
 const retryCancel = phase.createCapability_('CANCEL', { secret, now: Date.parse('2026-08-23T12:00:00Z'), expiresAt: '2026-08-24T12:00:00Z' });
 const retryRecord = { reservation_id: 'fran-booking-reservation-cta', booking_status: 'confirmed', schedule_status: 'scheduled', patient_reschedule_count: '0', notification_version: '1',
+  current_start_at: '2026-08-27T14:00:00.000Z', current_end_at: '2026-08-27T14:50:00.000Z',
   ...phase.capabilityFields_(phase.capabilityForStorage_(retryReschedule)), ...phase.capabilityFields_(phase.capabilityForStorage_(retryCancel)) };
 const retryStore = { loadByReservationId: () => retryRecord, update: (_record, fields) => Object.assign(retryRecord, fields) };
 const failedOutbox = phase.createNotificationOutbox_('notification_fran-booking-cta_notification_patient_state', '1', '2026-08-23T12:00:00Z');

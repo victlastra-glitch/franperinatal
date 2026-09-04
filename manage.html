@@ -747,6 +747,7 @@
     rescheduleClosed: 'Ya no es posible reagendar esta sesión porque faltan menos de 24 horas para el horario agendado.',
     cancelRefundable: 'Puedes cancelar esta sesión y recibir el reembolso completo al mismo medio de pago utilizado.',
     cancelNonRefundable: 'Esta sesión comienza en menos de 24 horas. Puedes cancelarla para informarnos que no asistirás, pero de acuerdo con la política de cancelación no corresponde reembolso.',
+    targetTooSoon: 'Ese horario es demasiado próximo. Elige una hora con al menos 2 horas de anticipación.',
     closed: 'Esta sesión ya no admite cambios en línea. Si necesitas ayuda, escríbeme directamente.',
     cancelledRefundPending: 'Tu sesión fue cancelada y el horario quedó disponible. El reembolso está en proceso. Te enviaremos un correo cuando el reembolso sea confirmado.',
     cancelledNonRefundable: 'Recibimos tu aviso: la sesión fue cancelada y el horario quedó disponible. Como la cancelación ocurrió con menos de 24 horas de anticipación, no corresponde reembolso.',
@@ -885,7 +886,8 @@
       SLOT_TAKEN: 'Ese horario ya fue reservado por alguien más. Elige otra hora.',
       NOTIFICATION_RETRY_REQUIRED: 'La solicitud quedó registrada y requiere confirmación. Contáctame directamente.',
       RESCHEDULE_WINDOW_CLOSED: POLICY_COPY.rescheduleClosed,
-      MANAGEMENT_WINDOW_CLOSED: POLICY_COPY.closed
+      MANAGEMENT_WINDOW_CLOSED: POLICY_COPY.closed,
+      TARGET_LEAD_TIME_TOO_SHORT: POLICY_COPY.targetTooSoon
     };
     return messages[code] || 'No se pudo completar la solicitud. Intenta nuevamente o contáctame directamente.';
   }

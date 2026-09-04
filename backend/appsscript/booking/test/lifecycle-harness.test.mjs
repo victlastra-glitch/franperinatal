@@ -236,7 +236,7 @@ const store = {
 mailBodies = [];
 const notify = worker.processLifecycleNotificationOutbox_({
   config: phase.readCapabilityConfig_(), store, resources: { sheet }, schema: { headers, columns: Object.fromEntries(headers.map((h, i) => [h, i + 1])) },
-  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-09-03T16:10:00.000Z'),
+  requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-25T13:10:00.000Z'),
 });
 check(notify.ok && notify.results[0].ok && mailBodies.length === 1, 'initial notification delivered');
 check(mailBodies[0].to === allowlisted && mailBodies[0].body.includes('Entrar a la sesión:')
