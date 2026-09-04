@@ -439,8 +439,8 @@ check(sequential.notification_internal_state === 'pending'
 mailed = [];
 runWorker(sequentialStore, { outboxStore: sequentialOutbox });
 check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue cancelada'
-  && /reembolso/i.test(mailed[0].body)
-  && !mailed[0].body.includes('Meet:') && !/meet\.google\.com/i.test(mailed[0].body)
+  && !/(pago|cobro|valor|devoluci[oó]n|reembolso|\\$50\\.000|50000)/i.test(mailed[0].body)
+  && !mailed[0].body.includes('Entrar a la sesión:') && !/meet\.google\.com/i.test(mailed[0].body)
   && !mailed[0].body.includes('Reagendar:') && !mailed[0].body.includes('Cancelar:')
   && mailed[0].body.includes('11:00') && !mailed[0].body.includes('.000Z'),
   'cancellation email has Chile local context and no Meet or CTAs');
@@ -616,7 +616,7 @@ const cancelOutbox = worker.memoryNotificationOutboxStore_([
 runWorker(makeStore([staleCancel]), { outboxStore: cancelOutbox });
 check(mailed.length === 1 && mailed[0].subject === 'Tu sesión fue cancelada'
   && !mailed[0].body.includes('Reagendar:') && !mailed[0].body.includes('Cancelar:')
-  && !mailed[0].body.includes('Meet:'),
+  && !mailed[0].body.includes('Entrar a la sesión:'),
   'terminal cancellation still sends independently without resurrecting capabilities or CTAs');
 const hashesAfter = JSON.stringify(staleCancel);
 worker.enqueueLifecycleNotification_(makeSheet(staleCancel), enqueueSchema, staleCancel, 'PATIENT_CANCELLED', null, cancelOutbox);

@@ -239,7 +239,7 @@ const notify = worker.processLifecycleNotificationOutbox_({
   requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-09-03T16:10:00.000Z'),
 });
 check(notify.ok && notify.results[0].ok && mailBodies.length === 1, 'initial notification delivered');
-check(mailBodies[0].to === allowlisted && mailBodies[0].body.includes('Meet:')
+check(mailBodies[0].to === allowlisted && mailBodies[0].body.includes('Entrar a la sesión:')
   && mailBodies[0].body.includes('Reagendar:') && mailBodies[0].body.includes('Cancelar:'),
   'confirmation email has Meet + Reagendar + Cancelar for allowlisted recipient');
 check(record().notification_patient_state === 'sent', 'sent notification state');

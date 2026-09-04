@@ -232,7 +232,7 @@ function tokenFrom(body, label) {
 }
 
 function assertChileTime(body, localHm, message) {
-  check(body.includes('Fecha y hora: ') && body.includes(localHm)
+  check(body.includes('Fecha: ') && body.includes('Hora: ') && body.includes(localHm)
     && !body.includes('.000Z') && !/\d{4}-\d{2}-\d{2}T/.test(body), message);
 }
 
@@ -307,8 +307,9 @@ check(byType.CLINICIAN_RESCHEDULED.state === 'superseded' && byType.CLINICIAN_RE
   'unsent clinician reschedule is explicitly superseded after cancel');
 check(byType.SESSION_CANCELLED.state === 'sent', 'TBD cancellation remains independently deliverable');
 check(mailBodies.some((item) => item.subject === 'Tu sesión fue cancelada'
-  && /Si corresponde un reembolso, te contactaremos/.test(item.body)
-  && !item.body.includes('Meet:') && !item.body.includes('Cancelar:')),
+  && !/(pago|cobro|valor|devoluci[oó]n|reembolso|\\$50\\.000|50000)/i.test(item.body)
+  && item.body.includes('Agendar nueva sesión: ')
+  && !item.body.includes('Entrar a la sesión:') && !item.body.includes('Cancelar:')),
   'only the still-applicable TBD cancellation mail is sent to the patient');
 assertChileTime(mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada').body, '16:00', 'cancellation renders the clinician-updated Chile-local time');
 

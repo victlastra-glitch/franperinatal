@@ -289,8 +289,8 @@ drain();
 check(outboxRows.filter((row) => row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 1,
   'MANUAL_REVIEW_NOTIFICATION_COUNT=1');
 check(outboxRows.filter((row) => row.event_type === 'SESSION_CANCELLED').length === 1
-  && mailed.filter((item) => /Si corresponde un reembolso, te contactaremos/.test(
-    item.subject + item.body + (item.htmlBody || ''))).length >= 1,
+  && mailed.filter((item) => item.subject === 'Tu sesión fue cancelada'
+    && !/(pago|cobro|valor|devoluci[oó]n|reembolso|\\$50\\.000|50000)/i.test(item.body + (item.htmlBody || ''))).length >= 1,
   'SESSION_CANCELLED_ALLOWED with neutral refund copy');
 check(outboxRows.filter((row) => row.event_type === 'PATIENT_CANCELLED').length === 0
   && mailed.filter((item) => /reembolso fue procesado|reembolso completado/i.test(

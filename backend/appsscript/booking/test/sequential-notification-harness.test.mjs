@@ -231,7 +231,7 @@ function tokenFrom(body, label) {
 }
 
 function assertChileTime(body, localHm, message) {
-  check(body.includes('Fecha y hora: ') && body.includes(localHm)
+  check(body.includes('Fecha: ') && body.includes('Hora: ') && body.includes(localHm)
     && !body.includes('.000Z') && !/\d{4}-\d{2}-\d{2}T/.test(body), message);
 }
 
@@ -255,9 +255,9 @@ const sentConfirmation = drainOutbox(Date.parse('2026-09-03T16:10:00.000Z'));
 check(sentConfirmation.ok && sentConfirmation.results[0].ok && mailBodies.length === 1, 'confirmation sent once');
 check(mailBodies[0].subject.startsWith('Tu sesión está confirmada · ') && mailBodies[0].subject.includes('a las 13:00'), 'confirmation subject');
 assertChileTime(mailBodies[0].body, '13:00', 'confirmation uses America/Santiago local time');
-check(mailBodies[0].body.includes('Meet: https://meet.google.com/opaque-meet')
+check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
   && mailBodies[0].body.includes('Reagendar:') && mailBodies[0].body.includes('Cancelar:')
-  && mailBodies[0].body.includes('Primera sesión / Evaluación')
+  && mailBodies[0].body.includes('Duración: 50 minutos') && mailBodies[0].body.includes('Valor: $50.000')
   && mailBodies[0].body.includes('Modalidad: Online'),
   'confirmation has Meet + Reagendar + Cancelar + localized labels');
 const confirmationRescheduleToken = tokenFrom(mailBodies[0].body, 'Reagendar');
@@ -290,7 +290,7 @@ const sentReschedule = drainOutbox(Date.parse('2026-09-03T16:20:00.000Z'));
 check(sentReschedule.ok && sentReschedule.results[0].ok && mailBodies.length === 1, 'patient reschedule email sent once');
 check(mailBodies[0].subject.startsWith('Tu sesión fue reagendada · ') && mailBodies[0].subject.includes('a las 14:00'), 'patient reschedule subject');
 assertChileTime(mailBodies[0].body, '14:00', 'patient reschedule uses Chile local time');
-check(mailBodies[0].body.includes('Meet: https://meet.google.com/opaque-meet')
+check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
   && mailBodies[0].body.includes('Cancelar:') && !mailBodies[0].body.includes('Reagendar:'),
   'patient reschedule is CANCEL-only with Meet');
 const patientCancelToken = tokenFrom(mailBodies[0].body, 'Cancelar');
@@ -328,7 +328,7 @@ const sentClinician = drainOutbox(Date.parse('2026-09-03T17:40:00.000Z'));
 check(sentClinician.ok && sentClinician.results[0].ok && mailBodies.length === 1, 'clinician reschedule email sent once');
 check(mailBodies[0].subject === 'Hubo un cambio en tu próxima sesión', 'clinician reschedule subject');
 assertChileTime(mailBodies[0].body, '16:00', 'clinician reschedule uses Chile local time for 20:00Z');
-check(mailBodies[0].body.includes('Meet: https://meet.google.com/opaque-meet')
+check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
   && mailBodies[0].body.includes('Cancelar:') && !mailBodies[0].body.includes('Reagendar:'),
   'clinician reschedule is CANCEL-only with Meet');
 const clinicianCancelToken = tokenFrom(mailBodies[0].body, 'Cancelar');
@@ -357,9 +357,9 @@ check(sentCancel.ok && sentCancel.processed >= 1, 'cancellation notifications ar
 const cancelMail = mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada');
 check(cancelMail, 'cancellation email sent once');
 assertChileTime(cancelMail.body, '16:00', 'cancellation shows Chile local appointment context');
-check(/Si corresponde un reembolso, te contactaremos/.test(cancelMail.body)
-  && !/reembolso de tu sesión fue procesado/i.test(cancelMail.body)
-  && !cancelMail.body.includes('Meet:')
+check(!/(pago|cobro|valor|devoluci[oó]n|reembolso|\\$50\\.000|50000)/i.test(cancelMail.body)
+  && cancelMail.body.includes('Agendar nueva sesión: ')
+  && !cancelMail.body.includes('Entrar a la sesión:')
   && !/meet\.google\.com/i.test(cancelMail.body)
   && !cancelMail.body.includes('Reagendar:')
   && !cancelMail.body.includes('Cancelar:'),

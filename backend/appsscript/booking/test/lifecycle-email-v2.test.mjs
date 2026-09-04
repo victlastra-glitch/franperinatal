@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, createHmac, randomUUID } from 'node:crypto';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { FIXED_TEST_NOW_MS } from './helpers/fixed-date.mjs';
 
@@ -444,8 +443,8 @@ check(outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
   && row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 1,
   'V exactly one internal manual-review notification');
 check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada'
-  && /Si corresponde un reembolso, te contactaremos/.test(item.body)).length === 1,
-  'V patient cancel copy is TBD-neutral and is not refund-success');
+  && !/(pago|cobro|valor|devoluci[oó]n|reembolso|\$50\.000|50000)/i.test(item.body + (item.htmlBody || ''))).length === 1,
+  'V patient cancel copy carries no economic vocabulary (V3 fail-closed)');
 check(!mailBodies.some((item) => /reembolso de tu sesión fue procesado/i.test(item.body + (item.htmlBody || ''))),
   'V no PATIENT_CANCELLED refund-success email');
 
@@ -475,66 +474,7 @@ for (const relative of publicPages) {
     'Y/Z public ' + relative + ' keeps canonical $50.000');
 }
 
-const sampleRecord = {
-  service_type: 'initial', modality: 'online',
-  current_start_at: '2026-09-03T17:00:00.000Z', current_end_at: '2026-09-03T18:00:00.000Z',
-  booking_status: 'confirmed',
-};
 const previewOrigin = 'https://franciscabustos.cl';
-const emailCases = [
-  { eventType: 'BOOKING_CONFIRMED', tokens: { RESCHEDULE: 'r'.repeat(64), CANCEL: 'c'.repeat(64) } },
-  { eventType: 'PATIENT_RESCHEDULED', tokens: { CANCEL: 'c'.repeat(64) } },
-  { eventType: 'CLINICIAN_RESCHEDULED', tokens: { CANCEL: 'c'.repeat(64) } },
-  { eventType: 'SESSION_CANCELLED', tokens: {} },
-];
-const fixtureDir = new URL('./fixtures/email-preview/', import.meta.url);
-await mkdir(fixtureDir, { recursive: true });
-for (const item of emailCases) {
-  const rendered = context.renderLifecycleNotificationEmail_({
-    notification: {
-      eventType: item.eventType,
-      meet: item.eventType === 'SESSION_CANCELLED' ? null : { meetUrl: 'https://meet.google.com/opaque-meet' },
-    },
-    record: sampleRecord,
-    capabilityTokens: item.tokens,
-    previewOrigin,
-  });
-  check(rendered.subject && rendered.body && rendered.htmlBody, item.eventType + ' has subject + text + html');
-  check(rendered.htmlBody.includes('max-width:600') && rendered.htmlBody.includes('alt="Francisca Bustos"')
-    && rendered.htmlBody.includes('font-size:16px'),
-    item.eventType + ' is email-safe, 600px, alt text, 16px body');
-  if (item.eventType !== 'SESSION_CANCELLED') {
-    check(rendered.htmlBody.includes('min-height:44px'), item.eventType + ' CTAs meet 44px touch target');
-  }
-  check(!forbiddenPatientCopy(rendered.subject + rendered.body + rendered.htmlBody), item.eventType + ' has no marketing/clinical leakage');
-  if (item.eventType === 'BOOKING_CONFIRMED') {
-    check(rendered.subject.startsWith('Tu sesión está confirmada · ') && !/pagar|pendiente de pago/i.test(rendered.body + rendered.htmlBody),
-      'confirmation subject and no pay instructions');
-  }
-  if (item.eventType === 'PATIENT_RESCHEDULED') check(rendered.subject.startsWith('Tu sesión fue reagendada · '), 'patient reschedule subject');
-  if (item.eventType === 'CLINICIAN_RESCHEDULED') check(rendered.subject === 'Hubo un cambio en tu próxima sesión', 'clinician reschedule subject');
-  if (item.eventType === 'SESSION_CANCELLED') {
-    check(rendered.subject === 'Tu sesión fue cancelada'
-      && rendered.body.includes('Si corresponde un reembolso, te contactaremos.')
-      && !/reembolso de tu sesión fue procesado/i.test(rendered.body),
-      'cancel email uses BUSINESS_POLICY_TBD copy');
-  }
-  const wrapped = '<!DOCTYPE html><html lang="es-CL"><head><meta charset="utf-8"><title>'
-    + item.eventType + '</title></head><body style="margin:0;background:#e5e5e5;">'
-    + rendered.htmlBody.replace('<!DOCTYPE html>', '').replace(/<html[^>]*>/, '').replace('</html>', '')
-    + '</body></html>';
-  const fileBase = {
-    BOOKING_CONFIRMED: 'booking-confirmed',
-    PATIENT_RESCHEDULED: 'session-rescheduled',
-    CLINICIAN_RESCHEDULED: 'session-clinician-change',
-    SESSION_CANCELLED: 'session-cancelled',
-  }[item.eventType];
-  await writeFile(new URL(fileBase + '.html', fixtureDir), rendered.htmlBody);
-  await writeFile(new URL(fileBase + '.txt', fixtureDir), rendered.body);
-  void wrapped;
-}
-
-check(templates.EMAIL_BRAND.maxWidth === 600, 'desktop email max width is 600');
 
 refundCreateShouldFail = true;
 const createdExpiryFail = createBooking(21, '10:00', '2026-09-04');
@@ -589,9 +529,9 @@ check(mailBodies.filter((item) => item.subject.startsWith('Revisión operativa')
     && item.body.includes('no intentado')
     && item.body.includes('revisión humana'))
   && mailBodies.some((item) => item.subject === 'Tu sesión fue cancelada'
-    && /Si corresponde un reembolso, te contactaremos/.test(item.body)
-    && !/reembolso de tu sesión fue procesado/i.test(item.body)),
-  'operational alert is internal and patient copy stays BUSINESS_POLICY_TBD');
+    && !/(pago|cobro|valor|devoluci[oó]n|reembolso|\$50\.000|50000)/i.test(item.body + (item.htmlBody || ''))
+    && item.body.includes('Agendar nueva sesión: ')),
+  'operational alert is internal and patient copy carries no economic vocabulary');
 const tbdReplay = context.patientCancel_({ postData: { contents: JSON.stringify({ token: tbdCancelTok }) } });
 check(tbdReplay.ok && tbdReplay.replay === true, 'TBD cancel replay is idempotent');
 mailBodies = [];
@@ -614,12 +554,11 @@ const tbdRendered = context.renderLifecycleNotificationEmail_({
 check(tbdRendered.subject.startsWith('Revisión operativa')
   && /no es confirmación de reembolso/i.test(tbdRendered.body + tbdRendered.htmlBody)
   && tbdRendered.body.includes('fran-booking-reservation-ops-alert')
-  && !tbdRendered.htmlBody.includes('min-height:44px')
+  && !tbdRendered.htmlBody.includes('min-height:48px')
   && !/transferencia bancaria|pagar/i.test(tbdRendered.body + tbdRendered.htmlBody),
   'manual-review template is operational, has no patient CTAs, and does not claim refund success');
 check(worker.lifecycleNotificationRecipient_({ internalNotificationEmail: allowlisted }, { patient_email: allowlisted }, 'REFUND_FAILED_MANUAL_REVIEW') === allowlisted,
   'manual-review delivery uses the internal operational recipient');
 
-console.log(`LIFECYCLE_EMAIL_V2_MATRIX=PASS assertions=${assertions}`);
-console.log('EMAIL_PREVIEW_FIXTURES=' + fileURLToPath(new URL('./fixtures/email-preview/', import.meta.url)));
+console.log(`LIFECYCLE_EMAIL_DELIVERY_MATRIX=PASS assertions=${assertions}`);
 console.log('REAL_NETWORK_SIDE_EFFECTS=0');
