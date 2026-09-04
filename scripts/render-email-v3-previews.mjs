@@ -19,8 +19,9 @@ const FIXTURES = path.join(REPO_ROOT, 'backend/appsscript/booking/test/fixtures/
 const SHOTS = path.join(FIXTURES, 'screenshots');
 // 648 = the 600px email plus its 24px desktop outer padding on each side.
 const VIEWPORTS = [['desktop-600', 648], ['430', 430], ['390', 390], ['375', 375], ['320', 320]];
-const CASES = ['booking-confirmed', 'session-rescheduled', 'session-clinician-change', 'session-cancelled'];
-const DARK_CASES = ['booking-confirmed', 'session-cancelled'];
+const CASES = ['booking-confirmed', 'session-rescheduled', 'session-clinician-change', 'session-cancelled',
+  'session-cancelled-refunded'];
+const DARK_CASES = ['booking-confirmed', 'session-cancelled-refunded'];
 const CHROME_CANDIDATES = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/Applications/Chromium.app/Contents/MacOS/Chromium',

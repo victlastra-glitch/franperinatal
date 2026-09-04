@@ -1496,7 +1496,8 @@ function refundConfirmation_(e) {
         transitionBooking_(resources.sheet, schema, record, LIFECYCLE.BOOKING_STATUS.CANCELLED);
       }
       if (userCancellation) {
-        enqueueLifecycleNotification_(resources.sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED);
+        enqueuePatientCancellationNotificationOnce_(resources.sheet, schema, record,
+          LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED);
       }
     }
     if (!result.replay && result.status === LIFECYCLE.REFUND_STATUS.FAILED) {
@@ -1571,9 +1572,38 @@ function enqueueManualPolicyRefundNotification_(sheet, schema, record) {
   return enqueueLifecycleNotification_(sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW);
 }
 
+// A reservation gets at most ONE patient cancellation email.
+//
+// SESSION_CANCELLED is the pre-provider-confirmation variant: it is enqueued at
+// cancellation time only when no refund is in flight, and it makes no refund
+// claim. PATIENT_CANCELLED / CLINICIAN_CANCELLED is the final variant, enqueued
+// only from refundConfirmation_ once the provider confirms REFUNDED, and it
+// carries the refund copy. Whichever lands first wins, so a later provider
+// confirmation can never produce a second Francisca patient email.
+var PATIENT_CANCELLATION_NOTIFICATION_TYPES = Object.freeze([
+  'SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED',
+]);
+
+function patientCancellationNotificationExists_(outboxStore, reservationId) {
+  const id = String(reservationId || '');
+  if (!id) return false;
+  return outboxStore.records().some(function(row) {
+    return String(row.reservation_id || '') === id
+      && PATIENT_CANCELLATION_NOTIFICATION_TYPES.indexOf(String(row.event_type || '')) !== -1
+      && String(row.state || '') !== 'superseded';
+  });
+}
+
+function enqueuePatientCancellationNotificationOnce_(sheet, schema, record, eventType) {
+  const store = notificationOutboxStoreFromSheet_(sheet);
+  if (patientCancellationNotificationExists_(store, record && record.reservation_id)) return null;
+  return enqueueLifecycleNotification_(sheet, schema, record, eventType, null, store);
+}
+
 function enqueueSessionCancelledNotification_(sheet, schema, record) {
   if (!manualPolicyRefundNotificationNeeded_(record)) return null;
-  return enqueueLifecycleNotification_(sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.SESSION_CANCELLED);
+  return enqueuePatientCancellationNotificationOnce_(sheet, schema, record,
+    LIFECYCLE.NOTIFICATION_TYPE.SESSION_CANCELLED);
 }
 
 function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTokens, outboxStore) {
@@ -2192,6 +2222,10 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   assertPatientEmail_: assertPatientEmail_,
   enqueueLifecycleNotification_: enqueueLifecycleNotification_,
   enqueueManualPolicyRefundNotification_: enqueueManualPolicyRefundNotification_,
+  enqueueSessionCancelledNotification_: enqueueSessionCancelledNotification_,
+  enqueuePatientCancellationNotificationOnce_: enqueuePatientCancellationNotificationOnce_,
+  patientCancellationNotificationExists_: patientCancellationNotificationExists_,
+  PATIENT_CANCELLATION_NOTIFICATION_TYPES: PATIENT_CANCELLATION_NOTIFICATION_TYPES,
   lifecycleNotificationRecipient_: lifecycleNotificationRecipient_,
   notificationAttemptFailureFields_: notificationAttemptFailureFields_,
   abandonFailedCheckout_: abandonFailedCheckout_,

@@ -541,6 +541,75 @@ check(mailBodies.length === 0
     && row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 1,
   'TBD cancel replay does not duplicate the operational notification');
 
+// FINAL_CANCELLATION_PATIENT_EMAIL_COUNT_MAX=1
+//
+// The reservation above already received its single patient cancellation email
+// (SESSION_CANCELLED, no refund claim). Driving the refund all the way to a
+// provider-confirmed REFUNDED must NOT produce a second Francisca patient
+// email. Flow's own recipient-acceptance mail is provider behaviour and is
+// untouched by this rule.
+const finalRecord = byKey(22);
+const cancellationTypes = ['SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'];
+const cancellationRows = () => outboxRows.filter((row) => row.reservation_id === finalRecord.reservation_id
+  && cancellationTypes.includes(row.event_type));
+check(cancellationRows().length === 1 && cancellationRows()[0].event_type === 'SESSION_CANCELLED',
+  'exactly one patient cancellation notification exists before provider confirmation');
+const manualRefundToken = 'REFUNDTOKENMANUALREVIEW00001';
+store.update(finalRecord, { refund_provider_reference: manualRefundToken });
+refundStatusOverride = 'refunded';
+mailBodies = [];
+const lateRefund = context.refundConfirmation_({ parameter: { token: manualRefundToken } });
+refundStatusOverride = 'accepted';
+check(lateRefund && byKey(22).refund_status === 'refunded',
+  'provider confirmation moves the parked refund to REFUNDED');
+check(cancellationRows().length === 1,
+  'provider-confirmed refund enqueues no second patient cancellation notification');
+drain();
+check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'FINAL_CANCELLATION_PATIENT_EMAIL_COUNT_MAX=1 — no duplicate patient cancellation email');
+check(!mailBodies.some((item) => /reembolso fue procesado|reembolso completado/i.test(item.body + (item.htmlBody || ''))),
+  'no separate Francisca refund-success email follows the cancellation');
+
+// The reverse order is the designed path: when no patient cancellation email
+// has gone out yet, provider confirmation emits exactly one final email that
+// carries the approved refund copy.
+const freshCancel = createBooking(23, '15:00', '2026-09-04');
+setFlowStatus(byKey(23), 2);
+context.flowConfirmation_({ parameter: { token: byKey(23).flow_token } });
+mailBodies = [];
+drain();
+const freshCancelTok = tokenFrom(mailBodies[0].body, 'Cancelar');
+context.patientCancel_({ postData: { contents: JSON.stringify({ token: freshCancelTok }) } });
+void freshCancel;
+const freshRecord = byKey(23);
+const freshRows = () => outboxRows.filter((row) => row.reservation_id === freshRecord.reservation_id
+  && cancellationTypes.includes(row.event_type));
+// Drop the pre-confirmation notification so this models an authorized-refund
+// cancellation, where nothing is sent to the patient until the provider confirms.
+outboxRows.filter((row) => row.reservation_id === freshRecord.reservation_id
+  && row.event_type === 'SESSION_CANCELLED').forEach((row) => { row.state = 'superseded'; });
+const freshRefundToken = 'REFUNDTOKENAUTHORIZED0000001';
+store.update(freshRecord, { refund_provider_reference: freshRefundToken });
+refundStatusOverride = 'refunded';
+mailBodies = [];
+context.refundConfirmation_({ parameter: { token: freshRefundToken } });
+refundStatusOverride = 'accepted';
+check(freshRows().filter((row) => row.event_type === 'PATIENT_CANCELLED' && row.state !== 'superseded').length === 1,
+  'provider confirmation emits exactly one final PATIENT_CANCELLED notification');
+mailBodies = [];
+drain();
+const finalMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada');
+check(finalMail.length === 1, 'the provider-confirmed cancellation sends exactly one patient email');
+check(/El reembolso fue procesado al mismo medio de pago utilizado\./.test(finalMail[0].body)
+  && /hasta 10 días hábiles/.test(finalMail[0].body)
+  && /REEMBOLSO/.test(finalMail[0].htmlBody || ''),
+  'the final cancellation email carries the approved refund copy');
+check(!/\$50\.000|Modalidad:|Duración:|meet\.google\.com/.test(finalMail[0].body),
+  'the final cancellation email shows no value, modality, duration or Meet');
+mailBodies = [];
+drain();
+check(mailBodies.length === 0, 'the final cancellation email is not resent on later worker runs');
+
 const tbdRendered = context.renderLifecycleNotificationEmail_({
   notification: { eventType: 'REFUND_FAILED_MANUAL_REVIEW', meet: null },
   record: {

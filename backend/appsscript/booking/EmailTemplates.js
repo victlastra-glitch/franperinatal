@@ -41,6 +41,7 @@ var EMAIL_V3_PREHEADER = Object.freeze({
   confirmed: 'Fecha, hora y enlace para entrar a tu sesión.',
   rescheduled: 'Revisa tu nueva fecha y el enlace de la sesión.',
   cancelled: 'Confirmación de cancelación de tu sesión.',
+  cancelledRefunded: 'Confirmación de cancelación y reembolso de tu sesión.',
   internal: 'Revisión operativa interna. No es confirmación de reembolso al paciente.',
   generic: 'Actualización operativa de tu reserva.',
 });
@@ -49,6 +50,11 @@ var EMAIL_V3_PREHEADER = Object.freeze({
 // follow-up alike; it makes no claim about which session this is.
 var EMAIL_V3_SESSION_COPY = 'No necesitas preparar nada especial para la sesión. '
   + 'Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';
+
+// Approved refund copy. Rendered only once the provider has confirmed the
+// refund as REFUNDED, never before.
+var EMAIL_V3_REFUND_COPY = 'El reembolso fue procesado al mismo medio de pago utilizado. '
+  + 'Dependiendo de tu banco o emisor, puede tardar hasta 10 días hábiles en verse reflejado.';
 
 function escapeEmailText_(value) {
   return String(value == null ? '' : value)
@@ -133,6 +139,17 @@ function emailV3AmountLabel_(record) {
  * The reservation schema stores no patient name (deliberate minimisation), so
  * the greeting degrades to "Hola," unless a name is present on the record.
  */
+/**
+ * True only for the final cancellation email: the event is the provider-confirmed
+ * variant AND the record itself still reads REFUNDED. Both must agree before any
+ * refund claim is rendered, so a mis-routed event cannot produce a false claim.
+ */
+function emailV3RefundConfirmed_(eventType, record) {
+  const confirmedEvent = eventType === LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED
+    || eventType === LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_CANCELLED;
+  return confirmedEvent && String(record && record.refund_status || '') === LIFECYCLE.REFUND_STATUS.REFUNDED;
+}
+
 function emailV3Greeting_(record) {
   const raw = String(record && (record.patient_first_name || record.patient_name) || '').trim();
   const first = raw ? raw.split(/\s+/)[0].slice(0, 40) : '';
@@ -297,6 +314,21 @@ function emailV3ScheduleHighlight_(previousValue, newValue) {
     + ';border-radius:4px;">' + inner + '</table></td></tr>';
 }
 
+/** Quiet information block: thin border, cream ground, label eyebrow, no icon. */
+function emailV3InfoBlock_(label, text) {
+  return '<tr><td class="v3-pad" style="padding:24px 28px 0 28px;">'
+    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="' + EMAIL_V3.cream
+    + '" style="width:100%;background-color:' + EMAIL_V3.cream + ';border:1px solid ' + EMAIL_V3.border
+    + ';border-radius:4px;">'
+    + '<tr><td class="v3-ink3" style="padding:16px 16px 0 16px;font-family:' + EMAIL_V3.sans
+    + ';font-size:10px;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase;color:'
+    + EMAIL_V3.textMuted + ';">' + label + '</td></tr>'
+    + '<tr><td class="v3-ink2" style="padding:8px 16px 16px 16px;font-family:' + EMAIL_V3.sans
+    + ';font-size:16px;font-weight:400;line-height:1.55;color:' + EMAIL_V3.textSecondary + ';">'
+    + escapeEmailText_(text) + '</td></tr>'
+    + '</table></td></tr>';
+}
+
 function emailV3Button_(href, label, primary) {
   if (!href || !label) return '';
   const background = primary ? EMAIL_V3.charcoal : EMAIL_V3.paper;
@@ -455,15 +487,17 @@ function renderLifecycleEmailHtml_(input) {
     const when = parts.date && parts.time
       ? 'La sesión agendada para el ' + parts.date + ' a las ' + parts.time + ' fue cancelada.'
       : 'La sesión que tenías agendada fue cancelada.';
+    const refundConfirmed = emailV3RefundConfirmed_(notification.eventType, record);
     return emailV3Document_({
       title: subject,
-      preheader: EMAIL_V3_PREHEADER.cancelled,
+      preheader: refundConfirmed ? EMAIL_V3_PREHEADER.cancelledRefunded : EMAIL_V3_PREHEADER.cancelled,
       rows: emailV3Header_()
         + emailV3Eyebrow_('TU SESIÓN FUE CANCELADA', EMAIL_V3.cancelBg, EMAIL_V3.cancelAccent)
         + emailV3Headline_('Tu sesión fue cancelada.')
         + emailV3Body_(escapeEmailText_(emailV3Greeting_(record)), 24, EMAIL_V3.charcoal)
         + emailV3Body_(escapeEmailText_(when), 16)
         + emailV3Details_(cancelledRows)
+        + (refundConfirmed ? emailV3InfoBlock_('REEMBOLSO', EMAIL_V3_REFUND_COPY) : '')
         + emailV3PrimaryRow_(emailV3BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN')
         + emailV3SecondaryRow_([{ href: EMAIL_V3_BRAND.whatsappUrl, label: 'CONTACTAR POR WHATSAPP' }])
         + emailV3Body_('Si necesitas apoyo o tienes dudas, puedes escribirnos. '
@@ -598,6 +632,9 @@ function renderLifecycleEmailText_(input) {
     lines.push('');
     if (parts.date) lines.push('Fecha: ' + parts.date);
     if (parts.time) lines.push('Hora: ' + parts.time + ' (Chile)');
+    if (emailV3RefundConfirmed_(notification.eventType, record)) {
+      lines.push('', 'REEMBOLSO', EMAIL_V3_REFUND_COPY);
+    }
     lines.push('', 'Agendar nueva sesión: ' + emailV3BookingUrl_(origin));
     lines.push('Contactar por WhatsApp: ' + EMAIL_V3_BRAND.whatsappUrl);
     lines.push('', 'Si necesitas apoyo o tienes dudas, puedes escribirnos. '
@@ -656,6 +693,8 @@ var __EMAIL_TEMPLATE_TEST_EXPORTS__ = Object.freeze({
   EMAIL_V3_BRAND: EMAIL_V3_BRAND,
   EMAIL_V3_PREHEADER: EMAIL_V3_PREHEADER,
   EMAIL_V3_SESSION_COPY: EMAIL_V3_SESSION_COPY,
+  EMAIL_V3_REFUND_COPY: EMAIL_V3_REFUND_COPY,
+  emailV3RefundConfirmed_: emailV3RefundConfirmed_,
   lifecycleEmailDateParts_: lifecycleEmailDateParts_,
   lifecycleNotificationSubject_: lifecycleNotificationSubject_,
   lifecycleEmailV3Kind_: lifecycleEmailV3Kind_,

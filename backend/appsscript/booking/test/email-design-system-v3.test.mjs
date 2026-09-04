@@ -75,9 +75,15 @@ const rescheduled = render('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_
 const rescheduledLeaky = render('PATIENT_RESCHEDULED', movedRecord,
   { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN });
 const clinicianChange = render('CLINICIAN_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN });
-const cancelled = render('SESSION_CANCELLED', baseRecord, {}, null);
-const cancelledPatient = render('PATIENT_CANCELLED', baseRecord, { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN }, null);
-const cancelledClinician = render('CLINICIAN_CANCELLED', baseRecord, {}, null);
+// Pre-provider-confirmation: cancelled, refund parked in manual review.
+const pendingRecord = Object.assign({}, baseRecord, { payment_status: 'paid', refund_status: 'manual_review' });
+const cancelled = render('SESSION_CANCELLED', pendingRecord, {}, null);
+// Provider-confirmed REFUNDED: the single final cancellation email.
+const refundedRecord = Object.assign({}, baseRecord, { payment_status: 'paid', refund_status: 'refunded' });
+const cancelledPatient = render('PATIENT_CANCELLED', refundedRecord, { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN }, null);
+const cancelledClinician = render('CLINICIAN_CANCELLED', refundedRecord, {}, null);
+// A refund-confirmed event whose record is NOT refunded must fail closed.
+const cancelledMisrouted = render('PATIENT_CANCELLED', pendingRecord, {}, null);
 const internal = render('REFUND_FAILED_MANUAL_REVIEW', Object.assign({}, baseRecord, {
   payment_status: 'paid', refund_status: 'manual_review', refund_last_error_code: 'BUSINESS_POLICY_TBD',
 }), {}, null);
@@ -91,6 +97,7 @@ const patientStates = {
   SESSION_CANCELLED: cancelled,
   PATIENT_CANCELLED: cancelledPatient,
   CLINICIAN_CANCELLED: cancelledClinician,
+  PATIENT_CANCELLED_MISROUTED: cancelledMisrouted,
 };
 
 // ---------------------------------------------------------------------------
@@ -174,7 +181,9 @@ check(preheaderOf(confirmed.htmlBody) === 'Fecha, hora y enlace para entrar a tu
 check(preheaderOf(rescheduled.htmlBody) === 'Revisa tu nueva fecha y el enlace de la sesión.',
   'rescheduled preheader is the exact V3 string');
 check(preheaderOf(cancelled.htmlBody) === 'Confirmación de cancelación de tu sesión.',
-  'cancelled preheader is the exact V3 string');
+  'pre-confirmation cancelled preheader is the exact V3 string');
+check(preheaderOf(cancelledPatient.htmlBody) === 'Confirmación de cancelación y reembolso de tu sesión.',
+  'provider-confirmed cancelled preheader is the exact V3 string');
 for (const [name, rendered] of Object.entries(patientStates)) {
   const preheader = preheaderOf(rendered.htmlBody);
   check(preheader && !rendered.htmlBody.includes('>' + preheader + '</td>'),
@@ -355,28 +364,44 @@ check(rescheduled.htmlBody.includes('>ANTES<') && rescheduled.htmlBody.includes(
   'patient reschedule keeps ANTES and NUEVA FECHA in html and text');
 
 // ---------------------------------------------------------------------------
-// CANCELLED (patient) — fail-closed
+// CANCELLED (patient) — one final email, state-aware refund copy
 // ---------------------------------------------------------------------------
-const FAIL_CLOSED = /(pago|cobro|valor|devoluci[oó]n|reembolso|\$50\.000|50000)/i;
+// The blanket "no refund vocabulary in any cancellation" rule is gone. It is
+// replaced by two state-scoped rules: nothing may claim a processed refund
+// before the provider confirms it, and the confirmed variant must carry the
+// approved refund copy.
+const CLAIMS_PROCESSED_REFUND =
+  /(reembolso[^.]{0,40}(fue|ha sido|est[aá])\s+(procesad|complet|realiz|devuelt|emitid))|(devoluci[oó]n[^.]{0,40}(fue|ha sido)\s+(procesad|complet|realiz))|(te (hemos )?devolvimos|dinero devuelto|reembolso completado|reembolso realizado)/i;
+const PRE_CONFIRMATION_ECONOMIC = /(pago|cobro|valor|devoluci[oó]n|reembolso|\$50\.000|50000)/i;
+const REFUND_COPY = 'El reembolso fue procesado al mismo medio de pago utilizado. '
+  + 'Dependiendo de tu banco o emisor, puede tardar hasta 10 días hábiles en verse reflejado.';
+check(context.__EMAIL_TEMPLATE_TEST_EXPORTS__.EMAIL_V3_REFUND_COPY === REFUND_COPY,
+  'the approved refund copy is the exact V3 string');
+
+// Shared cancellation shape, whatever the refund state.
 for (const [name, rendered] of Object.entries({
-  SESSION_CANCELLED: cancelled, PATIENT_CANCELLED: cancelledPatient, CLINICIAN_CANCELLED: cancelledClinician,
+  SESSION_CANCELLED: cancelled, PATIENT_CANCELLED: cancelledPatient,
+  CLINICIAN_CANCELLED: cancelledClinician, PATIENT_CANCELLED_MISROUTED: cancelledMisrouted,
 })) {
   check(rendered.subject === 'Tu sesión fue cancelada', name + ': cancelled subject');
-  check(!FAIL_CLOSED.test(rendered.htmlBody), name + ': cancelled HTML has no economic vocabulary');
-  check(!FAIL_CLOSED.test(rendered.body), name + ': cancelled text/plain has no economic vocabulary');
   check(rendered.htmlBody.includes('>TU SESIÓN FUE CANCELADA<'), name + ': cancelled eyebrow');
   check(rendered.htmlBody.includes('>Tu sesión fue cancelada.<'), name + ': cancelled H1');
   check(rendered.htmlBody.includes('La sesión agendada para el jueves 3 de septiembre de 2026 a las 13:00 fue cancelada.'),
-    name + ': cancelled copy names the cancelled slot');
-  check(rendered.htmlBody.includes('>Fecha</td>') && rendered.htmlBody.includes('>jueves 3 de septiembre de 2026<'),
-    name + ': cancelled shows the date');
-  check(rendered.htmlBody.includes('>Hora</td>') && rendered.htmlBody.includes('>13:00 (Chile)<'),
-    name + ': cancelled shows the time');
+    name + ': cancelled lead names the cancelled slot');
+  check(/>Fecha<\/td>/i.test(rendered.htmlBody) && rendered.htmlBody.includes('>jueves 3 de septiembre de 2026<'),
+    name + ': cancelled shows FECHA');
+  check(/>Hora<\/td>/i.test(rendered.htmlBody) && rendered.htmlBody.includes('>13:00 (Chile)<'),
+    name + ': cancelled shows HORA');
+  check(rendered.htmlBody.includes('text-transform:uppercase') , name + ': detail labels render uppercase');
   check(!rendered.htmlBody.includes('>Modalidad</td>'), name + ': cancelled hides modality');
   check(!rendered.htmlBody.includes('>Duración</td>'), name + ': cancelled hides duration');
+  check(!rendered.htmlBody.includes('>Valor</td>') && !/\$50\.000|(?<!\d)50000(?!\d)/.test(rendered.htmlBody + rendered.body),
+    name + ': cancelled hides the session value');
   check(!/meet\.google\.com|ENTRAR A LA SESIÓN/i.test(rendered.htmlBody + rendered.body), name + ': cancelled hides Meet');
   check(!/manage\.html|open=reschedule|open=cancel|REAGENDAR SESIÓN|CANCELAR SESIÓN/.test(rendered.htmlBody + rendered.body),
     name + ': cancelled drops the old management links');
+  check(!/pagar|pendiente de pago|transferencia bancaria|medio de pago para pagar/i.test(rendered.htmlBody + rendered.body),
+    name + ': cancelled carries no payment instructions');
   check(rendered.htmlBody.includes('>AGENDAR NUEVA SESIÓN</a>') && rendered.htmlBody.includes('href="https://franciscabustos.cl/reserva"'),
     name + ': cancelled primary is AGENDAR NUEVA SESIÓN');
   check(rendered.htmlBody.includes('>CONTACTAR POR WHATSAPP</a>') && rendered.htmlBody.includes('href="https://wa.me/56957663038"'),
@@ -386,9 +411,47 @@ for (const [name, rendered] of Object.entries({
   check(rendered.body.includes('Agendar nueva sesión: https://franciscabustos.cl/reserva')
     && rendered.body.includes('Contactar por WhatsApp: https://wa.me/56957663038')
     && rendered.body.includes('Fecha: jueves 3 de septiembre de 2026') && rendered.body.includes('Hora: 13:00 (Chile)'),
-    name + ': cancelled text/plain is equivalent and economically silent');
-  check(!/Si corresponde un reembolso|reembolso de tu sesión fue procesado/i.test(rendered.htmlBody + rendered.body),
-    name + ': V2 cancellation refund copy is gone');
+    name + ': cancelled text/plain is equivalent');
+  check(!/reembolso de tu sesión fue procesado|Si corresponde un reembolso/i.test(rendered.htmlBody + rendered.body),
+    name + ': the V2 cancellation refund copy is gone');
+}
+
+// PRE_PROVIDER_CONFIRMATION: no refund claim at all.
+for (const [name, rendered] of Object.entries({
+  SESSION_CANCELLED: cancelled, PATIENT_CANCELLED_MISROUTED: cancelledMisrouted,
+})) {
+  check(!CLAIMS_PROCESSED_REFUND.test(rendered.htmlBody) && !CLAIMS_PROCESSED_REFUND.test(rendered.body),
+    name + ': claims no processed refund before the provider confirms it');
+  check(!PRE_CONFIRMATION_ECONOMIC.test(rendered.htmlBody) && !PRE_CONFIRMATION_ECONOMIC.test(rendered.body),
+    name + ': pre-confirmation cancellation carries no economic vocabulary');
+  check(!rendered.htmlBody.includes('REEMBOLSO') && !rendered.body.includes('REEMBOLSO'),
+    name + ': pre-confirmation cancellation has no REEMBOLSO block');
+}
+
+// PROVIDER_CONFIRMED_REFUNDED: exactly the approved refund copy.
+for (const [name, rendered] of Object.entries({
+  PATIENT_CANCELLED: cancelledPatient, CLINICIAN_CANCELLED: cancelledClinician,
+})) {
+  check(rendered.htmlBody.includes('>REEMBOLSO</td>'), name + ': renders the REEMBOLSO information block');
+  check(rendered.htmlBody.includes(REFUND_COPY) && rendered.body.includes(REFUND_COPY),
+    name + ': carries the approved refund copy in html and text');
+  check(rendered.htmlBody.includes('El reembolso fue procesado al mismo medio de pago utilizado.'),
+    name + ': states the refund went to the original payment method');
+  check(rendered.htmlBody.includes('hasta 10 días hábiles') && rendered.body.includes('hasta 10 días hábiles'),
+    name + ': states the 10 business day window');
+  check(rendered.body.includes('\nREEMBOLSO\n'), name + ': text/plain carries a REEMBOLSO section');
+  // Quiet information block: thin border, cream ground, no icon, no marketing.
+  const block = rendered.htmlBody.slice(rendered.htmlBody.indexOf('>REEMBOLSO</td>') - 700,
+    rendered.htmlBody.indexOf(REFUND_COPY) + REFUND_COPY.length);
+  check(block.includes('background-color:#FFF7F2') && block.includes('border:1px solid #E7DDD3')
+    && block.includes('border-radius:4px'), name + ': refund block is a cream panel with a thin 4px-radius border');
+  check(!/&#\d|✔|✅|💸|🎉/.test(block) && !/font-size:(2[0-9]|3[0-9])px/.test(block),
+    name + ': refund block has no icon and no financial-marketing emphasis');
+  // The single final email carries no second refund CTA or follow-up promise.
+  const primaries = (rendered.htmlBody.match(/background-color:#2F3236;border:1px solid #2F3236/g) || []).length;
+  check(primaries === 1, name + ': exactly one primary action, no separate refund CTA');
+  check(!/ver reembolso|estado del reembolso|seguimiento del reembolso|te enviaremos|te contactaremos/i.test(
+    rendered.htmlBody + rendered.body), name + ': promises no further refund email');
 }
 
 // ---------------------------------------------------------------------------
@@ -400,7 +463,8 @@ check(/no es confirmación de reembolso al paciente/i.test(internal.htmlBody)
 check(internal.htmlBody.includes('fran-booking-reservation-synthetic') && internal.body.includes('Pago: paid')
   && internal.body.includes('Reembolso: manual_review') && internal.body.includes('Motivo: BUSINESS_POLICY_TBD')
   && internal.body.includes('revisión humana'), 'internal operational payload preserved');
-check(FAIL_CLOSED.test(internal.body), 'internal notification is exempt from the patient fail-closed rule');
+check(PRE_CONFIRMATION_ECONOMIC.test(internal.body),
+  'internal notification is exempt from the pre-confirmation economic rule');
 check(!internal.htmlBody.includes('min-height:48px'), 'internal notification has no patient CTA');
 check(!/AGENDAR NUEVA SESIÓN|CONTACTAR POR WHATSAPP|ENTRAR A LA SESIÓN|¿Necesitas ayuda\?/.test(internal.htmlBody),
   'internal notification did not inherit patient V3 copy');
@@ -415,6 +479,7 @@ const artifacts = {
   'session-rescheduled': rescheduled,
   'session-clinician-change': clinicianChange,
   'session-cancelled': cancelled,
+  'session-cancelled-refunded': cancelledPatient,
 };
 for (const [base, rendered] of Object.entries(artifacts)) {
   await writeFile(new URL(base + '.html', fixtureDir), rendered.htmlBody);
