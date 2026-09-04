@@ -128,6 +128,16 @@
     .mg-badge.cancelled { background: #F5EAE4; color: #8B2A20; }
     .mg-badge.rescheduled { background: #EAF0F5; color: #2A5A80; }
 
+    /* ── Nota de política (24 h) ── */
+    .mg-policy-note {
+      padding: 1rem 2rem 0;
+      font-family: var(--sans);
+      font-size: 14.5px;
+      line-height: 1.6;
+      color: var(--ink-2);
+    }
+    .mg-policy-note[hidden] { display: none; }
+
     /* ── Action buttons ── */
     .mg-actions {
       padding: 1.25rem 2rem 1.75rem;
@@ -416,7 +426,10 @@
           <div class="mg-det-item"><label>Estado</label><span id="det-estado">—</span></div>
         </div>
 
-        <!-- Botones (solo si activa) -->
+        <!-- Nota de política: la escribe el servidor vía managementWindow -->
+        <p class="mg-policy-note" id="det-policy-note" hidden></p>
+
+        <!-- Botones (solo si el servidor autoriza la acción) -->
         <div class="mg-actions" id="det-actions" style="display:none">
           <button class="btn btn-sage" id="btn-reschedule">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" style="flex-shrink:0">
@@ -435,7 +448,7 @@
         <!-- Panel: CANCELAR -->
         <div class="mg-panel" id="panel-cancel">
           <h3>Cancelar sesión</h3>
-          <p>Tu sesión será cancelada y recibirás confirmación por correo. Si quieres reagendar más adelante, puedes hacerlo desde <a href="/reserva">reservar hora</a>.</p>
+          <p id="cancel-policy-copy">Al confirmar, el horario queda liberado.</p>
 
           <div class="mg-alert error" id="cancel-alert"></div>
 
@@ -496,8 +509,8 @@
               <polyline points="20 6 9 17 4 12"/>
             </svg>
           </div>
-          <h2>Hora cancelada</h2>
-          <p>Tu sesión ha sido cancelada. Recibirás un correo de confirmación en breve. Cuando quieras, puedes reservar una nueva hora.</p>
+          <h2>Cancelación recibida</h2>
+          <p id="cancelled-copy">Tu sesión fue cancelada y el horario quedó disponible.</p>
           <a href="/reserva" class="btn btn-primary">Reservar nueva hora →</a>
         </div>
       </div>
@@ -719,6 +732,29 @@
     return match[1].padStart(2, '0') + ':' + match[2];
   }
 
+  /* ─────────────────────────────────────────────────────────────────────
+     Política de gestión de sesiones (24 h) — copia aprobada.
+
+     El servidor es la ÚNICA autoridad: manage_lookup devuelve managementWindow,
+     canReschedule, canCancel y refundEligible, y cada mutación revalida la
+     política antes de escribir. Esta página sólo elige la copia que corresponde
+     al veredicto recibido; NO calcula el corte, no lee el reloj del navegador
+     para decidir capacidades y no puede habilitar una acción que el servidor
+     haya cerrado. Una pestaña abierta desde ayer, por lo tanto, no salta el
+     corte: el backend la rechaza igual.
+     ───────────────────────────────────────────────────────────────────── */
+  var POLICY_COPY = {
+    rescheduleClosed: 'Ya no es posible reagendar esta sesión porque faltan menos de 24 horas para el horario agendado.',
+    cancelRefundable: 'Puedes cancelar esta sesión y recibir el reembolso completo al mismo medio de pago utilizado.',
+    cancelNonRefundable: 'Esta sesión comienza en menos de 24 horas. Puedes cancelarla para informarnos que no asistirás, pero de acuerdo con la política de cancelación no corresponde reembolso.',
+    targetTooSoon: 'Ese horario es demasiado próximo. Elige una hora con al menos 2 horas de anticipación.',
+    rescheduleUsed: 'Ya usaste el cambio de horario disponible para esta sesión. Si necesitas otro ajuste, escríbeme y lo vemos.',
+    closed: 'Esta sesión ya no admite cambios en línea. Si necesitas ayuda, escríbeme directamente.',
+    cancelledRefundPending: 'Tu sesión fue cancelada y el horario quedó disponible. El reembolso está en proceso. Te enviaremos un correo cuando el reembolso sea confirmado.',
+    cancelledNonRefundable: 'Recibimos tu aviso: la sesión fue cancelada y el horario quedó disponible. Como la cancelación ocurrió con menos de 24 horas de anticipación, no corresponde reembolso.',
+    cancelledGeneric: 'Tu sesión fue cancelada y el horario quedó disponible. Si corresponde un reembolso, te contactaremos.'
+  };
+
   function statusBadge(s) {
     var labels = { active: 'Activa', cancelled: 'Cancelada', rescheduled: 'Reagendada' };
     return '<span class="mg-badge ' + (s||'active') + '">' + (labels[s]||s) + '</span>';
@@ -763,12 +799,10 @@
       if (!resp.ok) throw new Error('HTTP ' + resp.status);
       var data = await resp.json();
       if (!data.ok) {
-        var errTitles = { token_not_found: 'Reserva no encontrada', already_processed: 'Reserva ya procesada' };
+        var errTitles = { CAPABILITY_INVALID: 'Enlace no válido', REQUEST_REJECTED: 'Enlace no válido' };
         showError(
-          errTitles[data.error] || 'Enlace no válido',
-          data.error === 'token_not_found'
-            ? 'No encontramos una reserva activa con este enlace. Si crees que es un error, contáctame directamente.'
-            : 'Esta reserva ya fue cancelada o reagendada anteriormente.'
+          errTitles[data.code] || 'Enlace no válido',
+          managementErrorMessage(data.code)
         );
         return;
       }
@@ -782,9 +816,11 @@
       }
       showView('view-detail');
 
-      if (autoOpen === 'cancel' && reserva.status === 'active') {
+      // Un enlace de correo ya enviado puede seguir apuntando a ?open=reschedule.
+      // Resuelve a /manage, pero sólo abre el panel si el servidor lo autoriza.
+      if (autoOpen === 'cancel' && reserva.canCancel === true && reserva.capabilityType === 'CANCEL') {
         document.getElementById('btn-cancel').click();
-      } else if (autoOpen === 'reschedule' && reserva.status === 'active') {
+      } else if (autoOpen === 'reschedule' && reserva.canReschedule === true && reserva.capabilityType === 'RESCHEDULE') {
         document.getElementById('btn-reschedule').click();
       }
     } catch (e) {
@@ -802,19 +838,64 @@
     // ("18:00", "18:00 h", "1899-12-30T22:42:45.000Z", etc.)
     var _horaDisplay = normalizeHourValue(reserva.hora) || '—';
 
-    document.getElementById('det-nombre').textContent    = reserva.nombre    || '—';
-    document.getElementById('det-fecha').textContent     = reserva.fecha     ? formatFechaLarga(reserva.fecha) : '—';
-    document.getElementById('det-hora').textContent      = _horaDisplay;
-    document.getElementById('det-servicio').textContent  = reserva.servicio  || '—';
+    document.getElementById('det-nombre').textContent    = reserva.nombre    || 'Tu reserva';
+    document.getElementById('det-fecha').textContent     = (reserva.fecha || reserva.date) ? formatFechaLarga(reserva.fecha || reserva.date) : '—';
+    document.getElementById('det-hora').textContent      = normalizeHourValue(reserva.hora || reserva.time) || '—';
+    document.getElementById('det-servicio').textContent  = reserva.servicio  || reserva.serviceType || '—';
     document.getElementById('det-modalidad').textContent = reserva.modalidad || '—';
     document.getElementById('det-estado').innerHTML      = statusBadge(reserva.status);
-    document.getElementById('det-actions').style.display = (reserva.status === 'active') ? 'flex' : 'none';
+
+    // Capacidades server-side. El token presentado sigue limitando qué botón
+    // puede mostrarse, pero la política del servidor es la que autoriza.
+    var showReschedule = reserva.canReschedule === true && reserva.capabilityType === 'RESCHEDULE';
+    var showCancel     = reserva.canCancel === true && reserva.capabilityType === 'CANCEL';
+
+    document.getElementById('det-actions').style.display = (showReschedule || showCancel) ? 'flex' : 'none';
+    document.getElementById('btn-cancel').style.display = showCancel ? '' : 'none';
+    document.getElementById('btn-reschedule').style.display = showReschedule ? '' : 'none';
+
+    // La nota explica por qué falta una acción, y debe nombrar el motivo REAL.
+    // Orden deliberado, de más restrictivo a menos:
+    //   1. sesión cerrada  -> ya no admite cambios en línea
+    //   2. ya reagendada    -> el motivo vinculante es el tope de un movimiento,
+    //      no el corte de 24 h, en cualquier ventana; atribuirlo al corte sería
+    //      una explicación falsa
+    //   3. dentro del corte -> ahí sí el motivo es el corte de 24 h
+    // Una reserva ya cancelada habla por su propio estado y no lleva nota.
+    var note = document.getElementById('det-policy-note');
+    var noteText = '';
+    if (reserva.managementWindow === 'closed' && reserva.status !== 'cancelled') {
+      noteText = POLICY_COPY.closed;
+    } else if (reserva.status === 'rescheduled') {
+      noteText = POLICY_COPY.rescheduleUsed;
+    } else if (reserva.managementWindow === 'cancel_only' && reserva.status === 'active') {
+      noteText = POLICY_COPY.rescheduleClosed;
+    }
+    note.textContent = noteText;
+    note.hidden = !noteText;
+
+    document.getElementById('cancel-policy-copy').textContent = reserva.refundEligible === true
+      ? POLICY_COPY.cancelRefundable
+      : POLICY_COPY.cancelNonRefundable;
   }
 
   function showError(title, body) {
     document.getElementById('err-title').textContent = title;
     document.getElementById('err-body').textContent  = body;
     showView('view-error');
+  }
+
+  function managementErrorMessage(code) {
+    var messages = {
+      CAPABILITY_INVALID: 'No encontramos una reserva activa con este enlace. Si crees que es un error, contáctame directamente.',
+      RECONCILIATION_REQUIRED: 'La reserva requiere una revisión antes de continuar. Contáctame directamente.',
+      SLOT_TAKEN: 'Ese horario ya fue reservado por alguien más. Elige otra hora.',
+      NOTIFICATION_RETRY_REQUIRED: 'La solicitud quedó registrada y requiere confirmación. Contáctame directamente.',
+      RESCHEDULE_WINDOW_CLOSED: POLICY_COPY.rescheduleClosed,
+      MANAGEMENT_WINDOW_CLOSED: POLICY_COPY.closed,
+      TARGET_LEAD_TIME_TOO_SHORT: POLICY_COPY.targetTooSoon
+    };
+    return messages[code] || 'No se pudo completar la solicitud. Intenta nuevamente o contáctame directamente.';
   }
 
   /* ─── Cancelar ─── */
@@ -838,11 +919,15 @@
       });
       var data = await resp.json();
       if (data.ok) {
+        var copy = document.getElementById('cancelled-copy');
+        if (copy) {
+          if (data.refund === 'requested') copy.textContent = POLICY_COPY.cancelledRefundPending;
+          else if (data.refund === 'not_required') copy.textContent = POLICY_COPY.cancelledNonRefundable;
+          else copy.textContent = POLICY_COPY.cancelledGeneric;
+        }
         showView('view-cancelled');
       } else {
-        var msg = data.error === 'already_processed'
-          ? 'Esta reserva ya fue procesada anteriormente.'
-          : (data.message || 'No se pudo cancelar. Por favor contáctame directamente.');
+        var msg = managementErrorMessage(data.code);
         showAlert('cancel-alert', msg, 'error');
       }
     } catch (e) {
@@ -872,7 +957,8 @@
       var resp = await fetch(MANAGE_API.availability, { method: 'GET', cache: 'no-store', credentials: 'omit' });
       if (resp.ok) {
         var data = await resp.json();
-        bookedSlots = Array.isArray(data) ? data : [];
+        var slots = Array.isArray(data) ? data : (data && Array.isArray(data.slots) ? data.slots : []);
+        bookedSlots = slots.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; });
       }
     } catch (_) { bookedSlots = []; }
 
@@ -974,8 +1060,8 @@
     if (!selDate) return;
 
     var bookedHours = bookedSlots
-      .filter(function(s){ return s.fecha === selDate; })
-      .map(function(s){ return normalizeHourValue(s.hora); });
+      .filter(function(s){ return (s.date || s.fecha) === selDate; })
+      .map(function(s){ return normalizeHourValue(s.time || s.hora); });
 
     var reservaFechaISO = extractISODate(reserva.fecha);
     var reservaHoraNorm = normalizeHourValue(reserva.hora);
@@ -1040,9 +1126,7 @@
         showView('view-rescheduled');
       } else {
         console.error('[manage] reschedule_confirm error response:', data, payload);
-        var errMsg = data.code === 'SLOT_TAKEN'
-          ? 'Ese horario ya fue reservado por alguien más. Elige otra hora.'
-          : (data.message || data.error || 'No se pudo reagendar. Intenta con otro horario.');
+        var errMsg = managementErrorMessage(data.code);
         showAlert('reschedule-alert', errMsg, 'error');
       }
     } catch (e) {

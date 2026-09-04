@@ -65,30 +65,40 @@
 
   <div id="pr-state-pending" class="pr-state is-pending" hidden>
     <div class="pr-icon">…</div>
-    <h1 class="pr-title">Pago en validación</h1>
+    <h1 class="pr-title">Estamos verificando tu pago</h1>
     <p class="pr-msg">Tu pago aún se está procesando. Si pagaste hace pocos minutos, podemos esperar y volver a consultar. Si necesitas ayuda, escríbenos por WhatsApp.</p>
     <div class="pr-actions">
-      <button id="pr-retry" class="btn btn-primary">Volver a consultar</button>
+      <button id="pr-retry-pending" class="btn btn-primary" type="button">Volver a consultar</button>
       <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">Escribir por WhatsApp</a>
     </div>
   </div>
 
-  <div id="pr-state-rejected" class="pr-state is-rejected" hidden>
+  <div id="pr-state-failed" class="pr-state is-rejected" hidden>
     <div class="pr-icon">!</div>
-    <h1 class="pr-title">Pago no aprobado</h1>
-    <p class="pr-msg">El pago no fue aprobado. Tu hora no quedó confirmada. Puedes intentar nuevamente desde el proceso de reserva o contactarnos directamente.</p>
+    <h1 class="pr-title">No pudimos procesar tu pago</h1>
+    <p class="pr-msg">Tu sesión todavía no está confirmada. Puedes intentar nuevamente mientras el horario siga disponible.</p>
     <div class="pr-actions">
-      <a href="/reserva" class="btn btn-primary">Volver a reservar</a>
-      <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">Escribir por WhatsApp</a>
+      <button id="pr-retry-pay" class="btn btn-primary" type="button">Intentar pagar nuevamente</button>
+      <a href="/reserva" class="btn btn-ghost">Elegir otro horario</a>
+    </div>
+  </div>
+
+  <div id="pr-state-expired" class="pr-state is-rejected" hidden>
+    <div class="pr-icon">!</div>
+    <h1 class="pr-title">El horario ya no está reservado</h1>
+    <p class="pr-msg">El tiempo para completar el pago terminó. Elige un horario disponible para continuar.</p>
+    <div class="pr-actions">
+      <a href="/reserva" class="btn btn-primary">Elegir otro horario</a>
     </div>
   </div>
 
   <div id="pr-state-review" class="pr-state is-review" hidden>
     <div class="pr-icon">i</div>
-    <h1 class="pr-title">Estamos revisando tu reserva</h1>
-    <p class="pr-msg">Recibimos tu pago. Estamos validando administrativamente la hora. Te contactaremos a la brevedad por correo o WhatsApp para confirmar.</p>
+    <h1 class="pr-title">Estamos verificando tu pago</h1>
+    <p class="pr-msg">Todavía no podemos confirmar ni descartar el pago. Si pagaste hace un momento, espera y vuelve a consultar. No cierres esta página.</p>
     <div class="pr-actions">
-      <a href="https://wa.me/56957663038" class="btn btn-primary" rel="noopener">Escribir por WhatsApp</a>
+      <button id="pr-retry-review" class="btn btn-primary" type="button">Volver a consultar</button>
+      <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">Escribir por WhatsApp</a>
     </div>
   </div>
 
@@ -104,14 +114,11 @@
   // is never exposed to the browser. The proxy enforces a no-PII allowlist.
   var PAYMENT_STATUS_ENDPOINT = '/api/payment-status';
   var CONFIRMED_PAYMENT_STATUSES = {
-    paid_confirmed: true,
-    confirmed: true,
-    paid: true,
-    success: true
+    payment_confirmed: true
   };
 
   function showState(id) {
-    ['loading','confirmed','pending','rejected','review'].forEach(function(s) {
+    ['loading','confirmed','pending','failed','expired','review'].forEach(function(s) {
       var el = document.getElementById('pr-state-' + s);
       if (el) el.hidden = (s !== id);
     });
@@ -121,12 +128,14 @@
     return !!CONFIRMED_PAYMENT_STATUSES[String(status || '').trim().toLowerCase()];
   }
 
-  function statusToView(status) {
+  function statusToView(status, data) {
     var normalized = String(status || '').trim().toLowerCase();
     if (isConfirmedPaymentStatus(normalized)) return 'confirmed';
-    if (normalized === 'payment_rejected' || normalized === 'rejected') return 'rejected';
-    if (normalized === 'payment_review_required') return 'review';
-    return 'pending';
+    if (normalized === 'payment_expired' || normalized === 'expired' || normalized === 'payment_annulled' || normalized === 'annulled') return 'expired';
+    if (data && data.holdValid === false && (normalized === 'payment_pending' || normalized === 'payment_failed' || normalized === 'payment_rejected' || normalized === 'payment_annulled')) return 'expired';
+    if (normalized === 'payment_rejected' || normalized === 'rejected' || normalized === 'payment_failed' || normalized === 'failed') return 'failed';
+    if (normalized === 'payment_pending' || normalized === 'pending') return 'pending';
+    return 'review';
   }
 
   function safeString(value) {
@@ -230,14 +239,38 @@
         method: 'GET', cache: 'no-store'
       });
       var data = await resp.json();
-      if (!data || !data.ok) { showState('pending'); return false; }
-      var view = statusToView(data.status);
+      if (!data || !data.ok) { showState('review'); return false; }
+      var view = statusToView(data.status, data);
       showState(view);
       if (view === 'confirmed') sendPaidConversionEvents(data);
-      return (view === 'confirmed' || view === 'rejected');
+      return (view === 'confirmed' || view === 'failed' || view === 'expired');
     } catch (e) {
-      showState('pending');
+      showState('review');
       return false;
+    }
+  }
+
+  async function retryPayment(st) {
+    showState('loading');
+    try {
+      var resp = await fetch('/api/retry-flow-payment', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        cache: 'no-store',
+        body: JSON.stringify({ st: st })
+      });
+      var data = await resp.json();
+      if (data && data.ok && data.paymentUrl) {
+        window.location.href = data.paymentUrl;
+        return;
+      }
+      if (data && data.code === 'HOLD_EXPIRED') {
+        showState('expired');
+        return;
+      }
+      showState('failed');
+    } catch (e) {
+      showState('review');
     }
   }
 
@@ -248,7 +281,7 @@
   }
 
   if (!st) {
-    showState('pending');
+    showState('review');
   } else {
     fetchStatus(st);
     var attempts = 0;
@@ -257,7 +290,8 @@
       if (attempts >= 12) { clearInterval(interval); return; }
       var pendingEl = document.getElementById('pr-state-pending');
       var loadingEl = document.getElementById('pr-state-loading');
-      var isPolling = (pendingEl && !pendingEl.hidden) || (loadingEl && !loadingEl.hidden);
+      var reviewEl = document.getElementById('pr-state-review');
+      var isPolling = (pendingEl && !pendingEl.hidden) || (loadingEl && !loadingEl.hidden) || (reviewEl && !reviewEl.hidden);
       if (isPolling) {
         fetchStatus(st).then(function(done) { if (done) clearInterval(interval); });
       } else {
@@ -266,10 +300,16 @@
     }, 5000);
   }
 
-  var retryBtn = document.getElementById('pr-retry');
-  if (retryBtn) retryBtn.addEventListener('click', function() {
-    showState('loading');
-    if (st) fetchStatus(st);
+  ['pr-retry-pending', 'pr-retry-review'].forEach(function(id) {
+    var retryBtn = document.getElementById(id);
+    if (retryBtn) retryBtn.addEventListener('click', function() {
+      showState('loading');
+      if (st) fetchStatus(st);
+    });
+  });
+  var retryPayBtn = document.getElementById('pr-retry-pay');
+  if (retryPayBtn) retryPayBtn.addEventListener('click', function() {
+    if (st) retryPayment(st);
   });
 </script>
 

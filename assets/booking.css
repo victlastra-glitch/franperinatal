@@ -223,6 +223,15 @@
 .bk-review-note li { padding-left: 18px; position: relative; }
 .bk-review-note li::before { content: "—"; position: absolute; left: 0; color: var(--ink-3); }
 
+/* Política de cancelación pre-pago. Misma escala que la lista; sin recuadro
+   extra ni color de alerta: es información, no una advertencia. */
+.bk-policy-copy {
+  margin: 16px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
 /* Actions */
 .bk-actions {
   margin-top: 48px; display: flex; justify-content: space-between; align-items: center;
