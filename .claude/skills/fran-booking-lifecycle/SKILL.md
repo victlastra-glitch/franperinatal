@@ -59,7 +59,10 @@ has to look. Never collapse them.
 
 ## Schema
 
-Append-only V7 compatibility: the reservation sheet keeps **57 columns**. Never
+Append-only V7 compatibility: the reservation sheet grows only at the end. The
+V7 baseline is 57 columns and today it carries **58** — column 58 is
+`transaction_amount_clp`, the amount frozen onto a reservation at order creation
+(`fran-payment-integrity` owns what it means). Never
 delete, reorder or rename a column; append. Legacy v7 statuses stay readable.
 
 ## Before you finish

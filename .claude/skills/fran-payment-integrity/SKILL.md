@@ -29,8 +29,22 @@ Money contract of record: `docs/production/CANCELLATION_RESCHEDULE_POLICY_V2.md`
    second refund. Idempotency is enforced server-side under `LockService` plus
    persisted flags, keyed in the `fran-booking` namespace — not by request arrival
    order.
-4. **Amount and currency are reconciled server-side** against the expected value
-   (`consultationAmountClp_`). `INITIAL_PRICE_CLP` / `FOLLOWUP_PRICE_CLP` = 50000.
+4. **Catalog price and transaction amount are different numbers.** The catalog
+   (`consultationAmountClp_`, from `INITIAL_PRICE_CLP` / `FOLLOWUP_PRICE_CLP` =
+   50000) is authoritative for exactly one thing: choosing the amount of a **new**
+   payment order. At order creation that amount is frozen onto the reservation as
+   `transaction_amount_clp` (column 58) and never re-derived. Every later money
+   read — payment status, the confirmation email, refund authority — uses
+   `transactionAmountClp_`, so moving the catalog cannot rewrite the money of an
+   order that was already placed. `displayAmountClp_` falls back to the catalog for
+   a pre-migration row; that fallback is **display only** and must never authorize
+   a refund.
+   On a PAID webhook the server reconciles what Flow actually charged against the
+   bound amount (`providerAmountMatchesTransaction_`). A mismatch, an unreadable
+   provider amount, a non-CLP currency or an unknown bound amount stops the
+   confirmation: `booking_status=manual_review`, no Calendar/Meet, no patient
+   email. An unknown bound amount at refund time is `REFUND_AMOUNT_UNKNOWN` →
+   `refund_status=manual_review`, zero Flow calls. Never guess an amount.
    A legacy or overridden price in a Production path is a release blocker —
    `scripts/assert-production-legacy-price-scan.mjs` exists for exactly this.
 5. **Refund call budget is part of the contract**, not an implementation detail:
@@ -72,6 +86,7 @@ node backend/appsscript/booking/test/pre-transaction-contract.test.mjs
 node backend/appsscript/booking/test/lifecycle.test.mjs
 node scripts/test-production-payment-status-privacy.mjs
 node scripts/assert-production-legacy-price-scan.mjs
+node backend/appsscript/booking/test/transaction-amount-integrity.test.mjs
 ```
 
 Provider E2E is a runbook operation, not a coding step, and is split on purpose:

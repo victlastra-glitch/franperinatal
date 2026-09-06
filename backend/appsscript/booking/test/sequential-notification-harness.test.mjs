@@ -167,7 +167,10 @@ const context = {
       if (String(url).includes('/payment/getStatus')) {
         return {
           getResponseCode: () => 200,
-          getContentText: () => JSON.stringify({ status: 2, commerceOrder: currentRows()[0].commerce_order }),
+          // Flow echoes the settled amount and currency; the server reconciles
+          // both against the amount the reservation bound at order creation.
+          getContentText: () => JSON.stringify({ status: 2, commerceOrder: currentRows()[0].commerce_order,
+            amount: Number(currentRows()[0].transaction_amount_clp || 0), currency: 'CLP' }),
         };
       }
       if (String(url).includes('/refund/create')) {

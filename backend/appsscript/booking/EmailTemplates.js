@@ -139,9 +139,13 @@ function emailV3SessionDurationLabel_() {
   return minutes ? minutes + ' minutos' : '';
 }
 
+/**
+ * The email shows what this transaction is actually worth, not today's list price:
+ * a catalog change after payment must never rewrite a delivered confirmation.
+ */
 function emailV3AmountLabel_(record) {
-  if (typeof consultationAmountClp_ !== 'function') return '';
-  const amount = consultationAmountClp_(record && record.service_type);
+  if (typeof displayAmountClp_ !== 'function') return '';
+  const amount = displayAmountClp_(record);
   return amount ? emailV3FormatClp_(amount) : '';
 }
 

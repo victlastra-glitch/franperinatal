@@ -128,13 +128,13 @@ const context = {
         lastCreate = body;
         flowSeq += 1;
         const token = 'FLOWTOKEN' + String(flowSeq).padStart(16, '0');
-        flowByToken.set(token, { commerceOrder: body.commerceOrder, status: 1 });
+        flowByToken.set(token, { commerceOrder: body.commerceOrder, status: 1, amount: body.amount });
         return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ url: 'https://www.flow.cl/app/web/pay', token }) };
       }
       if (href.includes('/payment/getStatus')) {
         const query = Object.fromEntries(href.split('?')[1].split('&').map((part) => part.split('=').map(decodeURIComponent)));
         const current = flowByToken.get(query.token);
-        return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ status: current.status, commerceOrder: current.commerceOrder }) };
+        return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ status: current.status, commerceOrder: current.commerceOrder, amount: Number(current.amount), currency: 'CLP' }) };
       }
       if (href.includes('/refund/create')) {
         refundCreateCalls += 1;

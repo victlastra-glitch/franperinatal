@@ -173,7 +173,7 @@ const context = {
         lastCreatePayload = body;
         tokenSeq += 1;
         const token = 'FLOWTOKENV2' + String(tokenSeq).padStart(20, '0');
-        flowByToken.set(token, { commerceOrder: body.commerceOrder, status: 1, timeout: body.timeout });
+        flowByToken.set(token, { commerceOrder: body.commerceOrder, status: 1, timeout: body.timeout, amount: body.amount });
         return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ url: 'https://www.flow.cl/app/web/pay', token }) };
       }
       if (href.includes('/payment/getStatus')) {
@@ -181,7 +181,7 @@ const context = {
         const query = Object.fromEntries(href.split('?')[1].split('&').map((part) => part.split('=').map(decodeURIComponent)));
         const current = flowByToken.get(query.token);
         if (!current) return { getResponseCode: () => 404, getContentText: () => JSON.stringify({ code: 404 }) };
-        return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ status: current.status, commerceOrder: current.commerceOrder }) };
+        return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ status: current.status, commerceOrder: current.commerceOrder, amount: Number(current.amount), currency: 'CLP' }) };
       }
       if (href.includes('/refund/create')) {
         refundCreateCalls += 1;

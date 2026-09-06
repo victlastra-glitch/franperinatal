@@ -57,7 +57,8 @@ if present, never cite them as authority in code, a commit, a PR or a skill.
 5. Never commit secrets, `.clasp.json`, a script id, a deployment id, or a concrete
    `/macros/s/<id>/exec` URL. Never log patient data or a raw capability bearer.
 6. Non-production artefacts never enter a Production runtime file.
-7. The reservation schema is append-only; 57 columns, never reordered or renamed.
+7. The reservation schema is append-only; 58 columns over a 57-column V7
+   baseline, never reordered or renamed.
 8. No deploy, clasp push, trigger install, `wrangler` publish, provider E2E,
    real charge, real refund, real email or Production write without explicit human
    authorization **for that specific action**. Approval of one step never carries to

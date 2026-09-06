@@ -151,6 +151,9 @@ var RESERVATION_HEADERS = Object.freeze([
   'notification_outbox_key', 'notification_patient_state', 'notification_internal_state',
   'notification_attempt_count', 'notification_last_attempt_at', 'notification_last_result',
   'last_patient_notification_at', 'reconciliation_state', 'last_operation_id', 'created_at', 'updated_at',
+  // Append-only column 58. The immutable amount bound to this reservation's payment
+  // order, captured from the catalog price at order creation and never re-derived.
+  'transaction_amount_clp',
 ]);
 var NOTIFICATION_OUTBOX_HEADERS = Object.freeze([
   'logical_key', 'reservation_id', 'event_type', 'notification_version', 'state',
@@ -808,7 +811,10 @@ function reserveOnce_(sheet, schema, payload, calendarGateway) {
     booking_status: LIFECYCLE.BOOKING_STATUS.INITIATED, payment_status: LIFECYCLE.PAYMENT_STATUS.NOT_STARTED,
     refund_status: LIFECYCLE.REFUND_STATUS.NOT_REQUIRED, schedule_status: LIFECYCLE.SCHEDULE_STATUS.HOLD,
     calendar_link_key: makeCalendarLinkKey_(payload.idempotencyKey),
-    patient_reschedule_count: '0', notification_version: '1', created_at: now, updated_at: now };
+    patient_reschedule_count: '0', notification_version: '1',
+    // Catalog price is read exactly here, once, and frozen onto the reservation.
+    transaction_amount_clp: String(consultationAmountClp_(payload.serviceType)),
+    created_at: now, updated_at: now };
   appendReservationRow_(sheet, schema, reservation);
   reservation.rowNumber = sheet.getLastRow(); return reservation;
 }
@@ -920,7 +926,8 @@ function createProductionFlowPayment_(config, payload, reservation, options) {
     commerceOrder: commerceOrder,
     subject: 'Sesión Francisca Bustos',
     currency: 'CLP',
-    amount: String(consultationAmountClp_(payload.serviceType || reservation.service_type)),
+    amount: String(transactionAmountClp_(reservation)
+      || consultationAmountClp_(payload.serviceType || reservation.service_type)),
     email: payload.email,
     urlConfirmation: config.flowConfirmationUrl,
     urlReturn: config.flowReturnUrl + '?st=' + encodeURIComponent(publicStatusToken),
@@ -1101,6 +1108,17 @@ function flowConfirmation_(e) {
       return { ok: true, status: next === LIFECYCLE.PAYMENT_STATUS.REJECTED ? 'payment_rejected' : 'payment_failed' };
     }
     if (next !== LIFECYCLE.PAYMENT_STATUS.PAID) fail_('FLOW_VERIFICATION_FAILED');
+    // Reconcile what the provider actually charged against what this reservation
+    // committed to at order creation. A mismatch stops here: no confirmation, no
+    // Calendar/Meet, no patient email — the money and the booking must agree first.
+    const providerCheck = providerAmountMatchesTransaction_(record, status);
+    if (!providerCheck.ok) {
+      updateRecord_(resources.sheet, schema, record.rowNumber, {
+        booking_status: LIFECYCLE.BOOKING_STATUS.MANUAL_REVIEW,
+        reconciliation_state: providerCheck.code,
+      });
+      return { ok: false, code: providerCheck.code, status: 'payment_verifying' };
+    }
     if (record.booking_status === LIFECYCLE.BOOKING_STATUS.EXPIRED
       || (unpaidHoldBooking_(record) && slotHoldIsExpired_(record))) {
       transitionPayment_(resources.sheet, schema, record, next);
@@ -1215,7 +1233,7 @@ function paymentStatus_(e) {
   expireUnpaidHoldRecord_(resources.sheet, schema, record);
   const retryAvailable = paymentRetryAllowed_(record);
   return {
-    ok: true, status: publicStatus_(record), amount: consultationAmountClp_(record.service_type), currency: 'CLP',
+    ok: true, status: publicStatus_(record), amount: displayAmountClp_(record), currency: 'CLP',
     serviceType: record.service_type, modality: record.modality, backendVersion: PRODUCTION.backendVersion,
     retryAvailable: retryAvailable, holdValid: !slotHoldIsExpired_(record) && record.booking_status !== LIFECYCLE.BOOKING_STATUS.EXPIRED,
   };
@@ -1567,13 +1585,25 @@ function createProviderRefundOnce_(resources, schema, record, reason) {
     enqueueLifecycleNotification_(resources.sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW);
     return { ok: false, code: 'REFUND_CONFIGURATION_INCOMPLETE' };
   }
+  // Refund authority is the amount actually bound to this transaction — never the
+  // catalog price, which may have moved since. An unknown amount is not a licence
+  // to guess: it parks the reservation for a human instead.
+  const boundRefundAmount = transactionAmountClp_(record);
+  if (boundRefundAmount === null) {
+    updateRecord_(resources.sheet, schema, record.rowNumber, {
+      refund_status: LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW,
+      refund_last_error_code: 'REFUND_AMOUNT_UNKNOWN',
+    });
+    enqueueLifecycleNotification_(resources.sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW);
+    return { ok: false, code: 'REFUND_AMOUNT_UNKNOWN' };
+  }
   const gateway = createFlowRefundGateway_({ baseUrl: refundConfig.flowBaseUrl, apiKey: refundConfig.flowApiKey, secretKey: refundConfig.flowSecretKey });
   const result = refundCreateOnce_({
     store: sheetReservationStore_(resources, schema),
     record: record,
     gateway: gateway,
     receiverEmail: record.patient_email,
-    amount: String(consultationAmountClp_(record.service_type)),
+    amount: String(boundRefundAmount),
     urlCallBack: refundConfig.refundCallbackUrl,
     commerceTrxId: record.commerce_order,
   });
@@ -1696,8 +1726,52 @@ function activeRefundPolicy_(record) {
   return refundPolicy_(record);
 }
 
+/**
+ * CATALOG price — the commercial list price today. Authoritative for exactly one
+ * thing: choosing the amount of a NEW payment order. Never use it to describe,
+ * reconcile or refund an order that already exists; a later catalog change would
+ * silently rewrite the money of a past transaction.
+ */
 function consultationAmountClp_(serviceType) {
   return String(serviceType || '') === 'followup' ? FOLLOWUP_PRICE_CLP : INITIAL_PRICE_CLP;
+}
+
+/**
+ * TRANSACTION amount — the immutable amount bound to this reservation's payment
+ * order, persisted at order creation. Returns null when the reservation predates
+ * the column; callers must read that as "unknown", never as "current price".
+ */
+function transactionAmountClp_(record) {
+  const raw = String(record && record.transaction_amount_clp || '').trim();
+  if (!/^[0-9]{1,9}$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Display-only resolution. A legacy row with no persisted amount falls back to the
+ * catalog price so a status page or email still renders something. This fallback is
+ * NEVER acceptable for money: money paths use transactionAmountClp_ and fail closed.
+ */
+/**
+ * Does the provider's confirmed charge match the amount this reservation bound at
+ * order creation? Fails closed on an unknown bound amount, an unreadable provider
+ * amount, a numeric mismatch, or a currency that is not CLP.
+ */
+function providerAmountMatchesTransaction_(record, providerStatus) {
+  const bound = transactionAmountClp_(record);
+  if (bound === null) return { ok: false, code: 'TRANSACTION_AMOUNT_UNKNOWN' };
+  const providerAmount = Number(providerStatus && providerStatus.amount);
+  if (!Number.isFinite(providerAmount) || providerAmount <= 0) return { ok: false, code: 'PROVIDER_AMOUNT_UNREADABLE' };
+  if (Math.round(providerAmount) !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };
+  const currency = String(providerStatus && providerStatus.currency || 'CLP').toUpperCase();
+  if (currency !== 'CLP') return { ok: false, code: 'PROVIDER_CURRENCY_MISMATCH' };
+  return { ok: true, amount: bound };
+}
+
+function displayAmountClp_(record) {
+  const bound = transactionAmountClp_(record);
+  return bound === null ? consultationAmountClp_(record && record.service_type) : bound;
 }
 
 var PATIENT_EMAIL_TIME_ZONE = 'America/Santiago';
@@ -2397,6 +2471,9 @@ var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   INITIAL_PRICE_CLP: INITIAL_PRICE_CLP,
   FOLLOWUP_PRICE_CLP: FOLLOWUP_PRICE_CLP,
   consultationAmountClp_: consultationAmountClp_,
+  transactionAmountClp_: transactionAmountClp_,
+  displayAmountClp_: displayAmountClp_,
+  providerAmountMatchesTransaction_: providerAmountMatchesTransaction_,
   FLOW_PROVIDER_PAYMENT_STATUS: FLOW_PROVIDER_PAYMENT_STATUS,
   refundPolicy_: refundPolicy_,
   activeRefundPolicy_: activeRefundPolicy_,
