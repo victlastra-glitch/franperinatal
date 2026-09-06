@@ -15,7 +15,13 @@
  * than hardcoded, so this keeps testing the real thing after 2026.
  */
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { buildHarness, findTransition, santiagoOffsetMinutes } from './helpers/policy-harness.mjs';
+
+// The advisory copy the booking page ships, read from the page itself.
+const bookingSource = await readFile(new URL('../../../../assets/booking.js', import.meta.url), 'utf8');
+const clientHolidayList = (bookingSource.match(/holidays: \[([\s\S]*?)\]/) || [null, ''])[1]
+  .match(/\d{4}-\d{2}-\d{2}/g) || [];
 
 let assertions = 0;
 const check = (condition, message) => { assert.ok(condition, message); assertions += 1; };
@@ -148,9 +154,57 @@ const back = occupied({
     current_start_at: slot.start, current_end_at: ctx.sessionEndAt_(slot.start) }] });
 check(back.length === 0, 'an 11:00 session does not withhold the 12:00 slot');
 
+// ---------------------------------------------------------------------------
+// Holidays are the server's decision, not the browser's.
+//
+// The list used to live only in assets/booking.js and manage.html, so the
+// picker hid 18 September while the server would happily have booked it. The
+// browser deciding policy is the thing this repository does not do.
+// ---------------------------------------------------------------------------
+const HOLIDAY = '2026-09-18';          // Independencia, a Friday
+const WORKDAY = '2026-09-16';          // ordinary Wednesday, same week
+check(ctx.isBookingHoliday_(HOLIDAY) === true, 'the server knows 18 September is a holiday');
+check(ctx.isBookingHoliday_(WORKDAY) === false, 'and that the Wednesday before is not');
+check(ctx.isBookingHoliday_('') === false && ctx.isBookingHoliday_(null) === false,
+  'an empty date is not a holiday');
+
+h.setNow(Date.parse('2026-09-07T13:00:00.000Z'));
+const holidayCall = callAvailability({ action: 'availability', date: HOLIDAY });
+check(holidayCall.ok === true, 'availability answers for a holiday');
+check(holidayCall.slots.length === ctx.WORKING_HOURS.length,
+  'and reports every working hour of it as occupied, so no client needs its own list');
+const workdayCall = callAvailability({ action: 'availability', date: WORKDAY });
+check(workdayCall.ok === true && workdayCall.slots.length === 0,
+  'while the ordinary Wednesday has none occupied');
+
+// A caller that ignores the picker must still be refused.
+let holidayBooking = null;
+try { ctx.assertBookableSlot_(HOLIDAY, '11:00', Date.parse('2026-09-07T13:00:00.000Z')); }
+catch (error) { holidayBooking = error && error.code; }
+check(holidayBooking === 'REQUEST_REJECTED',
+  'booking a holiday directly is refused, not merely hidden');
+check(typeof ctx.assertBookableSlot_(WORKDAY, '11:00', Date.parse('2026-09-07T13:00:00.000Z')) === 'string',
+  'and the ordinary Wednesday is still bookable');
+
+// Weekends were already refused; holidays now behave the same way.
+let weekend = null;
+try { ctx.assertBookableSlot_('2026-09-12', '11:00', Date.parse('2026-09-07T13:00:00.000Z')); }
+catch (error) { weekend = error && error.code; }
+check(weekend === 'REQUEST_REJECTED', 'a Saturday is still refused');
+
+// The client lists must not drift from the server's. They are advisory copies.
+const clientList = clientHolidayList;
+check(clientList.length > 0, 'the booking page carries a holiday list for dimming');
+check(clientList.every((date) => ctx.BOOKING_HOLIDAYS_CL.indexOf(date) !== -1),
+  'and every date in it is one the server also refuses');
+check(ctx.BOOKING_HOLIDAYS_CL.every((date) => clientList.indexOf(date) !== -1),
+  'with nothing the server refuses that the page would still offer');
+
 console.log('AVAILABILITY_DST_BOUNDS=PASS assertions=' + assertions);
 console.log('TRANSITIONS_DISCOVERED=' + transitions.length + ' spring_forward=' + springForward.length);
 console.log('DST_GAP_STILL_REFUSED_FOR_BOOKINGS=YES');
 console.log('AVAILABILITY_WINDOW_OPENS_ON_EVERY_TRANSITION=YES');
 console.log('LEAD_TIME_AND_BUSY_SEMANTICS=UNCHANGED');
+console.log('HOLIDAY_AUTHORITY=SERVER');
+console.log('CLIENT_HOLIDAY_LIST_MATCHES_SERVER=YES (' + clientHolidayList.length + ' dates)');
 console.log('REAL_MONETARY_FLOW_CALLS=0');

@@ -11,6 +11,31 @@ var CALENDAR_LINK_SOURCE = 'fran_booking';
 var DEFAULT_BOOKING_TIME_ZONE = 'America/Santiago';
 var WORKING_HOURS = Object.freeze(['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']);
 var AVAILABILITY_HORIZON_DAYS = 90;
+
+/**
+ * Chilean public holidays the practice does not work.
+ *
+ * This lives on the server because it decides whether a booking is allowed, and
+ * the browser decides nothing. `assets/booking.js` and `manage.html` carry the
+ * same dates only to dim a day before the server has been asked; if they ever
+ * disagree with this list, this list is what happens.
+ *
+ * Kept as explicit dates rather than a rule: Chile moves several of these by
+ * decree each year, so a computed calendar would be wrong more often than a
+ * list someone has to update.
+ */
+var BOOKING_HOLIDAYS_CL = Object.freeze([
+  '2026-01-01', '2026-04-03', '2026-04-04', '2026-05-01', '2026-05-21',
+  '2026-06-29', '2026-07-16', '2026-08-15', '2026-09-18', '2026-09-19',
+  '2026-10-12', '2026-10-31', '2026-11-01', '2026-12-08', '2026-12-25',
+  '2027-01-01', '2027-04-02', '2027-04-03', '2027-05-01', '2027-05-21',
+  '2027-06-28', '2027-07-16', '2027-08-15', '2027-09-18', '2027-09-19',
+  '2027-10-12', '2027-10-30', '2027-11-01', '2027-12-08', '2027-12-25',
+]);
+
+function isBookingHoliday_(date) {
+  return BOOKING_HOLIDAYS_CL.indexOf(String(date || '')) !== -1;
+}
 var BOOKING_LEAD_MINUTES = 120;
 
 function calendarFail_(code) { fail_(code || 'CALENDAR_UNAVAILABLE'); }
@@ -313,13 +338,16 @@ function computeOccupiedSlots_(input) {
     ? Number(leadCutoff) : null;
   const occupied = {};
   slots.forEach(function(slot) {
+    // Reported as occupied rather than omitted: a caller that subtracts the
+    // occupied hours from the working grid then needs no holiday list of its own.
+    const holiday = typeof isBookingHoliday_ === 'function' && isBookingHoliday_(slot.date);
     const insideLead = leadCutoffMs !== null && Date.parse(slot.start) < leadCutoffMs;
     const calendarBusy = busy.some(function(interval) { return intervalOverlap_(slot.start, slot.end, interval.start, interval.end); });
     const internalBusy = reservations.some(function(record) {
       return reservationOccupiesSlot_(record) && record.current_start_at && record.current_end_at
         && intervalOverlap_(slot.start, slot.end, record.current_start_at, record.current_end_at);
     });
-    if (insideLead || calendarBusy || internalBusy) occupied[slot.date + 'T' + slot.time] = { date: slot.date, time: slot.time };
+    if (holiday || insideLead || calendarBusy || internalBusy) occupied[slot.date + 'T' + slot.time] = { date: slot.date, time: slot.time };
   });
   return Object.keys(occupied).sort().map(function(key) { return occupied[key]; });
 }
@@ -331,6 +359,7 @@ var __CALENDAR_TEST_EXPORTS__ = Object.freeze({
   createCalendarGateway_: createCalendarGateway_, computeOccupiedSlots_: computeOccupiedSlots_, availabilityBounds_: availabilityBounds_,
   workingSlots_: workingSlots_, addCalendarDays_: addCalendarDays_, localDateLabel_: localDateLabel_,
   localDayStart_: localDayStart_, LOCAL_DAY_START_LADDER: LOCAL_DAY_START_LADDER,
+  BOOKING_HOLIDAYS_CL: BOOKING_HOLIDAYS_CL, isBookingHoliday_: isBookingHoliday_,
   calendarHttpStatus_: calendarHttpStatus_, calendarEventResult_: calendarEventResult_, BOOKING_LEAD_MINUTES: BOOKING_LEAD_MINUTES,
   calendarApi_: calendarApi_,
 });

@@ -405,15 +405,15 @@ check(collideResult.ok === false && collideResult.code === 'SLOT_TAKEN',
 const calendar = clean.context.__CALENDAR_TEST_EXPORTS__;
 const LEAD_MINUTES = phase.rescheduleTargetMinLeadMinutes_();
 const leadSlots = (baseMs) => [
-  { date: '2026-09-18', time: '10:00', start: new Date(baseMs).toISOString(), end: new Date(baseMs + 60 * MINUTE_MS).toISOString() },
-  { date: '2026-09-18', time: '11:00', start: new Date(baseMs + 60 * MINUTE_MS).toISOString(), end: new Date(baseMs + 120 * MINUTE_MS).toISOString() },
+  { date: '2026-09-25', time: '10:00', start: new Date(baseMs).toISOString(), end: new Date(baseMs + 60 * MINUTE_MS).toISOString() },
+  { date: '2026-09-25', time: '11:00', start: new Date(baseMs + 60 * MINUTE_MS).toISOString(), end: new Date(baseMs + 120 * MINUTE_MS).toISOString() },
 ];
 const occupiedAt = (nowMs, slots) => calendar.computeOccupiedSlots_({
   workingSlots: slots, busyIntervals: [], reservations: [],
   leadCutoffMs: nowMs + LEAD_MINUTES * MINUTE_MS,
 });
 
-const SLOT_AT = Date.parse('2026-09-18T14:00:00.000Z');
+const SLOT_AT = Date.parse('2026-09-25T14:00:00.000Z');
 const oneSlot = [leadSlots(SLOT_AT)[0]];
 // Exactly +120m is still eligible; one millisecond nearer is withheld.
 check(occupiedAt(SLOT_AT - LEAD_MINUTES * MINUTE_MS, oneSlot).length === 0,
@@ -444,12 +444,12 @@ check(calendar.computeOccupiedSlots_({ workingSlots: leadSlots(SLOT_AT), busyInt
 
 // End to end through the endpoint, on the server clock, with nothing busy.
 const availabilityHarness = buildHarness(null);
-// Friday 2026-09-18 is inside Chile DST (UTC-3), so 13:00Z is 10:00 local and
+// Friday 2026-09-25 is inside Chile DST (UTC-3), so 13:00Z is 10:00 local and
 // the +120m boundary lands exactly on the 12:00 working hour.
-const BOUNDARY_NOW = Date.parse('2026-09-18T13:00:00.000Z');
+const BOUNDARY_NOW = Date.parse('2026-09-25T13:00:00.000Z');
 availabilityHarness.setNow(BOUNDARY_NOW);
 const offered = () => {
-  const occupiedList = availabilityHarness.context.availability_({ parameter: { date: '2026-09-18' } });
+  const occupiedList = availabilityHarness.context.availability_({ parameter: { date: '2026-09-25' } });
   const taken = new Set(occupiedList.map((slot) => slot.time));
   return ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00']
     .filter((time) => !taken.has(time));
@@ -469,11 +469,11 @@ availabilityHarness.setNow(BOUNDARY_NOW);
 
 // A withheld slot is not made authoritative by the browser: booking it and
 // rescheduling into it are both still refused by the server.
-availabilityHarness.setNow(Date.parse('2026-09-18T13:00:00.000Z'));
+availabilityHarness.setNow(Date.parse('2026-09-25T13:00:00.000Z'));
 const bookTooSoon = () => availabilityHarness.context.createFlowPayment_({
   postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey: 'fran-booking-cccccc01-e89b-12d3-a456-426614174000',
-    serviceType: 'initial', modality: 'online', date: '2026-09-18', time: '10:00',
+    serviceType: 'initial', modality: 'online', date: '2026-09-25', time: '10:00',
     name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
   }) },
 });
@@ -486,7 +486,7 @@ check(availabilityHarness.currentRows().length === 0,
 const bookBoundary = availabilityHarness.context.createFlowPayment_({
   postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey: 'fran-booking-cccccc02-e89b-12d3-a456-426614174000',
-    serviceType: 'initial', modality: 'online', date: '2026-09-18', time: '12:00',
+    serviceType: 'initial', modality: 'online', date: '2026-09-25', time: '12:00',
     name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
   }) },
 });
@@ -605,9 +605,9 @@ function probes(h) {
   // lead-time floor can refuse this target. Without that isolation the probe
   // would be satisfied by the cutoff guard and could not see the floor at all.
   probe('availability_withholds_inside_lead', () => {
-    // Friday 2026-09-18, 13:00Z = 10:00 Chile (UTC-3); +120m lands on 12:00.
-    h.setNow(Date.parse('2026-09-18T13:00:00.000Z'));
-    const taken = new Set(h.context.availability_({ parameter: { date: '2026-09-18' } }).map((s) => s.time));
+    // Friday 2026-09-25, 13:00Z = 10:00 Chile (UTC-3); +120m lands on 12:00.
+    h.setNow(Date.parse('2026-09-25T13:00:00.000Z'));
+    const taken = new Set(h.context.availability_({ parameter: { date: '2026-09-25' } }).map((s) => s.time));
     // Withheld inside the lead time, offered exactly at the boundary.
     return taken.has('10:00') && taken.has('11:00') && !taken.has('12:00');
   });
