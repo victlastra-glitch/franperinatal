@@ -467,6 +467,32 @@ const liveSheet = makeSheet(livePhysicalHeaders, [
   liveRow({ reservationId: 'live-3', payment_status: 'pending', schedule_status: 'hold',
     current_start_at: '2027-01-17T14:00:00.000Z', priceClp: '' }),
 ]);
+// A row as it existed BEFORE the v7 to V2 migration: its status, date and time
+// live only in the original Google Form columns, under their own Spanish names.
+// The dry run has to resolve those through the legacy adapter, because a row that
+// reads as status-less would silently drop out of the blocker count.
+const legacyOnlyRow = () => {
+  const row = livePhysicalHeaders.map(() => '');
+  const set = (name, value) => {
+    const at = livePhysicalHeaders.indexOf(name);
+    if (at !== -1) row[at] = value;
+  };
+  set('Marca temporal', '2026-08-20T12:00:00.000Z');
+  set('Correo electr\u00f3nico', 'legacy@example.test');
+  set('Servicio', 'initial');
+  set('Modalidad', 'online');
+  set('Fecha', '2027-02-10');
+  set('Hora', '15:00');
+  set('reservationId', 'legacy-only-1');
+  set('Nombre', 'Legacy Patient');
+  set('estado', 'paid_confirmed');
+  set('paidAt', '2026-08-20T12:05:00.000Z');
+  set('priceClp', '');
+  return row;
+};
+liveSheet._rows.push(legacyOnlyRow());
+liveSheet._headers.forEach(() => {});
+
 const liveInspect = compat.inspectReservationSchema_(liveSheet, { sheetName: 'reservations' });
 check(liveInspect.kind === 'v7_compat', 'the live shape inspects as v7_compat');
 check(liveInspect.physicalHeaders.length === 90, 'PHYSICAL_SHEET_COLUMNS is 90');
@@ -489,9 +515,15 @@ check(liveDry.ok === true && liveDry.writes === 0,
   check(Object.prototype.hasOwnProperty.call(liveDry, field),
     'the dry run reports ' + field);
 });
-check(liveDry.historicalRowsTotal === 3, 'it counts every data row');
+check(liveDry.historicalRowsTotal === 4, 'it counts every data row');
 check(liveDry.deterministicAmountBackfillable === 2,
   'it counts the rows that can prove an amount from stored history');
+// The pre-migration row is paid and its session is in the future, so it must be
+// visible to the blocker count even though it carries no V2 status cell at all.
+check(liveDry.activeOrFuturePaidRows === 2,
+  'a pre-migration row resolved through the legacy adapter is counted as active');
+check(liveDry.amountUnknownActiveRows === 1,
+  'and because it cannot prove an amount, it is reported as a blocker');
 check(liveDry.historicalAmountSource === 'priceClp', 'and names the source it used');
 check(!JSON.stringify(liveDry).includes('legacy@example.test'),
   'the dry run leaks no patient data');
@@ -511,7 +543,7 @@ check(liveSheet._headers.length === 91, 'the physical sheet becomes 91 columns')
 // and no other legacy or V2 cell moves.
 const updatedAtIndex = livePhysicalHeaders.indexOf('updated_at');
 check(updatedAtIndex !== -1 && updatedAtIndex < 90, 'updated_at is inside the pre-existing block');
-const backfilledRowNumbers = new Set([2, 3]);
+const backfilledRowNumbers = new Set([2, 3]);   // the two rows with a stored priceClp
 liveSheet._rows.forEach((row, index) => {
   const before = liveBefore[index].slice();
   const after = row.slice(0, 90);
@@ -524,6 +556,8 @@ liveSheet._rows.forEach((row, index) => {
 });
 check(liveMigrate.deterministicAmountBackfilled === 2,
   'and the backfill filled the rows that could prove an amount');
+check(liveMigrate.amountUnknownActiveRows === 1,
+  'the blocker survives the migration: it was never resolvable, and was not invented');
 const migratedSchema = compat.assertSchema_(liveSheet);
 const migratedRecords = context.reservationRecords_(liveSheet, migratedSchema);
 const migratedById = Object.fromEntries(migratedRecords.map((r) => [r.reservation_id, r]));
