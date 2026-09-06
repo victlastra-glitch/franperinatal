@@ -320,6 +320,13 @@ Prior NONPROD evidence (do not re-interpret):
 - `FLOW_PAYMENT_E2E=PASS`
 - `FLOW_REFUND_E2E=BLOCKED_PROVIDER_FUNDS_501` — provider funds status, not an application defect
 
+Production provider evidence, 2026-09-06 (§5A only; do not re-interpret as §5B):
+
+- `FLOW_PAYMENT_E2E=PASS` — provider sample CLP 500, `payment/getStatus` status 2 (PAID)
+- `FLOW_REFUND_E2E=BLOCKED_PROVIDER_FUNDS_501` — signed `refund/create` accepted and
+  refused on merchant balance; 0 effective refunds; second authorized charge not created
+- `BOOKING_APPLICATION_E2E=NOT_RUN` — still required at 50000, no test-price override
+
 ### A. FLOW_PROVIDER_MICRO_E2E
 
 Purpose: provider credentials, endpoints, `payment/getStatus`, and

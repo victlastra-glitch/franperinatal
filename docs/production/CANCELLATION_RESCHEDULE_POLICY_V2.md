@@ -4,7 +4,8 @@ Status: **deployed to Production on 2026-09-04** from `7eaf034` — Apps Script 
 **v10** on the existing versioned Web App deployment (`AKfycbyfioG2bs…`, same `/exec`),
 Cloudflare Pages Production deployment `f1626b71…`. Previous immutable version **v9**
 and the baseline-binding Pages deployment `34bc77bd…` remain as rollback targets.
-Monetary E2E not yet run. Baseline it builds on: `bf62852`.
+Provider micro-E2E run 2026-09-06 (payment PASS, refund blocked on provider funds);
+`BOOKING_APPLICATION_E2E` at 50000 remains **not run**. Baseline it builds on: `bf62852`.
 
 ## The rule
 
@@ -324,6 +325,36 @@ RESCHEDULE_WINDOW_CLOSED   — reschedule requested inside the cutoff, or past s
 MANAGEMENT_WINDOW_CLOSED   — cancel requested on a started/past or undeterminable session
 TARGET_LEAD_TIME_TOO_SHORT — reschedule target inside the 120-minute lead time
 ```
+
+## Provider micro-E2E evidence — 2026-09-06
+
+Runbook §5A, `FLOW_PROVIDER_MICRO_E2E`. **Provider scope only.** Executed against
+Flow Production with synthetic, non-clinical data and an operator-controlled
+mailbox. It did not touch the booking application path: no reservation, no Sheet
+row, no Calendar/Meet, no lifecycle email, and no Production runtime or
+deployment change (canonical stayed on immutable v10, HEAD canonical).
+
+| item | result |
+| --- | --- |
+| provider sample | `commerceOrder=micro-e2e-20260906032639-1`, `flowOrder=180481275` |
+| amount | CLP 500 (provider minimum sample — **not** the commercial price) |
+| `payment/getStatus` | `status=2` (PAID), amount 500, currency CLP |
+| `refund/create` | **HTTP 501 insufficient funds** — provider-side rejection |
+| effective refunds | 0 |
+| real charges | 1 · gross CLP 500 · refunded CLP 0 · net test cost CLP 500 |
+
+The 501 is a **provider-funds condition, not an application defect**: Flow
+authenticated and accepted the signed `refund/create` request and refused it on
+merchant balance. Refund credentials, endpoint, signature and parameter contract
+are therefore exercised; refund *completion* is not. A second CLP 500 charge was
+authorized but deliberately **not** created — a same-day receipt settles on
+Flow's payout schedule, so it would have been equally unsettled and would not
+have cleared the condition.
+
+Recorded per runbook §6 as `FLOW_REFUND_E2E=BLOCKED_PROVIDER_FUNDS_501`, the
+"waived with recorded provider-funds blocker" branch. It does **not** substitute
+for `BOOKING_APPLICATION_E2E`, which must run at 50000 with no Production
+test-price override and is still outstanding.
 
 ## Residual decisions at deploy-readiness
 
