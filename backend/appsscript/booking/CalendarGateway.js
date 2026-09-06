@@ -226,9 +226,36 @@ function calendarHttpStatus_(error) {
   return Number(error && error.status || 0);
 }
 
+/**
+ * Clock times that may not exist on a given local day, cheapest first.
+ *
+ * A spring-forward transition deletes an interval of local time. Chile moves at
+ * 24:00 on a Saturday, so on that Sunday the local day begins at 01:00 and
+ * 00:00 never happens. startAt_ refuses a time that does not exist, which is
+ * correct for a booking and fatal for a window boundary: anchoring the horizon
+ * at local midnight made every availability request fail for the whole of that
+ * day, once a year, with no slots shown and no usable error.
+ */
+var LOCAL_DAY_START_LADDER = Object.freeze(['00:00', '00:30', '01:00', '01:30', '02:00', '03:00']);
+
+/**
+ * The first instant of a local day that actually exists.
+ *
+ * Never widens the window into the previous day and never silently shifts to a
+ * different date: every candidate is on the requested date, and if none of them
+ * resolves the caller still fails closed.
+ */
+function localDayStart_(date) {
+  for (let i = 0; i < LOCAL_DAY_START_LADDER.length; i += 1) {
+    try { return startAt_(date, LOCAL_DAY_START_LADDER[i]); }
+    catch (error) { if (!error || error.code !== 'REQUEST_REJECTED') throw error; }
+  }
+  return startAt_(date, '00:00');
+}
+
 function availabilityBounds_(requestedDate) {
-  const startDate = requestedDate || new Date().toISOString().slice(0, 10);
-  const start = startAt_(startDate, '00:00');
+  const startDate = requestedDate || localDateLabel_(new Date().toISOString());
+  const start = localDayStart_(startDate);
   const endDate = addCalendarDays_(startDate, AVAILABILITY_HORIZON_DAYS);
   return { start: start, end: startAt_(endDate, '23:59') };
 }
@@ -303,6 +330,7 @@ var __CALENDAR_TEST_EXPORTS__ = Object.freeze({
   calendarExtendedProperties_: calendarExtendedProperties_, calendarSyncHash_: calendarSyncHash_, meetFields_: meetFields_,
   createCalendarGateway_: createCalendarGateway_, computeOccupiedSlots_: computeOccupiedSlots_, availabilityBounds_: availabilityBounds_,
   workingSlots_: workingSlots_, addCalendarDays_: addCalendarDays_, localDateLabel_: localDateLabel_,
+  localDayStart_: localDayStart_, LOCAL_DAY_START_LADDER: LOCAL_DAY_START_LADDER,
   calendarHttpStatus_: calendarHttpStatus_, calendarEventResult_: calendarEventResult_, BOOKING_LEAD_MINUTES: BOOKING_LEAD_MINUTES,
   calendarApi_: calendarApi_,
 });

@@ -507,6 +507,7 @@ Local only; no Production call, no Flow call, no email, no booking.
 node backend/appsscript/booking/test/management-policy-24h.test.mjs
 node backend/appsscript/booking/test/capability-reachability.test.mjs
 node backend/appsscript/booking/test/transaction-amount-integrity.test.mjs
+node backend/appsscript/booking/test/availability-dst-bounds.test.mjs
 
 # the rest of the booking suite
 for t in phase-a booking-clock-contract lifecycle notification-outbox-worker \
@@ -531,6 +532,7 @@ node scripts/assert-production-worker-structure.mjs _worker.js
 node scripts/test-production-worker-routes.mjs
 node scripts/test-production-payment-status-privacy.mjs
 node scripts/test-manage-contract.mjs
+node scripts/test-booking-availability-contract.mjs
 git diff --check
 
 # email previews (needs local Chrome; deterministic, offline)
