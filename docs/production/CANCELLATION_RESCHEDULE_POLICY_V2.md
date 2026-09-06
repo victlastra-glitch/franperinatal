@@ -221,16 +221,30 @@ for money. `displayAmountClp_` falls back to the catalog for a row created
 before the column existed; that fallback renders a status page or an email and
 is **never** refund authority.
 
+**Charging.** `payment/create` is priced from the reservation and from nothing
+else. There is deliberately no catalog fallback: a reservation with no bound
+amount refuses to be charged with `PAYMENT_AMOUNT_UNAUTHORIZED`, before any Flow
+call. A retry after a rejected or failed payment therefore charges the amount the
+reservation has always carried, whatever the catalog says by then.
+
 **Provider reconciliation.** On a Flow `PAID` webhook the server compares what
 Flow says it charged against the bound amount before any state changes
-(`providerAmountMatchesTransaction_`). Four ways to fail, all closed:
+(`providerAmountMatchesTransaction_`). Five ways to fail, all closed:
 
 | Condition | Code |
 | --- | --- |
 | reservation has no bound amount | `TRANSACTION_AMOUNT_UNKNOWN` |
-| provider amount missing or non-positive | `PROVIDER_AMOUNT_UNREADABLE` |
+| provider amount absent, non-positive, or not a whole number | `PROVIDER_AMOUNT_UNREADABLE` |
 | provider amount differs from the bound amount | `PROVIDER_AMOUNT_MISMATCH` |
+| provider currency absent or blank | `PROVIDER_CURRENCY_UNREADABLE` |
 | provider currency is not CLP | `PROVIDER_CURRENCY_MISMATCH` |
+
+CLP has no minor unit, so a fractional provider amount is not a CLP amount: it is
+refused rather than rounded into agreement, because rounding is how a real
+discrepancy would be hidden. The currency must be stated — inferring CLP from
+silence is how a wrong-currency settlement would be waved through. Case and
+surrounding whitespace are normalized, because those are presentation; absence is
+not.
 
 Any of them sets `booking_status=manual_review`, records the code in
 `reconciliation_state`, and stops: no payment transition, no Calendar or Meet
@@ -242,6 +256,16 @@ and a later callback that *does* agree cannot auto-confirm a parked reservation
 unknown bound amount is not a licence to guess: it records
 `refund_status=manual_review` with `refund_last_error_code=REFUND_AMOUNT_UNKNOWN`,
 raises the internal manual-review notification, and makes **zero** Flow calls.
+
+**Rows created before the column existed.** They are backfilled from `priceClp`,
+the amount the v7 runtime wrote onto each reservation when it was created. That
+is a stored per-row fact, which is what makes the backfill deterministic rather
+than a guess; the catalog price is never a source, because it says what a booking
+would cost today and not what this one cost. The backfill runs inside the schema
+migration, only ever writes a cell that currently holds no readable amount, and
+leaves a row that cannot prove an amount with none. `PRODUCTION_RC_RUNBOOK.md`
+§2.3a makes a live paid booking that would be left without a provable amount a
+release blocker rather than a silent downgrade to manual review.
 
 ### `>= 24h` cancellation
 

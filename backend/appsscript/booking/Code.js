@@ -602,6 +602,86 @@ function appendMissingHeaders_(sheet, names) {
   return appended;
 }
 
+/**
+ * The one column a historical row can prove its own amount from.
+ *
+ * The v7 runtime that created every pre-migration reservation wrote the amount
+ * it charged into `priceClp` at reservation time. That is a stored per-row fact,
+ * which is what makes a backfill from it deterministic rather than a guess. The
+ * catalog price is NOT a source here and never can be: it says what a booking
+ * would cost today, not what this one cost.
+ */
+var HISTORICAL_AMOUNT_SOURCE_COLUMN = 'priceClp';
+
+/** A stored historical amount, or null when this row cannot prove one. */
+function historicalAmountFromRow_(row, schema) {
+  const column = schema && schema.columns && schema.columns[HISTORICAL_AMOUNT_SOURCE_COLUMN];
+  if (!column) return null;
+  const raw = String(cellFromRow_(row, column) || '').trim();
+  if (!/^[0-9]{1,9}$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * What a backfill would do, as counts only.
+ *
+ * Never returns, logs or persists a cell value from a patient row: the caller
+ * gets totals and a blocker count, which is everything a release decision needs
+ * and nothing a patient would mind being written down.
+ *
+ * `AMOUNT_UNKNOWN_ACTIVE_ROWS` is the one that can stop a release. It counts
+ * reservations that are paid, not cancelled, and still ahead of the clock —
+ * exactly the rows whose automated refund would silently become manual review —
+ * and which STILL have no provable amount after the backfill.
+ */
+function transactionAmountBackfillPlan_(sheet, schema, nowMs) {
+  const values = sheet.getDataRange().getValues();
+  const rows = values.slice(1);
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const boundColumn = schema && schema.columns && schema.columns.transaction_amount_clp;
+  const plan = { total: rows.length, activeOrFuturePaid: 0, backfillable: 0, unknownActive: 0, writes: [] };
+
+  rows.forEach(function(row, index) {
+    const record = recordFromRow_(row, schema, index + 2);
+    const alreadyBound = boundColumn ? transactionAmountClp_(record) : null;
+    const historical = historicalAmountFromRow_(row, schema);
+    if (alreadyBound === null && historical !== null) {
+      plan.backfillable += 1;
+      if (boundColumn) plan.writes.push({ rowNumber: index + 2, amount: historical });
+    }
+    const startMs = Date.parse(String(record.current_start_at || ''));
+    const active = record.payment_status === LIFECYCLE.PAYMENT_STATUS.PAID
+      && record.schedule_status !== LIFECYCLE.SCHEDULE_STATUS.CANCELLED
+      && Number.isFinite(startMs) && startMs > now;
+    if (!active) return;
+    plan.activeOrFuturePaid += 1;
+    if (alreadyBound === null && historical === null) plan.unknownActive += 1;
+  });
+  return plan;
+}
+
+/**
+ * Fill transaction_amount_clp from stored history, once.
+ *
+ * Idempotent by construction: it only ever writes a cell that is currently
+ * unreadable as an amount, so a second run writes nothing. It never overwrites a
+ * bound amount and never invents one.
+ */
+function backfillTransactionAmountFromHistory_(sheet, schema, nowMs) {
+  const plan = transactionAmountBackfillPlan_(sheet, schema, nowMs);
+  plan.writes.forEach(function(write) {
+    updateRecord_(sheet, schema, write.rowNumber, { transaction_amount_clp: String(write.amount) });
+  });
+  return {
+    historicalRowsTotal: plan.total,
+    activeOrFuturePaidRows: plan.activeOrFuturePaid,
+    deterministicAmountBackfilled: plan.writes.length,
+    amountUnknownActiveRows: plan.unknownActive,
+    source: HISTORICAL_AMOUNT_SOURCE_COLUMN,
+  };
+}
+
 function productionSchemaMigrationDryRun_(opt) {
   const deps = opt || {};
   const config = deps.config || readConfig_();
@@ -610,7 +690,25 @@ function productionSchemaMigrationDryRun_(opt) {
   inspection.outbox = inspectOutboxSchema_(resources.spreadsheet);
   const metadata = schemaMetadata_(inspection);
   metadata.writes = 0;
+  // Counts only, no cell values: enough to decide whether the append is safe to
+  // run, and specifically whether any live paid booking would lose its automated
+  // refund path.
+  const plan = transactionAmountBackfillPlan_(resources.sheet, assertBackfillSchema_(inspection));
+  metadata.historicalRowsTotal = plan.total;
+  metadata.activeOrFuturePaidRows = plan.activeOrFuturePaid;
+  metadata.deterministicAmountBackfillable = plan.backfillable;
+  metadata.amountUnknownActiveRows = plan.unknownActive;
+  metadata.historicalAmountSource = HISTORICAL_AMOUNT_SOURCE_COLUMN;
   return operatorLog_(metadata);
+}
+
+/**
+ * A read-only column map for an inspection result, including states that
+ * assertSchema_ refuses. The dry run has to describe a sheet it is not yet
+ * allowed to write to.
+ */
+function assertBackfillSchema_(inspection) {
+  return { kind: inspection.kind, headers: inspection.headers, columns: inspection.columns };
 }
 
 function migrateProductionV7SchemaToLifecycleV2_(opt) {
@@ -628,6 +726,9 @@ function migrateProductionV7SchemaToLifecycleV2_(opt) {
   const appended = missing.length ? appendMissingHeaders_(resources.sheet, missing) : [];
   const outboxSheet = ensureNotificationOutboxSheet_(resources.spreadsheet);
   const schema = assertSchema_(resources.sheet);
+  // Only after the column exists. Deterministic, idempotent, and from stored
+  // history alone — a row that cannot prove its amount keeps none.
+  const backfill = backfillTransactionAmountFromHistory_(resources.sheet, schema);
   const after = inspectReservationSchema_(resources.sheet, { sheetName: PRODUCTION.sheetName });
   const result = {
     ok: true,
@@ -641,6 +742,11 @@ function migrateProductionV7SchemaToLifecycleV2_(opt) {
     kind: after.kind,
     outboxSchema: assertNotificationOutboxSchema_(outboxSheet).headers.length,
     schemaColumns: Object.keys(schema.columns).length,
+    historicalRowsTotal: backfill.historicalRowsTotal,
+    activeOrFuturePaidRows: backfill.activeOrFuturePaidRows,
+    deterministicAmountBackfilled: backfill.deterministicAmountBackfilled,
+    amountUnknownActiveRows: backfill.amountUnknownActiveRows,
+    historicalAmountSource: backfill.source,
   };
   return operatorLog_(result);
 }
@@ -870,11 +976,21 @@ function retryFlowPayment_(e) {
     }
     if (!paymentRetryAllowed_(record)) return { ok: false, code: 'BOOKING_NOT_RETRYABLE' };
     const originalHold = record.slot_hold_expires_at;
-    const flow = createProductionFlowPayment_(config, { email: record.patient_email, idempotencyKey: record.idempotency_key }, record, {
-      commerceOrder: makeFlowRetryCommerceOrder_(record.idempotency_key),
-      publicStatusToken: token,
-      timeoutSeconds: remainingHoldSeconds_(record),
-    });
+    let flow;
+    try {
+      flow = createProductionFlowPayment_(config, { email: record.patient_email, idempotencyKey: record.idempotency_key }, record, {
+        commerceOrder: makeFlowRetryCommerceOrder_(record.idempotency_key),
+        publicStatusToken: token,
+        timeoutSeconds: remainingHoldSeconds_(record),
+      });
+    } catch (error) {
+      // A reservation with no bound amount is reported, not retried and not
+      // repriced. Nothing was sent to Flow: the refusal happens before the call.
+      if (error && error.code === PAYMENT_AMOUNT_UNAUTHORIZED) {
+        return { ok: false, code: PAYMENT_AMOUNT_UNAUTHORIZED };
+      }
+      throw error;
+    }
     if (record.payment_status === LIFECYCLE.PAYMENT_STATUS.REJECTED
       || record.payment_status === LIFECYCLE.PAYMENT_STATUS.FAILED
       || record.payment_status === LIFECYCLE.PAYMENT_STATUS.ANNULLED) {
@@ -917,8 +1033,25 @@ function makeFlowCommerceOrder_(idempotencyKey) {
   return order;
 }
 
+/**
+ * Error code for a payment that cannot be priced from the reservation itself.
+ *
+ * Not a failure of the provider and not a reason to retry: the reservation has
+ * no bound amount, so nothing on the server is authorized to say what this
+ * charge is worth.
+ */
+var PAYMENT_AMOUNT_UNAUTHORIZED = 'PAYMENT_AMOUNT_UNAUTHORIZED';
+
 function createProductionFlowPayment_(config, payload, reservation, options) {
   options = options || {};
+  // The charge is the amount bound to THIS reservation. There is deliberately no
+  // catalog fallback here: falling back would price an existing transaction at
+  // today's list price, which is the exact defect the bound amount exists to
+  // prevent, and it would charge an amount the reservation cannot later prove.
+  // A new reservation always has one, because reserveOnce_ binds it before this
+  // is ever reached; a legacy row that has none stops here, before Flow.
+  const boundAmount = transactionAmountClp_(reservation);
+  if (boundAmount === null) fail_(PAYMENT_AMOUNT_UNAUTHORIZED);
   const commerceOrder = options.commerceOrder || makeFlowCommerceOrder_(payload.idempotencyKey);
   const publicStatusToken = options.publicStatusToken || makeStatusToken_(payload.idempotencyKey, config.statusTokenSecret);
   const timeoutSeconds = String(options.timeoutSeconds || remainingHoldSeconds_(reservation));
@@ -926,8 +1059,7 @@ function createProductionFlowPayment_(config, payload, reservation, options) {
     commerceOrder: commerceOrder,
     subject: 'Sesión Francisca Bustos',
     currency: 'CLP',
-    amount: String(transactionAmountClp_(reservation)
-      || consultationAmountClp_(payload.serviceType || reservation.service_type)),
+    amount: String(boundAmount),
     email: payload.email,
     urlConfirmation: config.flowConfirmationUrl,
     urlReturn: config.flowReturnUrl + '?st=' + encodeURIComponent(publicStatusToken),
@@ -1761,10 +1893,28 @@ function transactionAmountClp_(record) {
 function providerAmountMatchesTransaction_(record, providerStatus) {
   const bound = transactionAmountClp_(record);
   if (bound === null) return { ok: false, code: 'TRANSACTION_AMOUNT_UNKNOWN' };
-  const providerAmount = Number(providerStatus && providerStatus.amount);
-  if (!Number.isFinite(providerAmount) || providerAmount <= 0) return { ok: false, code: 'PROVIDER_AMOUNT_UNREADABLE' };
-  if (Math.round(providerAmount) !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };
-  const currency = String(providerStatus && providerStatus.currency || 'CLP').toUpperCase();
+
+  // CLP has no minor unit, so a Flow CLP amount is a whole number. Anything
+  // fractional is not one, and must not be rounded into agreement: a near-match
+  // is a mismatch, and rounding is how a real discrepancy would be hidden.
+  const rawAmount = providerStatus ? providerStatus.amount : null;
+  if (rawAmount === null || rawAmount === undefined || String(rawAmount).trim() === '') {
+    return { ok: false, code: 'PROVIDER_AMOUNT_UNREADABLE' };
+  }
+  const providerAmount = Number(rawAmount);
+  if (!Number.isFinite(providerAmount) || !Number.isInteger(providerAmount) || providerAmount <= 0) {
+    return { ok: false, code: 'PROVIDER_AMOUNT_UNREADABLE' };
+  }
+  if (providerAmount !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };
+
+  // The currency must be stated, never assumed. Flow returns it on
+  // payment/getStatus, so an absent one means the response is not the shape this
+  // check was written against — and inferring CLP from silence is exactly how a
+  // wrong-currency settlement would be waved through. Case is normalized because
+  // that is presentation; absence is not.
+  const rawCurrency = providerStatus ? providerStatus.currency : null;
+  const currency = String(rawCurrency === null || rawCurrency === undefined ? '' : rawCurrency).trim().toUpperCase();
+  if (!currency) return { ok: false, code: 'PROVIDER_CURRENCY_UNREADABLE' };
   if (currency !== 'CLP') return { ok: false, code: 'PROVIDER_CURRENCY_MISMATCH' };
   return { ok: true, amount: bound };
 }
@@ -2470,6 +2620,7 @@ var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   FLOW_COMMERCE_ORDER_MAX_LENGTH: FLOW_COMMERCE_ORDER_MAX_LENGTH,
   INITIAL_PRICE_CLP: INITIAL_PRICE_CLP,
   FOLLOWUP_PRICE_CLP: FOLLOWUP_PRICE_CLP,
+  PAYMENT_AMOUNT_UNAUTHORIZED: PAYMENT_AMOUNT_UNAUTHORIZED,
   consultationAmountClp_: consultationAmountClp_,
   transactionAmountClp_: transactionAmountClp_,
   displayAmountClp_: displayAmountClp_,
@@ -2543,6 +2694,9 @@ var __COMPATIBILITY_TEST_EXPORTS__ = Object.freeze({
   inspectReservationSchema_: inspectReservationSchema_,
   inspectOutboxSchema_: inspectOutboxSchema_,
   productionSchemaMigrationDryRun_: productionSchemaMigrationDryRun_,
+  HISTORICAL_AMOUNT_SOURCE_COLUMN: HISTORICAL_AMOUNT_SOURCE_COLUMN,
+  transactionAmountBackfillPlan_: transactionAmountBackfillPlan_,
+  backfillTransactionAmountFromHistory_: backfillTransactionAmountFromHistory_,
   migrateProductionV7SchemaToLifecycleV2_: migrateProductionV7SchemaToLifecycleV2_,
   assertSchema_: assertSchema_,
   recordFromRow_: recordFromRow_,

@@ -138,19 +138,40 @@ check(a.state.lastRefundPayload.amount !== b.state.lastRefundPayload.amount,
 const match = ctx.providerAmountMatchesTransaction_;
 const bound = (clp) => ({ service_type: 'initial', transaction_amount_clp: String(clp) });
 check(match(bound(500), { amount: 500, currency: 'CLP' }).ok === true, 'C: an exact match reconciles');
-check(match(bound(500), { amount: 500 }).ok === true, 'C: an absent currency defaults to CLP');
 check(match(bound(500), { amount: '500', currency: 'clp' }).ok === true,
-  'C: a string amount and lowercase currency still reconcile');
+  'C: a string amount and a lowercase currency still reconcile — case is presentation');
+check(match(bound(500), { amount: 500, currency: ' CLP ' }).ok === true,
+  'C: surrounding whitespace on the currency is presentation too');
+
+// The currency must be STATED. Silence is not CLP.
+[undefined, null, '', '   '].forEach((value) => check(
+  match(bound(500), { amount: 500, currency: value }).code === 'PROVIDER_CURRENCY_UNREADABLE',
+  'C: an absent or blank currency fails closed, it is never assumed to be CLP ("' + String(value) + '")'));
+check(match(bound(500), { amount: 500 }).code === 'PROVIDER_CURRENCY_UNREADABLE',
+  'C: a response with no currency field at all fails closed');
+['USD', 'EUR', 'ARS', 'CLF'].forEach((value) => check(
+  match(bound(500), { amount: 500, currency: value }).code === 'PROVIDER_CURRENCY_MISMATCH',
+  'C: ' + value + ' is refused'));
+
 [[50000, 'the catalog price instead of the bound amount'], [499, 'one peso short'], [501, 'one peso over']]
   .forEach(([amount, why]) => check(match(bound(500), { amount, currency: 'CLP' }).code === 'PROVIDER_AMOUNT_MISMATCH',
     'C: provider ' + amount + ' is refused (' + why + ')'));
-check(match(bound(500), { amount: 500, currency: 'USD' }).code === 'PROVIDER_CURRENCY_MISMATCH',
-  'C: a non-CLP currency is refused');
-['', null, undefined, 'abc', 0, -1].forEach((value) => check(
+
+// CLP has no minor unit, so a fractional amount is not a CLP amount and must
+// never be rounded into agreement.
+[500.4, 500.5, 499.6, '500.4', '499.5'].forEach((value) => check(
+  match(bound(500), { amount: value, currency: 'CLP' }).code === 'PROVIDER_AMOUNT_UNREADABLE',
+  'C: a fractional provider amount is refused rather than rounded (' + String(value) + ')'));
+check(match(bound(500), { amount: 500.0, currency: 'CLP' }).ok === true,
+  'C: an exact integer expressed as 500.0 is still 500');
+
+['', null, undefined, 'abc', 0, -1, '  ', {}, []].forEach((value) => check(
   match(bound(500), { amount: value, currency: 'CLP' }).code === 'PROVIDER_AMOUNT_UNREADABLE',
   'C: an unreadable provider amount fails closed ("' + String(value) + '")'));
 check(match({ service_type: 'initial' }, { amount: 50000, currency: 'CLP' }).code === 'TRANSACTION_AMOUNT_UNKNOWN',
   'C: a legacy row with no bound amount fails closed even when the provider looks right');
+check(match(bound(500), null).code === 'PROVIDER_AMOUNT_UNREADABLE',
+  'C: no provider status at all fails closed');
 
 // End to end through the real webhook: the provider confirms a DIFFERENT amount.
 const c = buildHarness(null);
@@ -254,6 +275,149 @@ check(f.state.lastRefundPayload.amount === '50000',
   'F: the post-reschedule refund is still the originally bound 50000');
 
 // ---------------------------------------------------------------------------
+// G. payment/create is priced from the reservation, never from the catalog.
+//    There is no fallback: a reservation that cannot prove its amount cannot
+//    be charged, and nothing reaches Flow.
+// ---------------------------------------------------------------------------
+const g = buildHarness(null);
+
+// (b) a new reservation always has its amount bound BEFORE payment/create.
+g.setNow(Date.parse(g.phase.startAt_('2026-09-30', '11:00')) - 10 * DAY_MS);
+const gCreated = g.context.createFlowPayment_({ postData: { contents: JSON.stringify({
+  action: 'create_flow_payment', idempotencyKey: 'fran-booking-bbbbbb50-e89b-12d3-a456-426614174000',
+  serviceType: 'initial', modality: 'online', date: '2026-09-30', time: '11:00',
+  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+}) } });
+check(gCreated.ok === true, 'G(b): the booking was created');
+const gRow = () => g.rowFor(50);
+check(gRow().transaction_amount_clp === '50000',
+  'G(b): the amount is bound before Flow is contacted');
+const gOrder = g.state.flowByToken.get(gRow().flow_token);
+check(Number(gOrder.amount) === 50000, 'G(b): and payment/create asked Flow for exactly that amount');
+
+// (c) a retry charges the SAME amount, even after the catalog moves under it.
+const gRetryBefore = gRow().transaction_amount_clp;
+moveCatalog(g, 12345);
+const gRetryOrders = g.state.flowByToken.size;
+g.context.createProductionFlowPayment_(
+  g.phase.readConfig_(),
+  { email: gRow().patient_email, idempotencyKey: gRow().idempotency_key },
+  gRow(), { commerceOrder: 'fp-retry-same-amount', publicStatusToken: 'tok', timeoutSeconds: 600 });
+check(g.state.flowByToken.size === gRetryOrders + 1, 'G(c): the retry created one new Flow order');
+const gRetryOrder = [...g.state.flowByToken.values()].pop();
+check(Number(gRetryOrder.amount) === 50000,
+  'G(c): the retry asked Flow for the originally bound 50000, not the 12345 catalog');
+check(gRow().transaction_amount_clp === gRetryBefore,
+  'G(c): and the bound amount itself is never rewritten');
+
+// (d) a lane-style reservation bound below the catalog retries at ITS amount.
+const gLane = buildHarness(null);
+gLane.setNow(Date.parse(gLane.phase.startAt_('2026-09-30', '12:00')) - 10 * DAY_MS);
+gLane.context.createFlowPayment_({ postData: { contents: JSON.stringify({
+  action: 'create_flow_payment', idempotencyKey: 'fran-booking-bbbbbb51-e89b-12d3-a456-426614174000',
+  serviceType: 'initial', modality: 'online', date: '2026-09-30', time: '12:00',
+  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+}) } });
+const laneRow = gLane.rowFor(51);
+laneRow.transaction_amount_clp = '500';          // as a 500-lane reservation reads
+const laneAmount = gLane.context.transactionAmountClp_(laneRow);
+check(laneAmount === 500, 'G(d): a 500 reservation reports 500');
+check(gLane.context.displayAmountClp_(laneRow) === 500,
+  'G(d): and every downstream read follows it, not the 50000 catalog');
+
+// (a) a legacy reservation with no bound amount cannot be charged at all, and
+//     a catalog change does not give it one.
+const gLegacy = buildHarness(null);
+gLegacy.setNow(Date.parse(gLegacy.phase.startAt_('2026-09-30', '13:00')) - 10 * DAY_MS);
+gLegacy.context.createFlowPayment_({ postData: { contents: JSON.stringify({
+  action: 'create_flow_payment', idempotencyKey: 'fran-booking-bbbbbb52-e89b-12d3-a456-426614174000',
+  serviceType: 'initial', modality: 'online', date: '2026-09-30', time: '13:00',
+  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+}) } });
+const legacyRow = gLegacy.rowFor(52);
+legacyRow.transaction_amount_clp = '';
+moveCatalog(gLegacy, 99999);
+const ordersBefore = gLegacy.state.flowByToken.size;
+let refused = null;
+try {
+  gLegacy.context.createProductionFlowPayment_(
+    gLegacy.phase.readConfig_(),
+    { email: legacyRow.patient_email, idempotencyKey: legacyRow.idempotency_key },
+    legacyRow, { commerceOrder: 'fp-legacy-retry', publicStatusToken: 'tok', timeoutSeconds: 600 });
+} catch (error) { refused = String(error && error.code); }
+check(refused === 'PAYMENT_AMOUNT_UNAUTHORIZED',
+  'G(a): a reservation with no bound amount refuses to be priced');
+check(gLegacy.state.flowByToken.size === ordersBefore,
+  'G(a): and zero payment orders reached Flow');
+check(legacyRow.transaction_amount_clp === '',
+  'G(a): the refusal did not quietly bind the current catalog price');
+
+// ---------------------------------------------------------------------------
+// H. Deterministic backfill from stored history — never from the catalog.
+// ---------------------------------------------------------------------------
+const backfillSource = base.context.HISTORICAL_AMOUNT_SOURCE_COLUMN;
+check(backfillSource === 'priceClp',
+  'H: the only backfill source is the amount the v7 runtime stored per row');
+
+const planFor = (rows, columns) => base.context.transactionAmountBackfillPlan_(
+  { getDataRange: () => ({ getValues: () => rows }) },
+  { kind: 'v7_compat', headers: columns, columns: Object.fromEntries(columns.map((c, i) => [c, i + 1])) },
+  Date.parse('2026-09-06T12:00:00.000Z'));
+
+const cols = ['reservation_id', 'payment_status', 'schedule_status', 'current_start_at',
+  'transaction_amount_clp', 'priceClp'];
+const header = cols.slice();
+const futureStart = '2026-12-01T14:00:00.000Z';
+const pastStart = '2026-01-01T14:00:00.000Z';
+
+const plan = planFor([header,
+  ['r1', 'paid', 'scheduled', futureStart, '', '50000'],   // backfillable, active
+  ['r2', 'paid', 'scheduled', futureStart, '', ''],        // BLOCKER: active, unprovable
+  ['r3', 'paid', 'cancelled', futureStart, '', '50000'],   // backfillable, not active
+  ['r4', 'paid', 'scheduled', pastStart, '', ''],          // past, not active
+  ['r5', 'paid', 'scheduled', futureStart, '500', '50000'],// already bound, untouched
+  ['r6', 'pending', 'hold', futureStart, '', '50000'],     // unpaid, not active
+], cols);
+check(plan.total === 6, 'H: HISTORICAL_ROWS_TOTAL counts every data row');
+check(plan.activeOrFuturePaid === 3, 'H: ACTIVE_OR_FUTURE_PAID_ROWS counts paid, uncancelled, still ahead of the clock');
+check(plan.backfillable === 3, 'H: DETERMINISTIC_AMOUNT_BACKFILLABLE counts rows that can prove an amount');
+check(plan.unknownActive === 1, 'H: AMOUNT_UNKNOWN_ACTIVE_ROWS is the blocker count');
+check(plan.writes.every((w) => w.rowNumber !== 6), 'H: an already-bound row is never rewritten');
+check(plan.writes.every((w) => w.amount === 50000), 'H: each write carries the amount that row itself stored');
+
+// The catalog is not a source, at any price.
+[1, 50000, 99999].forEach((price) => {
+  const h = buildHarness(null);
+  moveCatalog(h, price);
+  const p2 = h.context.transactionAmountBackfillPlan_(
+    { getDataRange: () => ({ getValues: () => [header, ['r1', 'paid', 'scheduled', futureStart, '', '']] }) },
+    { kind: 'v7_compat', headers: cols, columns: Object.fromEntries(cols.map((c, i) => [c, i + 1])) },
+    Date.parse('2026-09-06T12:00:00.000Z'));
+  check(p2.backfillable === 0 && p2.unknownActive === 1,
+    'H: with the catalog at ' + price + ' an unprovable row is STILL unprovable');
+});
+
+// Malformed stored values prove nothing.
+['0', '-1', 'abc', '50.000', '5e4', ' ', '1234567890'].forEach((raw) => {
+  const p3 = planFor([header, ['r1', 'paid', 'scheduled', futureStart, '', raw]], cols);
+  check(p3.backfillable === 0 && p3.unknownActive === 1,
+    'H: "' + raw + '" is not a provable historical amount');
+});
+
+// Idempotent: the plan for an already-backfilled sheet is empty.
+const p4 = planFor([header, ['r1', 'paid', 'scheduled', futureStart, '50000', '50000']], cols);
+check(p4.backfillable === 0 && p4.unknownActive === 0, 'H: a second run has nothing to do');
+
+// A sheet with no historical column at all backfills nothing and says so.
+const noSource = ['reservation_id', 'payment_status', 'schedule_status', 'current_start_at', 'transaction_amount_clp'];
+const p5 = base.context.transactionAmountBackfillPlan_(
+  { getDataRange: () => ({ getValues: () => [noSource, ['r1', 'paid', 'scheduled', futureStart, '']] }) },
+  { kind: 'v2_native', headers: noSource, columns: Object.fromEntries(noSource.map((c, i) => [c, i + 1])) },
+  Date.parse('2026-09-06T12:00:00.000Z'));
+check(p5.backfillable === 0 && p5.unknownActive === 1,
+  'H: with no historical column, nothing is backfillable and the blocker is reported');
+
+// ---------------------------------------------------------------------------
 // Adversarial mutations — each deliberately broken build must be DETECTED.
 // ---------------------------------------------------------------------------
 function probes(h) {
@@ -286,6 +450,31 @@ function probes(h) {
     return h.state.refundCreateCalls === before
       && h.rowFor(91).refund_last_error_code === 'REFUND_AMOUNT_UNKNOWN';
   });
+  p('fractional_provider_amount_rejected', () =>
+    h.context.providerAmountMatchesTransaction_(rec(500), { amount: 500.4, currency: 'CLP' }).ok === false);
+  p('absent_currency_rejected', () =>
+    h.context.providerAmountMatchesTransaction_(rec(500), { amount: 500 }).ok === false);
+  p('unbound_reservation_cannot_be_charged', () => {
+    const before = h.state.flowByToken.size;
+    let code = null;
+    try {
+      h.context.createProductionFlowPayment_(h.phase.readConfig_(),
+        { email: 'paciente@example.test', idempotencyKey: 'fran-booking-bbbbbb60-e89b-12d3-a456-426614174000' },
+        { service_type: 'initial', transaction_amount_clp: '', patient_email: 'paciente@example.test' },
+        { commerceOrder: 'fp-probe', publicStatusToken: 't', timeoutSeconds: 600 });
+    } catch (error) { code = String(error && error.code); }
+    return code === 'PAYMENT_AMOUNT_UNAUTHORIZED' && h.state.flowByToken.size === before;
+  });
+  p('backfill_never_invents_an_amount', () => {
+    const cols2 = ['reservation_id', 'payment_status', 'schedule_status', 'current_start_at',
+      'transaction_amount_clp', 'priceClp'];
+    const out = h.context.transactionAmountBackfillPlan_(
+      { getDataRange: () => ({ getValues: () => [cols2,
+        ['r1', 'paid', 'scheduled', '2026-12-01T14:00:00.000Z', '', '']] }) },
+      { kind: 'v7_compat', headers: cols2, columns: Object.fromEntries(cols2.map((c, i) => [c, i + 1])) },
+      Date.parse('2026-09-06T12:00:00.000Z'));
+    return out.backfillable === 0 && out.unknownActive === 1;
+  });
   p('refund_uses_bound_amount', () => {
     const booking = h.paidBooking(92, '2026-09-29', '11:00', 10 * DAY_MS);
     h.rowFor(92).transaction_amount_clp = '500';
@@ -311,9 +500,34 @@ const MUTATIONS = [
   }, ['unknown_amount_is_null', 'refund_fails_closed_when_unknown']],
 
   ['MUTATION_NO_PROVIDER_AMOUNT_RECONCILIATION', {
-    'Code.js': [["  if (Math.round(providerAmount) !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };",
+    'Code.js': [["  if (providerAmount !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };",
       '']],
   }, ['provider_mismatch_rejected']],
+
+  ['MUTATION_PROVIDER_AMOUNT_ROUNDED', {
+    'Code.js': [["  if (providerAmount !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };",
+      "  if (Math.round(providerAmount) !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };"],
+      ["  if (!Number.isFinite(providerAmount) || !Number.isInteger(providerAmount) || providerAmount <= 0) {",
+       "  if (!Number.isFinite(providerAmount) || providerAmount <= 0) {"]],
+  }, ['fractional_provider_amount_rejected']],
+
+  // The regression this guards against is the old code: an absent currency
+  // silently becoming CLP. Deleting the explicit check alone changes nothing,
+  // because a blank string is still not 'CLP' — the danger is the default.
+  ['MUTATION_MISSING_CURRENCY_DEFAULTS_TO_CLP', {
+    'Code.js': [["  const currency = String(rawCurrency === null || rawCurrency === undefined ? '' : rawCurrency).trim().toUpperCase();",
+      "  const currency = String(rawCurrency || 'CLP').trim().toUpperCase();"]],
+  }, ['absent_currency_rejected']],
+
+  ['MUTATION_PAYMENT_CREATE_FALLS_BACK_TO_CATALOG', {
+    'Code.js': [['  const boundAmount = transactionAmountClp_(reservation);\n  if (boundAmount === null) fail_(PAYMENT_AMOUNT_UNAUTHORIZED);',
+      '  const boundAmount = transactionAmountClp_(reservation)\n    || consultationAmountClp_(reservation && reservation.service_type);']],
+  }, ['unbound_reservation_cannot_be_charged']],
+
+  ['MUTATION_BACKFILL_USES_CATALOG', {
+    'Code.js': [['  const raw = String(cellFromRow_(row, column) || \'\').trim();\n  if (!/^[0-9]{1,9}$/.test(raw)) return null;',
+      '  const raw = String(cellFromRow_(row, column) || \'\').trim();\n  if (!/^[0-9]{1,9}$/.test(raw)) return consultationAmountClp_(\'initial\');']],
+  }, ['backfill_never_invents_an_amount']],
 
   ['MUTATION_CREATE_DOES_NOT_PERSIST_AMOUNT', {
     'Code.js': [['    transaction_amount_clp: String(consultationAmountClp_(payload.serviceType)),', '']],
@@ -353,6 +567,10 @@ console.log('EMAIL_USES_TRANSACTION_AMOUNT=PASS');
 console.log('PROVIDER_AMOUNT_RECONCILIATION=PASS');
 console.log('SCHEMA_COLUMNS=58 APPEND_ONLY=YES');
 console.log('CATALOG_PRICE_CLP=50000 TRANSACTION_AMOUNT_SOURCE=transaction_amount_clp');
+console.log('CATALOG_FALLBACK_ON_EXISTING_PAYMENT=NO');
+console.log('MISSING_PROVIDER_CURRENCY_FAILS_CLOSED=YES');
+console.log('PROVIDER_AMOUNT_ROUNDING=REJECTED');
+console.log('HISTORICAL_AMOUNT_SOURCE=priceClp');
 console.log('MUTATION_CASES=' + MUTATIONS.length);
 detected.forEach((line) => console.log(line));
 console.log('PRODUCTION_PAYMENT_CREATE_CALLS=0');

@@ -39,12 +39,18 @@ Money contract of record: `docs/production/CANCELLATION_RESCHEDULE_POLICY_V2.md`
    order that was already placed. `displayAmountClp_` falls back to the catalog for
    a pre-migration row; that fallback is **display only** and must never authorize
    a refund.
+   `payment/create` is priced from the reservation with **no** catalog fallback:
+   an unbound reservation refuses with `PAYMENT_AMOUNT_UNAUTHORIZED` before any
+   Flow call, so a retry can never be repriced.
    On a PAID webhook the server reconciles what Flow actually charged against the
-   bound amount (`providerAmountMatchesTransaction_`). A mismatch, an unreadable
-   provider amount, a non-CLP currency or an unknown bound amount stops the
-   confirmation: `booking_status=manual_review`, no Calendar/Meet, no patient
-   email. An unknown bound amount at refund time is `REFUND_AMOUNT_UNKNOWN` →
-   `refund_status=manual_review`, zero Flow calls. Never guess an amount.
+   bound amount (`providerAmountMatchesTransaction_`), strictly: the amount must
+   be a whole positive CLP integer equal to the bound amount (no rounding), and
+   the currency must be explicitly stated and CLP (absence is never CLP). Any
+   failure stops the confirmation: `booking_status=manual_review`, no
+   Calendar/Meet, no patient email. An unknown bound amount at refund time is
+   `REFUND_AMOUNT_UNKNOWN` → `refund_status=manual_review`, zero Flow calls.
+   Pre-column rows are backfilled from the stored `priceClp`, never from the
+   catalog. Never guess an amount.
    A legacy or overridden price in a Production path is a release blocker —
    `scripts/assert-production-legacy-price-scan.mjs` exists for exactly this.
 5. **Refund call budget is part of the contract**, not an implementation detail:
