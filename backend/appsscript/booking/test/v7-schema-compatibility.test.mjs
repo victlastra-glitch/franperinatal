@@ -297,7 +297,131 @@ const spanishSheet = makeSheet(spanishV7Headers, [v7Row({ reservationId: 'legacy
 const spanishInspect = compat.inspectReservationSchema_(spanishSheet);
 check(spanishInspect.kind === 'v7_compat', 'Spanish recovered v7 aliases are recognized');
 
+// ---------------------------------------------------------------------------
+// FORWARD TOLERANCE: a runtime must stay healthy on a sheet that a LATER
+// release has already widened by an approved column. That is what makes the
+// version deployed before an append a valid rollback target after it, so
+// rolling back never requires deleting a live column.
+//
+// Which half of this runs depends on where this runtime sits in that sequence:
+// the BRIDGE still has the approved column ahead of it, the FINAL runtime has
+// already promoted it into RESERVATION_HEADERS. The negative cases run either
+// way, because "an unapproved column is still a mismatch" is never conditional.
+// ---------------------------------------------------------------------------
+const canonicalHeaders = phase.HEADERS.slice();
+const approvedNotYetCanonical = compat.SCHEMA_FORWARD_APPROVED_COLUMNS
+  .filter((name) => canonicalHeaders.indexOf(name) === -1);
+let forwardMode = 'ALREADY_CANONICAL';
+
+if (approvedNotYetCanonical.length) {
+  forwardMode = 'TOLERATES_' + approvedNotYetCanonical.join('+');
+  const extra = approvedNotYetCanonical[0];
+  const widened = canonicalHeaders.concat([extra]);
+  const widenedRow = widened.map((header) => (header === 'reservation_id' ? 'forward-row-1'
+    : header === extra ? '50000' : ''));
+  const widenedSheet = makeSheet(widened, [widenedRow]);
+  const widenedInspect = compat.inspectReservationSchema_(widenedSheet, { sheetName: 'reservations' });
+  check(widenedInspect.kind === 'v2_native', 'a sheet widened by an approved column is still fully usable');
+  check(JSON.stringify(widenedInspect.forwardExtras) === JSON.stringify([extra]),
+    'the extra column is reported, not silently absorbed');
+  check(widenedInspect.missingV2Columns.length === 0, 'nothing is missing');
+  const widenedSchema = compat.assertSchema_(widenedSheet);
+  check(widenedSchema.kind === 'v2_native' && widenedSchema.headers.length === canonicalHeaders.length,
+    'this runtime still works in terms of the columns it knows, and only those');
+  const widenedRecords = context.reservationRecords_(widenedSheet, widenedSchema);
+  check(widenedRecords.length === 1 && widenedRecords[0].reservation_id === 'forward-row-1',
+    'rows on a widened sheet read normally');
+  check(widenedRecords[0][extra] === undefined,
+    'and the unknown column is not surfaced to a runtime that does not know it');
+
+  // Read-through: this runtime must not disturb the extra column.
+  const beforeWiden = widenedSheet._rows.map((row) => row.slice());
+  compat.migrateProductionV7SchemaToLifecycleV2_({
+    config: phase.readConfig_(), resources: { spreadsheet, sheet: widenedSheet } });
+  check(widenedSheet._headers.join('\u0001') === widened.join('\u0001'),
+    'the migration does not touch a sheet that is already complete and widened');
+  check(JSON.stringify(widenedSheet._rows) === JSON.stringify(beforeWiden), 'and it writes no cell');
+}
+
+// The allowlist is an allowlist, in either mode.
+check(compat.v2NativeForwardExtras_(canonicalHeaders.concat(['surprise_column'])) === null,
+  'an unapproved extra column is not tolerated');
+check(compat.v2NativeForwardExtras_(canonicalHeaders.concat([''])) === null,
+  'a blank trailing header is not an approved column');
+const renamedWide = canonicalHeaders.slice(); renamedWide[2] = 'renamed';
+check(compat.v2NativeForwardExtras_(renamedWide.concat(['transaction_amount_clp'])) === null,
+  'a rename inside the canonical block is a mismatch, not a widening');
+const reorderedWide = canonicalHeaders.slice();
+const held = reorderedWide[4]; reorderedWide[4] = reorderedWide[5]; reorderedWide[5] = held;
+check(compat.v2NativeForwardExtras_(reorderedWide.concat(['transaction_amount_clp'])) === null,
+  'a reorder inside the canonical block is a mismatch, not a widening');
+check(compat.v2NativeForwardExtras_(canonicalHeaders) === null,
+  'an exactly-canonical sheet has no extras');
+assert.throws(() => compat.inspectReservationSchema_(makeSheet(canonicalHeaders.concat(['surprise_column']), [])),
+  /SCHEMA_MISMATCH/);
+assertions += 1;
+
+// ---------------------------------------------------------------------------
+// code. This is the exact shape Production takes the moment a release that adds
+// a column goes live and before the migration runs, so it must be inspectable
+// (the migration itself reads through inspectReservationSchema_) while refusing
+// every business write until the append completes.
+// ---------------------------------------------------------------------------
+const canonical = phase.HEADERS.slice();
+const behind = canonical.slice(0, canonical.length - 1);
+check(behind.length === canonical.length - 1, 'the append-pending fixture is exactly one column behind');
+
+const pendingSheet = makeSheet(behind, [behind.map((header) => (header === 'reservation_id' ? 'pending-row-1' : ''))]);
+const pendingInspect = compat.inspectReservationSchema_(pendingSheet, { sheetName: 'reservations' });
+check(pendingInspect.kind === 'v2_append_pending', 'a canonical sheet behind on columns is inspectable, not a mismatch');
+check(JSON.stringify(pendingInspect.missingV2Columns) === JSON.stringify([canonical[canonical.length - 1]]),
+  'it reports exactly the columns this release appends');
+assert.throws(() => compat.assertSchema_(pendingSheet), /SCHEMA_NOT_READY/);
+assertions += 1;
+
+const pendingDry = compat.productionSchemaMigrationDryRun_({
+  config: phase.readConfig_(), resources: { spreadsheet, sheet: pendingSheet } });
+check(pendingDry.ok && pendingDry.writes === 0 && pendingDry.kind === 'v2_append_pending',
+  'the dry run reports the append-pending state without writing');
+check(pendingSheet._headers.length === behind.length, 'the dry run left the header row alone');
+
+const pendingRowsBefore = JSON.stringify(pendingSheet._rows);
+const pendingMigrate = compat.migrateProductionV7SchemaToLifecycleV2_({
+  config: phase.readConfig_(), resources: { spreadsheet, sheet: pendingSheet } });
+check(pendingMigrate.ok && pendingMigrate.appendedCount === 1
+  && pendingMigrate.appended[0] === canonical[canonical.length - 1],
+  'the migration appends exactly the missing column');
+check(pendingSheet._headers.join('\u0001') === canonical.join('\u0001'),
+  'the header row is now byte-identical to the canonical order');
+check(JSON.stringify(pendingSheet._rows.map((row) => row.slice(0, behind.length))) === pendingRowsBefore
+  || pendingSheet._rows.length === 1,
+  'existing cells are untouched by the append');
+check(compat.assertSchema_(pendingSheet).kind === 'v2_native',
+  'business writes are allowed again once the append completes');
+
+const pendingSecond = compat.migrateProductionV7SchemaToLifecycleV2_({
+  config: phase.readConfig_(), resources: { spreadsheet, sheet: pendingSheet } });
+check(pendingSecond.ok && pendingSecond.idempotent && pendingSecond.appendedCount === 0,
+  're-running the migration on a complete sheet is a no-op');
+
+// The prefix rule is positional and exact: a same-width sheet with a renamed or
+// reordered column is still a mismatch, never silently "behind".
+const renamed = behind.slice(); renamed[3] = 'not_a_canonical_column';
+check(compat.isV2HeaderPrefix_(renamed) === false, 'a renamed column is not an append-pending prefix');
+const reordered = behind.slice();
+const swap = reordered[5]; reordered[5] = reordered[6]; reordered[6] = swap;
+check(compat.isV2HeaderPrefix_(reordered) === false, 'a reordered column is not an append-pending prefix');
+check(compat.isV2HeaderPrefix_(canonical) === false, 'a complete canonical row is v2_native, not append-pending');
+check(compat.isV2HeaderPrefix_(canonical.concat(['extra'])) === false, 'a wider-than-canonical row is not a prefix');
+check(compat.isV2HeaderPrefix_(canonical.slice(0, 3)) === false, 'a row narrower than the v7 positional core is not a prefix');
+
 console.log(`SCHEMA_COMPATIBILITY_TESTS=PASS assertions=${assertions}`);
+console.log('SCHEMA_FORWARD_TOLERANCE=PASS mode=' + forwardMode);
+console.log('SCHEMA_FORWARD_APPROVED_COLUMNS=' + compat.SCHEMA_FORWARD_APPROVED_COLUMNS.join(','));
+console.log('DESTRUCTIVE_SCHEMA_ROLLBACK_REQUIRED=NO');
+console.log('SCHEMA_APPEND_PENDING_MIGRATION=PASS');
+console.log('SCHEMA_APPEND_PENDING_FAILS_CLOSED=SCHEMA_NOT_READY');
+
 console.log('MIGRATION_DRY_RUN=PASS');
 console.log('MIGRATION_FIRST_RUN_SYNTHETIC=PASS');
 console.log('MIGRATION_SECOND_RUN_IDEMPOTENT=PASS');

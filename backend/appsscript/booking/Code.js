@@ -379,6 +379,63 @@ function isExactV2Headers_(headers) {
   return headers.every(function(value, index) { return String(value) === RESERVATION_HEADERS[index]; });
 }
 
+/**
+ * Columns a LATER release is approved to append to the reservation sheet.
+ *
+ * This is the forward half of the append-only contract, and it exists so a
+ * schema append never requires a destructive rollback. A runtime that carries
+ * this list can read a sheet that is one approved column WIDER than it knows
+ * about, which means the version deployed before an append stays a valid
+ * rollback target after the append. Without it, widening the sheet strands the
+ * previous version and the only way back is deleting a live column.
+ *
+ * The list is an allowlist, never a wildcard: an unexpected extra column is
+ * still SCHEMA_MISMATCH. An entry that a later release promotes into
+ * RESERVATION_HEADERS simply becomes inert here.
+ */
+var SCHEMA_FORWARD_APPROVED_COLUMNS = Object.freeze(['transaction_amount_clp']);
+
+/**
+ * The approved extra columns on a sheet that is otherwise canonical, or null
+ * when this sheet is not that shape.
+ *
+ * Requires the physical row to begin with every canonical column in canonical
+ * order — a rename or a reorder inside the first RESERVATION_HEADERS.length
+ * positions is a mismatch, not a widening.
+ */
+function v2NativeForwardExtras_(headers) {
+  if (!headers || headers.length <= RESERVATION_HEADERS.length) return null;
+  const canonical = RESERVATION_HEADERS.every(function(header, index) {
+    return String(headers[index]) === header;
+  });
+  if (!canonical) return null;
+  const extras = headers.slice(RESERVATION_HEADERS.length).map(function(value) { return String(value || ''); });
+  const approved = extras.every(function(name) {
+    return name && SCHEMA_FORWARD_APPROVED_COLUMNS.indexOf(name) !== -1;
+  });
+  return approved ? extras : null;
+}
+
+/**
+ * The sheet is canonical V2, one or more appended columns BEHIND this runtime.
+ *
+ * The mirror of the forward case above, and the state a release that appends a
+ * column produces the moment it goes live and before the migration runs. It has
+ * to be *inspectable* — the migration that appends those columns runs through
+ * inspectReservationSchema_ and could not otherwise start — while remaining
+ * unusable for business writes, which assertSchema_ enforces separately.
+ *
+ * Inert in a runtime that appends nothing, which is why it ships here: both
+ * halves of the contract are present in every version, so the version before an
+ * append and the version after it differ only in the header list.
+ */
+function isV2HeaderPrefix_(headers) {
+  if (!headers || !headers.length) return false;
+  if (headers.length >= RESERVATION_HEADERS.length) return false;
+  if (headers.length < V7_POSITIONAL_CANONICAL.length) return false;
+  return headers.every(function(value, index) { return String(value) === RESERVATION_HEADERS[index]; });
+}
+
 function looksLikeV7Headers_(headers) {
   if (!headers || headers.length < V7_POSITIONAL_CANONICAL.length) return false;
   if (String(headers[0] || '') === RESERVATION_HEADERS[0]) return false;
@@ -412,7 +469,12 @@ function inspectReservationSchema_(sheet, opt) {
     if (header) columns[header] = index + 1;
   });
 
-  if (isExactV2Headers_(physicalHeaders)) {
+  // Canonical, or canonical plus approved appended columns this runtime does not
+  // use yet. Both are fully usable: the extra columns are read-through only, so
+  // this runtime keeps writing exactly the columns it knows and leaves the rest
+  // untouched.
+  const forwardExtras = isExactV2Headers_(physicalHeaders) ? [] : v2NativeForwardExtras_(physicalHeaders);
+  if (forwardExtras) {
     RESERVATION_HEADERS.forEach(function(header, index) { columns[header] = index + 1; });
     return {
       kind: 'v2_native',
@@ -423,6 +485,22 @@ function inspectReservationSchema_(sheet, opt) {
       legacyWriteColumns: {},
       missingV2Columns: [],
       presentV2Columns: RESERVATION_HEADERS.slice(),
+      forwardExtras: forwardExtras.slice(),
+      rowCount: Math.max(0, Number(sheet.getLastRow() || 1) - 1),
+      sheetName: options.sheetName || '',
+    };
+  }
+
+  if (isV2HeaderPrefix_(physicalHeaders)) {
+    return {
+      kind: 'v2_append_pending',
+      physicalHeaders: physicalHeaders,
+      headers: physicalHeaders.slice(),
+      columns: columns,
+      legacyColumns: legacyColumns,
+      legacyWriteColumns: {},
+      missingV2Columns: RESERVATION_HEADERS.slice(physicalHeaders.length),
+      presentV2Columns: physicalHeaders.slice(),
       rowCount: Math.max(0, Number(sheet.getLastRow() || 1) - 1),
       sheetName: options.sheetName || '',
     };
@@ -537,6 +615,10 @@ function migrateProductionV7SchemaToLifecycleV2_(opt) {
   const config = deps.config || readConfig_();
   const resources = deps.resources || assertResources_(config);
   const before = inspectReservationSchema_(resources.sheet, { sheetName: PRODUCTION.sheetName });
+  // v2_native is already complete, so it appends nothing and the call is a no-op.
+  // Every other inspectable state — a legacy v7 sheet, or a canonical sheet that
+  // is simply behind on appended columns — yields exactly the columns to add, in
+  // RESERVATION_HEADERS order, so the physical row stays a positional prefix.
   const missing = before.kind === 'v2_native' ? [] : RESERVATION_HEADERS.filter(function(header) {
     return before.physicalHeaders.indexOf(header) === -1;
   });
@@ -2378,6 +2460,9 @@ var __COMPATIBILITY_TEST_EXPORTS__ = Object.freeze({
   pickScriptProperty_: pickScriptProperty_,
   resolvedScriptProperties_: resolvedScriptProperties_,
   resolveBookingSheet_: resolveBookingSheet_,
+  SCHEMA_FORWARD_APPROVED_COLUMNS: SCHEMA_FORWARD_APPROVED_COLUMNS,
+  v2NativeForwardExtras_: v2NativeForwardExtras_,
+  isV2HeaderPrefix_: isV2HeaderPrefix_,
   inspectReservationSchema_: inspectReservationSchema_,
   inspectOutboxSchema_: inspectOutboxSchema_,
   productionSchemaMigrationDryRun_: productionSchemaMigrationDryRun_,
