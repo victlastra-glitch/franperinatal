@@ -346,10 +346,18 @@ deployment change (canonical stayed on immutable v10, HEAD canonical).
 The 501 is a **provider-funds condition, not an application defect**: Flow
 authenticated and accepted the signed `refund/create` request and refused it on
 merchant balance. Refund credentials, endpoint, signature and parameter contract
-are therefore exercised; refund *completion* is not. A second CLP 500 charge was
-authorized but deliberately **not** created — a same-day receipt settles on
-Flow's payout schedule, so it would have been equally unsettled and would not
-have cleared the condition.
+are therefore exercised; refund *completion* is not.
+
+A second CLP 500 payment was authorized but deliberately **not** created. Flow's
+current guidance requires available funds sufficient to cover the refund amount
+**plus the refund service fee** (CLP 202 + IVA = CLP 240 at the time of this
+run), drawn from payments not yet transferred to the merchant bank account. The
+observed account state returned HTTP 501 insufficient funds for the CLP 500
+refund. A second CLP 500 payment might have increased the available balance
+enough to clear it, but this was **not verified** and was intentionally not
+attempted, because the runbook permits recording the provider-funds blocker
+without additional spend. No claim is made here about settlement timing or
+availability mechanics beyond what Flow documents.
 
 Recorded per runbook §6 as `FLOW_REFUND_E2E=BLOCKED_PROVIDER_FUNDS_501`, the
 "waived with recorded provider-funds blocker" branch. It does **not** substitute
