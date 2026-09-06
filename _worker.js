@@ -86,7 +86,12 @@ async function handleAvailability(request, env) {
   }
   if (!upstream.ok) return jsonResp({ ok: false, code: 'upstream_error' }, 502);
   const slots = safeAvailability(await readJsonResponse(upstream));
-  if (!slots) return jsonResp({ ok: false, code: 'upstream_bad_response' }, 502);
+  // The upstream answered; it just did not answer with a usable slot list. That
+  // is not a bad gateway, and returning 5xx here loses the diagnosis: the edge
+  // replaces a 502 body with its own plain-text error page, so the client sees
+  // an opaque failure instead of `ok:false`. Answer 200 with the flag the rest
+  // of this API already speaks, and let the caller fail closed on `ok`.
+  if (!slots) return jsonResp({ ok: false, code: 'upstream_bad_response' }, 200);
   return jsonResp({ ok: true, slots: slots }, 200);
 }
 

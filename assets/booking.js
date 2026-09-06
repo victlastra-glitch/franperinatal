@@ -43,26 +43,85 @@
   const HOLIDAYS_CL = new Set(BOOKING_CALENDAR_CONFIG.holidays);
   const SLOTS_WEEKDAY = BOOKING_CALENDAR_CONFIG.hours.slice();
 
-  // bookedSlots: [{ fecha: "YYYY-MM-DD", hora: "HH:MM" }, ...]
+  // El endpoint devuelve las horas OCUPADAS; la grilla resta esas horas.
+  // bookedSlots: [{ date: "YYYY-MM-DD", time: "HH:MM" }, ...]
   let bookedSlots = [];
   let slotsLoaded = false;
 
-  async function fetchBookedSlots() {
+  // Fechas cuya disponibilidad fue confirmada por el servidor en esta sesión.
+  // Una hora sólo puede elegirse si su fecha está aquí: si el servidor no
+  // respondió, no sabemos qué está ocupado y no ofrecemos nada.
+  const confirmedDates = new Set();
+  const pendingDates = new Set();
+  let overviewFailed = false;
+
+  function readSlots(data) {
+    return data && data.ok && Array.isArray(data.slots)
+      ? data.slots.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; })
+      : null;
+  }
+
+  function replaceSlotsForDate(iso, slots) {
+    bookedSlots = bookedSlots.filter(function (b) { return (b.date || b.fecha) !== iso; }).concat(slots);
+  }
+
+  /**
+   * Vista general del horizonte, sólo para atenuar días llenos en el calendario.
+   * Es best-effort a propósito: si falla, el calendario no atenúa nada, pero
+   * ninguna hora se vuelve elegible por eso — eso lo decide fetchDate().
+   */
+  async function fetchOverview() {
     try {
       const resp = await fetch(BOOKING_API.availability, { method: 'GET', cache: 'no-store' });
       if (resp.ok) {
-        const data = await resp.json();
-        bookedSlots = data && data.ok && Array.isArray(data.slots)
-          ? data.slots.map(function (slot) { return { date: slot.date || slot.fecha || '', time: slot.time || slot.hora || '' }; })
-          : [];
+        const slots = readSlots(await resp.json());
+        if (slots) {
+          bookedSlots = slots;
+          slotsLoaded = true;
+          overviewFailed = false;
+          if (state.step === 3) renderCalendar();
+          if (state.step === 4) renderSlots();
+          return;
+        }
       }
     } catch (_) {}
+    overviewFailed = true;
     slotsLoaded = true;
-    // Re-render calendar/slots si ya están visibles
     if (state.step === 3) renderCalendar();
     if (state.step === 4) renderSlots();
   }
-  fetchBookedSlots();
+
+  /**
+   * Disponibilidad autoritativa de UNA fecha, justo antes de ofrecer sus horas.
+   *
+   * Falla cerrada: si el servidor no responde, la fecha no queda confirmada y
+   * renderSlots() no muestra ninguna hora elegible. Antes bastaba con que la
+   * consulta fallara para que la página mostrara todas las horas como libres.
+   */
+  async function fetchDate(iso, force) {
+    if (!iso) return false;
+    if (!force && confirmedDates.has(iso)) return true;
+    if (pendingDates.has(iso)) return false;
+    pendingDates.add(iso);
+    let ok = false;
+    try {
+      const resp = await fetch(BOOKING_API.availability + '?date=' + encodeURIComponent(iso),
+        { method: 'GET', cache: 'no-store' });
+      if (resp.ok) {
+        const slots = readSlots(await resp.json());
+        if (slots) {
+          replaceSlotsForDate(iso, slots);
+          confirmedDates.add(iso);
+          ok = true;
+        }
+      }
+    } catch (_) {}
+    if (!ok) confirmedDates.delete(iso);
+    pendingDates.delete(iso);
+    if (state.step === 4) renderSlots();
+    return ok;
+  }
+  fetchOverview();
 
   const stage = document.getElementById("bk-stage");
   const summary = document.getElementById("bk-summary");
@@ -317,6 +376,9 @@
       btn.addEventListener("click", () => {
         state.date = date;
         state.time = null;
+        // Pedir al servidor la disponibilidad real de esta fecha antes de que
+        // el paso de hora la muestre. La vista general sólo atenúa el calendario.
+        fetchDate(iso, false);
         renderCalendar();
         enableNext(3);
         updateSummary();
@@ -337,6 +399,23 @@
     host.innerHTML = "";
     if (!state.date || !slotsLoaded) return;
     const subtitle = document.getElementById("bk-time-subtitle");
+    const isoForGuard = dateKeyFromDate(state.date);
+    // Sin confirmación del servidor para ESTA fecha no se ofrece ninguna hora.
+    // Falla cerrada: preferimos no dejar reservar a dejar reservar una hora que
+    // el servidor va a rechazar.
+    if (!confirmedDates.has(isoForGuard)) {
+      state.time = null;
+      enableNext(4, false);
+      const pending = document.createElement("p");
+      pending.className = "bk-slot-msg";
+      pending.style.cssText = "font-size:14px;color:var(--ink-2,#5A534D);line-height:1.6;padding:16px 18px;background:#FAF6F0;border:1px solid var(--line,#E5DED1);border-radius:8px;margin:0;";
+      pending.textContent = pendingDates.has(isoForGuard)
+        ? "Comprobando horarios disponibles…"
+        : "No pudimos comprobar los horarios de esta fecha. Vuelve a intentarlo en unos segundos o elige otro día.";
+      host.appendChild(pending);
+      if (!pendingDates.has(isoForGuard)) fetchDate(isoForGuard, true);
+      return;
+    }
     const dow = state.date.getDay();
     subtitle.innerHTML = `Horas disponibles para <strong>${DAYS_FULL[dow]} ${state.date.getDate()} de ${MONTHS[state.date.getMonth()].toLowerCase()}</strong> · horario 10:00 a 18:00. Zona horaria Santiago de Chile (GMT-3).`;
 
@@ -568,7 +647,15 @@
         btn.innerHTML = 'Reintentar pago <span class="arrow">→</span>';
 
         if (code === 'SLOT_TAKEN') {
-          // Forzar volver al paso de hora
+          // La hora elegida ya no existe. Olvidarla y volver a preguntar al
+          // servidor por esta fecha antes de mostrar el paso de hora: si nos
+          // limitáramos a volver, la misma hora seguiría ofrecida y elegida.
+          const isoTaken = state.date ? dateKeyFromDate(state.date) : '';
+          state.time = null;
+          confirmedDates.delete(isoTaken);
+          enableNext(4, false);
+          updateSummary();
+          fetchDate(isoTaken, true);
           setTimeout(() => go(4), 1500);
         } else if (code === 'PATIENT_RUT_REQUIRED' || code === 'INVALID_PATIENT_RUT' || code === 'PHONE_REQUIRED') {
           // Volver al formulario de datos
@@ -584,7 +671,7 @@
       } catch (_) {}
 
       // Bloquear slot localmente
-      bookedSlots.push({ fecha: dateKeyFromDate(state.date), hora: state.time });
+      bookedSlots.push({ date: dateKeyFromDate(state.date), time: state.time });
 
       if (statusEl) {
         statusEl.className = 'form-status is-loading';
@@ -602,9 +689,9 @@
     }
   }
 
-  function enableNext(stepNum) {
+  function enableNext(stepNum, enabled) {
     const btn = stage.querySelector(`.bk-step[data-step="${stepNum}"] [data-action="next"]`);
-    if (btn) btn.disabled = false;
+    if (btn) btn.disabled = enabled === false;
   }
 
   function go(n) {

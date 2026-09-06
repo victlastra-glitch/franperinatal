@@ -366,6 +366,39 @@ This RC changes `_worker.js`, `assets/booking.js`, `pago-resultado.html`, and `m
 
 ---
 
+## 3b. Availability: the local day must exist
+
+Confirmed in Production on 2026-09-06 and fixed the same day.
+
+Chile moves the clock forward at 24:00 on a Saturday, so on that Sunday the
+local day begins at 01:00 and **00:00 never happens**. `startAt_` refuses a
+local time that does not exist, which is correct for a booking. The availability
+window was anchored at local midnight, so on that one day every availability
+request threw and the endpoint returned `REQUEST_REJECTED`.
+
+The browser swallowed the failure, kept an empty occupied-list, and offered
+every hour of every day as free. Selecting one produced `SLOT_TAKEN` on submit,
+correctly, after the picker had already promised it. Nothing was charged and no
+reservation row was written: the server revalidates under the lock before any
+Flow call.
+
+Three surfaces now hold the contract:
+
+| Surface | Guarantee |
+| --- | --- |
+| `availabilityBounds_` | the window starts at the first instant of that local day that exists, still on that date |
+| `_worker.js` | an upstream that answers but not with a slot list returns `ok:false` at 200, so the code survives instead of becoming an opaque edge 502 |
+| `assets/booking.js` | an hour is selectable only for a date the server confirmed; any failure offers nothing and says so |
+
+The date-less horizon read is a visual convenience for dimming full days. It
+must never make an hour selectable.
+
+After any deploy that touches availability, check a spring-forward date
+explicitly. `availability-dst-bounds.test.mjs` discovers the transitions from
+the runtime's own timezone data rather than hardcoding them.
+
+---
+
 ## 4. Immediate no-charge smoke
 
 Do not create a booking, Sheet row, Calendar event, or Flow charge.
