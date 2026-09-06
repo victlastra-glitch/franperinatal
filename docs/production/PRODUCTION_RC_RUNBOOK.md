@@ -40,6 +40,8 @@ Fill RC SHA at deploy time: `git rev-parse --short HEAD`
 4. Schema dry-run (`productionSchemaMigrationDryRun_`) — metadata only, no row PII
 5. Explicit schema migration (`migrateProductionV7SchemaToLifecycleV2_`) once
 6. Verify schema (second migration is a no-op; headers/rows preserved)
+   — **if this release ADDS a reservation column, follow the two-stage bridge in
+   §2.3a instead of this single pass**
 7. Install/verify triggers (`installProductionLifecycleTriggersDeterministic_` / `verifyProductionLifecycleTriggersDeterministic_`)
 8. Create a new Apps Script version
 9. Deploy the existing Web App to that version (do not mint a second `/exec`)
@@ -204,6 +206,56 @@ Operator-only. Never from `doGet` / `doPost`.
 
 Live sheet name stays `Respuestas de formulario 1` unless an equivalent
 existing sheet (`reservations`) is explicitly resolved.
+
+### 2.3a Releases that ADD a reservation column — two-stage bridge
+
+Applies when `RESERVATION_HEADERS` in the release is wider than the live sheet.
+The append itself is safe; what is not safe is running a version that disagrees
+with the sheet about how wide it is.
+
+Every runtime from the BRIDGE release onward carries both halves of the
+append-only contract, so it tolerates a sheet one approved column wider **or**
+narrower than its own header list:
+
+| Sheet | Runtime | Result |
+| --- | --- | --- |
+| 57 columns | BRIDGE (57 headers) | healthy |
+| 57 columns | FINAL (58 headers) | `SCHEMA_NOT_READY` — inspectable and migratable, no business write |
+| 58 columns | FINAL (58 headers) | healthy |
+| 58 columns | **BRIDGE (57 headers)** | healthy — the extra column is read-through |
+
+That last row is the point. It is what makes rollback non-destructive, and it is
+why the bridge must be deployed **before** the sheet is widened.
+
+**Stage 1 — BRIDGE.**
+
+1. Build staging from the bridge commit and push (steps 2–3).
+2. Create the version and repoint the existing Web App (steps 8–9).
+3. Confirm Production is healthy on the still-57-column sheet. Money behaviour
+   is unchanged by design, so the no-charge smoke must look exactly as before.
+4. Record this version. **It is the rollback target for stage 2.**
+
+**Stage 2 — widen the sheet, then FINAL.**
+
+1. `productionSchemaMigrationDryRun_()` — read-only. It reports the append plan
+   and the backfill counters. No cell values, no row PII.
+2. Read `amountUnknownActiveRows`. It counts reservations that are paid, not
+   cancelled and still ahead of the clock, and that cannot prove their own amount
+   from stored history. **If it is not zero, stop.** Those bookings would lose
+   their automated refund path, and a patient's refund must not silently become a
+   manual-review ticket. Resolve them before continuing.
+3. `migrateProductionV7SchemaToLifecycleV2_()` — appends the column and backfills
+   `transaction_amount_clp` from the amount each row already stored in
+   `priceClp`. Deterministic, idempotent, never from the catalog price. A row
+   that cannot prove an amount keeps none.
+4. Run it again: `idempotent=true`, `appendedCount=0`,
+   `deterministicAmountBackfilled=0`.
+5. Verify the BRIDGE is still healthy on the now-58-column sheet. It must be, and
+   confirming it is what proves the rollback target is live.
+6. Build staging from the final commit, create the version, repoint.
+
+**Rollback.** FINAL → BRIDGE, by repointing the Web App. No sheet edit, at any
+point, in either stage. Do not delete, reorder or rename a live column.
 
 ### 2.4 Triggers (after schema verify)
 
@@ -413,7 +465,7 @@ Until those live steps run: `READY_FOR_PRODUCTION_RELEASE=NO`.
 
 ## 7. Exact rollback
 
-1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it is **v9**). Never repoint to `@HEAD`.
+1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it is **v9**). Never repoint to `@HEAD`. For a release that appended a reservation column, the rollback target is the BRIDGE version from §2.3a, and no sheet edit is required.
 2. Pages: restore the previous Production deployment in Cloudflare (Deployments → previous Production → Rollback).
 3. Do not change Script Properties or Flow keys as rollback.
 4. Git: do not merge this RC to `main` during rollback.

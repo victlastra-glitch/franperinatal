@@ -204,6 +204,69 @@ slot-collision behaviour is unchanged — a taken slot still reports `SLOT_TAKEN
 
 ## Money
 
+### Catalog price vs transaction amount
+
+Two different numbers. Conflating them was a defect: every money-bearing read
+used to re-derive the amount from the live catalog, so changing the commercial
+price would silently rewrite the money of orders that had already been paid.
+
+| | What it is | Where it comes from | Authoritative for |
+| --- | --- | --- | --- |
+| **Catalog price** | what a new order costs today | `consultationAmountClp_`, from `INITIAL_PRICE_CLP` / `FOLLOWUP_PRICE_CLP` = 50000 | choosing the amount of a **new** payment order, and nothing else |
+| **Transaction amount** | what this reservation committed to | `transaction_amount_clp`, column 58, frozen at order creation | payment status, the confirmation email, refund authority |
+
+The catalog is read exactly once per reservation, in `reserveOnce_`, and the
+result is persisted. `transactionAmountClp_` is the only reader of that column
+for money. `displayAmountClp_` falls back to the catalog for a row created
+before the column existed; that fallback renders a status page or an email and
+is **never** refund authority.
+
+**Charging.** `payment/create` is priced from the reservation and from nothing
+else. There is deliberately no catalog fallback: a reservation with no bound
+amount refuses to be charged with `PAYMENT_AMOUNT_UNAUTHORIZED`, before any Flow
+call. A retry after a rejected or failed payment therefore charges the amount the
+reservation has always carried, whatever the catalog says by then.
+
+**Provider reconciliation.** On a Flow `PAID` webhook the server compares what
+Flow says it charged against the bound amount before any state changes
+(`providerAmountMatchesTransaction_`). Five ways to fail, all closed:
+
+| Condition | Code |
+| --- | --- |
+| reservation has no bound amount | `TRANSACTION_AMOUNT_UNKNOWN` |
+| provider amount absent, non-positive, or not a whole number | `PROVIDER_AMOUNT_UNREADABLE` |
+| provider amount differs from the bound amount | `PROVIDER_AMOUNT_MISMATCH` |
+| provider currency absent or blank | `PROVIDER_CURRENCY_UNREADABLE` |
+| provider currency is not CLP | `PROVIDER_CURRENCY_MISMATCH` |
+
+CLP has no minor unit, so a fractional provider amount is not a CLP amount: it is
+refused rather than rounded into agreement, because rounding is how a real
+discrepancy would be hidden. The currency must be stated — inferring CLP from
+silence is how a wrong-currency settlement would be waved through. Case and
+surrounding whitespace are normalized, because those are presentation; absence is
+not.
+
+Any of them sets `booking_status=manual_review`, records the code in
+`reconciliation_state`, and stops: no payment transition, no Calendar or Meet
+artefact, no patient email. The refusal is idempotent across webhook retries,
+and a later callback that *does* agree cannot auto-confirm a parked reservation
+— clearing manual review is a human decision.
+
+**Refund authority.** `createProviderRefundOnce_` refunds the bound amount. An
+unknown bound amount is not a licence to guess: it records
+`refund_status=manual_review` with `refund_last_error_code=REFUND_AMOUNT_UNKNOWN`,
+raises the internal manual-review notification, and makes **zero** Flow calls.
+
+**Rows created before the column existed.** They are backfilled from `priceClp`,
+the amount the v7 runtime wrote onto each reservation when it was created. That
+is a stored per-row fact, which is what makes the backfill deterministic rather
+than a guess; the catalog price is never a source, because it says what a booking
+would cost today and not what this one cost. The backfill runs inside the schema
+migration, only ever writes a cell that currently holds no readable amount, and
+leaves a row that cannot prove an amount with none. `PRODUCTION_RC_RUNBOOK.md`
+§2.3a makes a live paid booking that would be left without a provable amount a
+release blocker rather than a silent downgrade to manual review.
+
 ### `>= 24h` cancellation
 
 ```
@@ -216,8 +279,8 @@ refund_status=refund_requested   -> refund/create ×1 -> refund_pending
 ```
 
 `REFUND_CREATE_EFFECTIVE_MAX=1` and `FINAL_PATIENT_CANCELLATION_EMAIL_MAX=1`.
-Amount is the full `consultationAmountClp_` against the original confirmed
-transaction. No patient email claims a refund before the provider confirms; a
+Amount is the full transaction amount bound to this reservation at order
+creation, not the catalog price, which may have moved since. No patient email claims a refund before the provider confirms; a
 refund failure parks the reservation for manual review and still claims nothing.
 A replayed cancellation, a double click and a replayed provider callback each
 add neither a refund nor a second email.
@@ -413,8 +476,24 @@ and the availability lead filter at the boundary — including that a withheld
 slot cannot be booked while an offered boundary slot can.
 Seven further mutations must each be detected.
 
-Both suites share one VM harness, `test/helpers/policy-harness.mjs`, so the
-fake gateways and the mutation machinery cannot drift between them.
+`node backend/appsscript/booking/test/transaction-amount-integrity.test.mjs`
+
+Covers the catalog / transaction separation end to end: a booking paid at one
+price keeps its money after the catalog moves the other way, in payment status,
+in both email renderings and in the refund request; the provider-amount
+reconciliation on the PAID webhook, including that a mismatch produces no
+Calendar artefact and no patient email, that webhook retries are idempotent, and
+that a parked reservation is never auto-confirmed; a pre-migration row with no
+bound amount refusing to guess a refund while still releasing the slot; refund
+replay staying at one effective call; and an ordinary 50000 booking flowing
+green through reschedule and cancellation with its bound amount intact. Seven
+further mutations must each be detected.
+
+Both policy suites share one VM harness, `test/helpers/policy-harness.mjs`, so
+the fake gateways and the mutation machinery cannot drift between them. Its Flow
+`payment/getStatus` fake echoes the settled amount and currency, as the real
+provider does, and exposes an override so the reconciliation gate can be driven
+from a real webhook call rather than a unit stub.
 
 Note: `docs/booking/` is gitignored in this repository, so the operational
 notes there are local only. This page is the tracked document of record.
@@ -427,6 +506,7 @@ Local only; no Production call, no Flow call, no email, no booking.
 # the two policy suites
 node backend/appsscript/booking/test/management-policy-24h.test.mjs
 node backend/appsscript/booking/test/capability-reachability.test.mjs
+node backend/appsscript/booking/test/transaction-amount-integrity.test.mjs
 
 # the rest of the booking suite
 for t in phase-a booking-clock-contract lifecycle notification-outbox-worker \

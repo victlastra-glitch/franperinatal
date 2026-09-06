@@ -52,7 +52,7 @@ const check = (condition, message) => { assert.ok(condition, message); assertion
 const rejects = (fn, pattern, message) => { assert.throws(fn, pattern, message); assertions += 1; };
 
 // Schema: exact, unique and lifecycle-separated.
-check(api.HEADERS.length === 57, 'schema header count is exact');
+check(api.HEADERS.length === 58, 'schema header count is exact');
 check(new Set(api.HEADERS).size === api.HEADERS.length, 'schema has no duplicate headers');
 check(Array.isArray(api.OUTBOX_HEADERS) && api.OUTBOX_HEADERS.length === 20
   && new Set(api.OUTBOX_HEADERS).size === api.OUTBOX_HEADERS.length

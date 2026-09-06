@@ -57,6 +57,10 @@ export function buildHarness(patches) {
     flowByToken: new Map(),
     refundByToken: new Map(),
     refundCreateCalls: 0,
+    // null = echo the created amount, as Flow does. A number forces a provider /
+    // reservation disagreement so the reconciliation gate can be exercised.
+    providerAmountOverride: null,
+    providerCurrencyOverride: '',
     refundCreateShouldFail: false,
     refundStatusOverride: 'accepted',
     lastRefundPayload: null,
@@ -193,14 +197,20 @@ export function buildHarness(patches) {
           const body = form();
           state.seq += 1;
           const token = 'FLOWTOKENPOLICY' + String(state.seq).padStart(16, '0');
-          state.flowByToken.set(token, { commerceOrder: body.commerceOrder, status: 1 });
+          state.flowByToken.set(token, { commerceOrder: body.commerceOrder, status: 1, amount: body.amount });
           return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ url: 'https://www.flow.cl/app/web/pay', token }) };
         }
         if (href.includes('/payment/getStatus')) {
           const query = Object.fromEntries(href.split('?')[1].split('&').map((part) => part.split('=').map(decodeURIComponent)));
           const current = state.flowByToken.get(query.token);
           if (!current) return { getResponseCode: () => 404, getContentText: () => JSON.stringify({ code: 404 }) };
-          return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ status: current.status, commerceOrder: current.commerceOrder }) };
+          // Flow echoes the settled amount and currency on getStatus. The server
+          // reconciles them against what the reservation bound at order creation,
+          // so a fake that omitted them would hide that check entirely.
+          const body = { status: current.status, commerceOrder: current.commerceOrder,
+            amount: Number(state.providerAmountOverride == null ? current.amount : state.providerAmountOverride),
+            currency: String(state.providerCurrencyOverride || 'CLP') };
+          return { getResponseCode: () => 200, getContentText: () => JSON.stringify(body) };
         }
         if (href.includes('/refund/create')) {
           state.refundCreateCalls += 1;

@@ -151,6 +151,9 @@ var RESERVATION_HEADERS = Object.freeze([
   'notification_outbox_key', 'notification_patient_state', 'notification_internal_state',
   'notification_attempt_count', 'notification_last_attempt_at', 'notification_last_result',
   'last_patient_notification_at', 'reconciliation_state', 'last_operation_id', 'created_at', 'updated_at',
+  // Append-only column 58. The immutable amount bound to this reservation's payment
+  // order, captured from the catalog price at order creation and never re-derived.
+  'transaction_amount_clp',
 ]);
 var NOTIFICATION_OUTBOX_HEADERS = Object.freeze([
   'logical_key', 'reservation_id', 'event_type', 'notification_version', 'state',
@@ -379,6 +382,63 @@ function isExactV2Headers_(headers) {
   return headers.every(function(value, index) { return String(value) === RESERVATION_HEADERS[index]; });
 }
 
+/**
+ * Columns a LATER release is approved to append to the reservation sheet.
+ *
+ * This is the forward half of the append-only contract, and it exists so a
+ * schema append never requires a destructive rollback. A runtime that carries
+ * this list can read a sheet that is one approved column WIDER than it knows
+ * about, which means the version deployed before an append stays a valid
+ * rollback target after the append. Without it, widening the sheet strands the
+ * previous version and the only way back is deleting a live column.
+ *
+ * The list is an allowlist, never a wildcard: an unexpected extra column is
+ * still SCHEMA_MISMATCH. An entry that a later release promotes into
+ * RESERVATION_HEADERS simply becomes inert here.
+ */
+var SCHEMA_FORWARD_APPROVED_COLUMNS = Object.freeze(['transaction_amount_clp']);
+
+/**
+ * The approved extra columns on a sheet that is otherwise canonical, or null
+ * when this sheet is not that shape.
+ *
+ * Requires the physical row to begin with every canonical column in canonical
+ * order — a rename or a reorder inside the first RESERVATION_HEADERS.length
+ * positions is a mismatch, not a widening.
+ */
+function v2NativeForwardExtras_(headers) {
+  if (!headers || headers.length <= RESERVATION_HEADERS.length) return null;
+  const canonical = RESERVATION_HEADERS.every(function(header, index) {
+    return String(headers[index]) === header;
+  });
+  if (!canonical) return null;
+  const extras = headers.slice(RESERVATION_HEADERS.length).map(function(value) { return String(value || ''); });
+  const approved = extras.every(function(name) {
+    return name && SCHEMA_FORWARD_APPROVED_COLUMNS.indexOf(name) !== -1;
+  });
+  return approved ? extras : null;
+}
+
+/**
+ * The sheet is canonical V2, one or more appended columns BEHIND this runtime.
+ *
+ * The mirror of the forward case above, and the state a release that appends a
+ * column produces the moment it goes live and before the migration runs. It has
+ * to be *inspectable* — the migration that appends those columns runs through
+ * inspectReservationSchema_ and could not otherwise start — while remaining
+ * unusable for business writes, which assertSchema_ enforces separately.
+ *
+ * Inert in a runtime that appends nothing, which is why it ships here: both
+ * halves of the contract are present in every version, so the version before an
+ * append and the version after it differ only in the header list.
+ */
+function isV2HeaderPrefix_(headers) {
+  if (!headers || !headers.length) return false;
+  if (headers.length >= RESERVATION_HEADERS.length) return false;
+  if (headers.length < V7_POSITIONAL_CANONICAL.length) return false;
+  return headers.every(function(value, index) { return String(value) === RESERVATION_HEADERS[index]; });
+}
+
 function looksLikeV7Headers_(headers) {
   if (!headers || headers.length < V7_POSITIONAL_CANONICAL.length) return false;
   if (String(headers[0] || '') === RESERVATION_HEADERS[0]) return false;
@@ -412,7 +472,12 @@ function inspectReservationSchema_(sheet, opt) {
     if (header) columns[header] = index + 1;
   });
 
-  if (isExactV2Headers_(physicalHeaders)) {
+  // Canonical, or canonical plus approved appended columns this runtime does not
+  // use yet. Both are fully usable: the extra columns are read-through only, so
+  // this runtime keeps writing exactly the columns it knows and leaves the rest
+  // untouched.
+  const forwardExtras = isExactV2Headers_(physicalHeaders) ? [] : v2NativeForwardExtras_(physicalHeaders);
+  if (forwardExtras) {
     RESERVATION_HEADERS.forEach(function(header, index) { columns[header] = index + 1; });
     return {
       kind: 'v2_native',
@@ -423,6 +488,22 @@ function inspectReservationSchema_(sheet, opt) {
       legacyWriteColumns: {},
       missingV2Columns: [],
       presentV2Columns: RESERVATION_HEADERS.slice(),
+      forwardExtras: forwardExtras.slice(),
+      rowCount: Math.max(0, Number(sheet.getLastRow() || 1) - 1),
+      sheetName: options.sheetName || '',
+    };
+  }
+
+  if (isV2HeaderPrefix_(physicalHeaders)) {
+    return {
+      kind: 'v2_append_pending',
+      physicalHeaders: physicalHeaders,
+      headers: physicalHeaders.slice(),
+      columns: columns,
+      legacyColumns: legacyColumns,
+      legacyWriteColumns: {},
+      missingV2Columns: RESERVATION_HEADERS.slice(physicalHeaders.length),
+      presentV2Columns: physicalHeaders.slice(),
       rowCount: Math.max(0, Number(sheet.getLastRow() || 1) - 1),
       sheetName: options.sheetName || '',
     };
@@ -521,6 +602,86 @@ function appendMissingHeaders_(sheet, names) {
   return appended;
 }
 
+/**
+ * The one column a historical row can prove its own amount from.
+ *
+ * The v7 runtime that created every pre-migration reservation wrote the amount
+ * it charged into `priceClp` at reservation time. That is a stored per-row fact,
+ * which is what makes a backfill from it deterministic rather than a guess. The
+ * catalog price is NOT a source here and never can be: it says what a booking
+ * would cost today, not what this one cost.
+ */
+var HISTORICAL_AMOUNT_SOURCE_COLUMN = 'priceClp';
+
+/** A stored historical amount, or null when this row cannot prove one. */
+function historicalAmountFromRow_(row, schema) {
+  const column = schema && schema.columns && schema.columns[HISTORICAL_AMOUNT_SOURCE_COLUMN];
+  if (!column) return null;
+  const raw = String(cellFromRow_(row, column) || '').trim();
+  if (!/^[0-9]{1,9}$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * What a backfill would do, as counts only.
+ *
+ * Never returns, logs or persists a cell value from a patient row: the caller
+ * gets totals and a blocker count, which is everything a release decision needs
+ * and nothing a patient would mind being written down.
+ *
+ * `AMOUNT_UNKNOWN_ACTIVE_ROWS` is the one that can stop a release. It counts
+ * reservations that are paid, not cancelled, and still ahead of the clock —
+ * exactly the rows whose automated refund would silently become manual review —
+ * and which STILL have no provable amount after the backfill.
+ */
+function transactionAmountBackfillPlan_(sheet, schema, nowMs) {
+  const values = sheet.getDataRange().getValues();
+  const rows = values.slice(1);
+  const now = Number.isFinite(nowMs) ? nowMs : Date.now();
+  const boundColumn = schema && schema.columns && schema.columns.transaction_amount_clp;
+  const plan = { total: rows.length, activeOrFuturePaid: 0, backfillable: 0, unknownActive: 0, writes: [] };
+
+  rows.forEach(function(row, index) {
+    const record = recordFromRow_(row, schema, index + 2);
+    const alreadyBound = boundColumn ? transactionAmountClp_(record) : null;
+    const historical = historicalAmountFromRow_(row, schema);
+    if (alreadyBound === null && historical !== null) {
+      plan.backfillable += 1;
+      if (boundColumn) plan.writes.push({ rowNumber: index + 2, amount: historical });
+    }
+    const startMs = Date.parse(String(record.current_start_at || ''));
+    const active = record.payment_status === LIFECYCLE.PAYMENT_STATUS.PAID
+      && record.schedule_status !== LIFECYCLE.SCHEDULE_STATUS.CANCELLED
+      && Number.isFinite(startMs) && startMs > now;
+    if (!active) return;
+    plan.activeOrFuturePaid += 1;
+    if (alreadyBound === null && historical === null) plan.unknownActive += 1;
+  });
+  return plan;
+}
+
+/**
+ * Fill transaction_amount_clp from stored history, once.
+ *
+ * Idempotent by construction: it only ever writes a cell that is currently
+ * unreadable as an amount, so a second run writes nothing. It never overwrites a
+ * bound amount and never invents one.
+ */
+function backfillTransactionAmountFromHistory_(sheet, schema, nowMs) {
+  const plan = transactionAmountBackfillPlan_(sheet, schema, nowMs);
+  plan.writes.forEach(function(write) {
+    updateRecord_(sheet, schema, write.rowNumber, { transaction_amount_clp: String(write.amount) });
+  });
+  return {
+    historicalRowsTotal: plan.total,
+    activeOrFuturePaidRows: plan.activeOrFuturePaid,
+    deterministicAmountBackfilled: plan.writes.length,
+    amountUnknownActiveRows: plan.unknownActive,
+    source: HISTORICAL_AMOUNT_SOURCE_COLUMN,
+  };
+}
+
 function productionSchemaMigrationDryRun_(opt) {
   const deps = opt || {};
   const config = deps.config || readConfig_();
@@ -529,7 +690,25 @@ function productionSchemaMigrationDryRun_(opt) {
   inspection.outbox = inspectOutboxSchema_(resources.spreadsheet);
   const metadata = schemaMetadata_(inspection);
   metadata.writes = 0;
+  // Counts only, no cell values: enough to decide whether the append is safe to
+  // run, and specifically whether any live paid booking would lose its automated
+  // refund path.
+  const plan = transactionAmountBackfillPlan_(resources.sheet, assertBackfillSchema_(inspection));
+  metadata.historicalRowsTotal = plan.total;
+  metadata.activeOrFuturePaidRows = plan.activeOrFuturePaid;
+  metadata.deterministicAmountBackfillable = plan.backfillable;
+  metadata.amountUnknownActiveRows = plan.unknownActive;
+  metadata.historicalAmountSource = HISTORICAL_AMOUNT_SOURCE_COLUMN;
   return operatorLog_(metadata);
+}
+
+/**
+ * A read-only column map for an inspection result, including states that
+ * assertSchema_ refuses. The dry run has to describe a sheet it is not yet
+ * allowed to write to.
+ */
+function assertBackfillSchema_(inspection) {
+  return { kind: inspection.kind, headers: inspection.headers, columns: inspection.columns };
 }
 
 function migrateProductionV7SchemaToLifecycleV2_(opt) {
@@ -537,12 +716,19 @@ function migrateProductionV7SchemaToLifecycleV2_(opt) {
   const config = deps.config || readConfig_();
   const resources = deps.resources || assertResources_(config);
   const before = inspectReservationSchema_(resources.sheet, { sheetName: PRODUCTION.sheetName });
+  // v2_native is already complete, so it appends nothing and the call is a no-op.
+  // Every other inspectable state — a legacy v7 sheet, or a canonical sheet that
+  // is simply behind on appended columns — yields exactly the columns to add, in
+  // RESERVATION_HEADERS order, so the physical row stays a positional prefix.
   const missing = before.kind === 'v2_native' ? [] : RESERVATION_HEADERS.filter(function(header) {
     return before.physicalHeaders.indexOf(header) === -1;
   });
   const appended = missing.length ? appendMissingHeaders_(resources.sheet, missing) : [];
   const outboxSheet = ensureNotificationOutboxSheet_(resources.spreadsheet);
   const schema = assertSchema_(resources.sheet);
+  // Only after the column exists. Deterministic, idempotent, and from stored
+  // history alone — a row that cannot prove its amount keeps none.
+  const backfill = backfillTransactionAmountFromHistory_(resources.sheet, schema);
   const after = inspectReservationSchema_(resources.sheet, { sheetName: PRODUCTION.sheetName });
   const result = {
     ok: true,
@@ -556,6 +742,11 @@ function migrateProductionV7SchemaToLifecycleV2_(opt) {
     kind: after.kind,
     outboxSchema: assertNotificationOutboxSchema_(outboxSheet).headers.length,
     schemaColumns: Object.keys(schema.columns).length,
+    historicalRowsTotal: backfill.historicalRowsTotal,
+    activeOrFuturePaidRows: backfill.activeOrFuturePaidRows,
+    deterministicAmountBackfilled: backfill.deterministicAmountBackfilled,
+    amountUnknownActiveRows: backfill.amountUnknownActiveRows,
+    historicalAmountSource: backfill.source,
   };
   return operatorLog_(result);
 }
@@ -726,7 +917,10 @@ function reserveOnce_(sheet, schema, payload, calendarGateway) {
     booking_status: LIFECYCLE.BOOKING_STATUS.INITIATED, payment_status: LIFECYCLE.PAYMENT_STATUS.NOT_STARTED,
     refund_status: LIFECYCLE.REFUND_STATUS.NOT_REQUIRED, schedule_status: LIFECYCLE.SCHEDULE_STATUS.HOLD,
     calendar_link_key: makeCalendarLinkKey_(payload.idempotencyKey),
-    patient_reschedule_count: '0', notification_version: '1', created_at: now, updated_at: now };
+    patient_reschedule_count: '0', notification_version: '1',
+    // Catalog price is read exactly here, once, and frozen onto the reservation.
+    transaction_amount_clp: String(consultationAmountClp_(payload.serviceType)),
+    created_at: now, updated_at: now };
   appendReservationRow_(sheet, schema, reservation);
   reservation.rowNumber = sheet.getLastRow(); return reservation;
 }
@@ -782,11 +976,21 @@ function retryFlowPayment_(e) {
     }
     if (!paymentRetryAllowed_(record)) return { ok: false, code: 'BOOKING_NOT_RETRYABLE' };
     const originalHold = record.slot_hold_expires_at;
-    const flow = createProductionFlowPayment_(config, { email: record.patient_email, idempotencyKey: record.idempotency_key }, record, {
-      commerceOrder: makeFlowRetryCommerceOrder_(record.idempotency_key),
-      publicStatusToken: token,
-      timeoutSeconds: remainingHoldSeconds_(record),
-    });
+    let flow;
+    try {
+      flow = createProductionFlowPayment_(config, { email: record.patient_email, idempotencyKey: record.idempotency_key }, record, {
+        commerceOrder: makeFlowRetryCommerceOrder_(record.idempotency_key),
+        publicStatusToken: token,
+        timeoutSeconds: remainingHoldSeconds_(record),
+      });
+    } catch (error) {
+      // A reservation with no bound amount is reported, not retried and not
+      // repriced. Nothing was sent to Flow: the refusal happens before the call.
+      if (error && error.code === PAYMENT_AMOUNT_UNAUTHORIZED) {
+        return { ok: false, code: PAYMENT_AMOUNT_UNAUTHORIZED };
+      }
+      throw error;
+    }
     if (record.payment_status === LIFECYCLE.PAYMENT_STATUS.REJECTED
       || record.payment_status === LIFECYCLE.PAYMENT_STATUS.FAILED
       || record.payment_status === LIFECYCLE.PAYMENT_STATUS.ANNULLED) {
@@ -829,8 +1033,25 @@ function makeFlowCommerceOrder_(idempotencyKey) {
   return order;
 }
 
+/**
+ * Error code for a payment that cannot be priced from the reservation itself.
+ *
+ * Not a failure of the provider and not a reason to retry: the reservation has
+ * no bound amount, so nothing on the server is authorized to say what this
+ * charge is worth.
+ */
+var PAYMENT_AMOUNT_UNAUTHORIZED = 'PAYMENT_AMOUNT_UNAUTHORIZED';
+
 function createProductionFlowPayment_(config, payload, reservation, options) {
   options = options || {};
+  // The charge is the amount bound to THIS reservation. There is deliberately no
+  // catalog fallback here: falling back would price an existing transaction at
+  // today's list price, which is the exact defect the bound amount exists to
+  // prevent, and it would charge an amount the reservation cannot later prove.
+  // A new reservation always has one, because reserveOnce_ binds it before this
+  // is ever reached; a legacy row that has none stops here, before Flow.
+  const boundAmount = transactionAmountClp_(reservation);
+  if (boundAmount === null) fail_(PAYMENT_AMOUNT_UNAUTHORIZED);
   const commerceOrder = options.commerceOrder || makeFlowCommerceOrder_(payload.idempotencyKey);
   const publicStatusToken = options.publicStatusToken || makeStatusToken_(payload.idempotencyKey, config.statusTokenSecret);
   const timeoutSeconds = String(options.timeoutSeconds || remainingHoldSeconds_(reservation));
@@ -838,7 +1059,7 @@ function createProductionFlowPayment_(config, payload, reservation, options) {
     commerceOrder: commerceOrder,
     subject: 'Sesión Francisca Bustos',
     currency: 'CLP',
-    amount: String(consultationAmountClp_(payload.serviceType || reservation.service_type)),
+    amount: String(boundAmount),
     email: payload.email,
     urlConfirmation: config.flowConfirmationUrl,
     urlReturn: config.flowReturnUrl + '?st=' + encodeURIComponent(publicStatusToken),
@@ -1019,6 +1240,17 @@ function flowConfirmation_(e) {
       return { ok: true, status: next === LIFECYCLE.PAYMENT_STATUS.REJECTED ? 'payment_rejected' : 'payment_failed' };
     }
     if (next !== LIFECYCLE.PAYMENT_STATUS.PAID) fail_('FLOW_VERIFICATION_FAILED');
+    // Reconcile what the provider actually charged against what this reservation
+    // committed to at order creation. A mismatch stops here: no confirmation, no
+    // Calendar/Meet, no patient email — the money and the booking must agree first.
+    const providerCheck = providerAmountMatchesTransaction_(record, status);
+    if (!providerCheck.ok) {
+      updateRecord_(resources.sheet, schema, record.rowNumber, {
+        booking_status: LIFECYCLE.BOOKING_STATUS.MANUAL_REVIEW,
+        reconciliation_state: providerCheck.code,
+      });
+      return { ok: false, code: providerCheck.code, status: 'payment_verifying' };
+    }
     if (record.booking_status === LIFECYCLE.BOOKING_STATUS.EXPIRED
       || (unpaidHoldBooking_(record) && slotHoldIsExpired_(record))) {
       transitionPayment_(resources.sheet, schema, record, next);
@@ -1133,7 +1365,7 @@ function paymentStatus_(e) {
   expireUnpaidHoldRecord_(resources.sheet, schema, record);
   const retryAvailable = paymentRetryAllowed_(record);
   return {
-    ok: true, status: publicStatus_(record), amount: consultationAmountClp_(record.service_type), currency: 'CLP',
+    ok: true, status: publicStatus_(record), amount: displayAmountClp_(record), currency: 'CLP',
     serviceType: record.service_type, modality: record.modality, backendVersion: PRODUCTION.backendVersion,
     retryAvailable: retryAvailable, holdValid: !slotHoldIsExpired_(record) && record.booking_status !== LIFECYCLE.BOOKING_STATUS.EXPIRED,
   };
@@ -1485,13 +1717,25 @@ function createProviderRefundOnce_(resources, schema, record, reason) {
     enqueueLifecycleNotification_(resources.sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW);
     return { ok: false, code: 'REFUND_CONFIGURATION_INCOMPLETE' };
   }
+  // Refund authority is the amount actually bound to this transaction — never the
+  // catalog price, which may have moved since. An unknown amount is not a licence
+  // to guess: it parks the reservation for a human instead.
+  const boundRefundAmount = transactionAmountClp_(record);
+  if (boundRefundAmount === null) {
+    updateRecord_(resources.sheet, schema, record.rowNumber, {
+      refund_status: LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW,
+      refund_last_error_code: 'REFUND_AMOUNT_UNKNOWN',
+    });
+    enqueueLifecycleNotification_(resources.sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW);
+    return { ok: false, code: 'REFUND_AMOUNT_UNKNOWN' };
+  }
   const gateway = createFlowRefundGateway_({ baseUrl: refundConfig.flowBaseUrl, apiKey: refundConfig.flowApiKey, secretKey: refundConfig.flowSecretKey });
   const result = refundCreateOnce_({
     store: sheetReservationStore_(resources, schema),
     record: record,
     gateway: gateway,
     receiverEmail: record.patient_email,
-    amount: String(consultationAmountClp_(record.service_type)),
+    amount: String(boundRefundAmount),
     urlCallBack: refundConfig.refundCallbackUrl,
     commerceTrxId: record.commerce_order,
   });
@@ -1614,8 +1858,70 @@ function activeRefundPolicy_(record) {
   return refundPolicy_(record);
 }
 
+/**
+ * CATALOG price — the commercial list price today. Authoritative for exactly one
+ * thing: choosing the amount of a NEW payment order. Never use it to describe,
+ * reconcile or refund an order that already exists; a later catalog change would
+ * silently rewrite the money of a past transaction.
+ */
 function consultationAmountClp_(serviceType) {
   return String(serviceType || '') === 'followup' ? FOLLOWUP_PRICE_CLP : INITIAL_PRICE_CLP;
+}
+
+/**
+ * TRANSACTION amount — the immutable amount bound to this reservation's payment
+ * order, persisted at order creation. Returns null when the reservation predates
+ * the column; callers must read that as "unknown", never as "current price".
+ */
+function transactionAmountClp_(record) {
+  const raw = String(record && record.transaction_amount_clp || '').trim();
+  if (!/^[0-9]{1,9}$/.test(raw)) return null;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
+
+/**
+ * Display-only resolution. A legacy row with no persisted amount falls back to the
+ * catalog price so a status page or email still renders something. This fallback is
+ * NEVER acceptable for money: money paths use transactionAmountClp_ and fail closed.
+ */
+/**
+ * Does the provider's confirmed charge match the amount this reservation bound at
+ * order creation? Fails closed on an unknown bound amount, an unreadable provider
+ * amount, a numeric mismatch, or a currency that is not CLP.
+ */
+function providerAmountMatchesTransaction_(record, providerStatus) {
+  const bound = transactionAmountClp_(record);
+  if (bound === null) return { ok: false, code: 'TRANSACTION_AMOUNT_UNKNOWN' };
+
+  // CLP has no minor unit, so a Flow CLP amount is a whole number. Anything
+  // fractional is not one, and must not be rounded into agreement: a near-match
+  // is a mismatch, and rounding is how a real discrepancy would be hidden.
+  const rawAmount = providerStatus ? providerStatus.amount : null;
+  if (rawAmount === null || rawAmount === undefined || String(rawAmount).trim() === '') {
+    return { ok: false, code: 'PROVIDER_AMOUNT_UNREADABLE' };
+  }
+  const providerAmount = Number(rawAmount);
+  if (!Number.isFinite(providerAmount) || !Number.isInteger(providerAmount) || providerAmount <= 0) {
+    return { ok: false, code: 'PROVIDER_AMOUNT_UNREADABLE' };
+  }
+  if (providerAmount !== bound) return { ok: false, code: 'PROVIDER_AMOUNT_MISMATCH' };
+
+  // The currency must be stated, never assumed. Flow returns it on
+  // payment/getStatus, so an absent one means the response is not the shape this
+  // check was written against — and inferring CLP from silence is exactly how a
+  // wrong-currency settlement would be waved through. Case is normalized because
+  // that is presentation; absence is not.
+  const rawCurrency = providerStatus ? providerStatus.currency : null;
+  const currency = String(rawCurrency === null || rawCurrency === undefined ? '' : rawCurrency).trim().toUpperCase();
+  if (!currency) return { ok: false, code: 'PROVIDER_CURRENCY_UNREADABLE' };
+  if (currency !== 'CLP') return { ok: false, code: 'PROVIDER_CURRENCY_MISMATCH' };
+  return { ok: true, amount: bound };
+}
+
+function displayAmountClp_(record) {
+  const bound = transactionAmountClp_(record);
+  return bound === null ? consultationAmountClp_(record && record.service_type) : bound;
 }
 
 var PATIENT_EMAIL_TIME_ZONE = 'America/Santiago';
@@ -2314,7 +2620,11 @@ var __FLOW_PAYMENT_TEST_EXPORTS__ = Object.freeze({
   FLOW_COMMERCE_ORDER_MAX_LENGTH: FLOW_COMMERCE_ORDER_MAX_LENGTH,
   INITIAL_PRICE_CLP: INITIAL_PRICE_CLP,
   FOLLOWUP_PRICE_CLP: FOLLOWUP_PRICE_CLP,
+  PAYMENT_AMOUNT_UNAUTHORIZED: PAYMENT_AMOUNT_UNAUTHORIZED,
   consultationAmountClp_: consultationAmountClp_,
+  transactionAmountClp_: transactionAmountClp_,
+  displayAmountClp_: displayAmountClp_,
+  providerAmountMatchesTransaction_: providerAmountMatchesTransaction_,
   FLOW_PROVIDER_PAYMENT_STATUS: FLOW_PROVIDER_PAYMENT_STATUS,
   refundPolicy_: refundPolicy_,
   activeRefundPolicy_: activeRefundPolicy_,
@@ -2378,9 +2688,15 @@ var __COMPATIBILITY_TEST_EXPORTS__ = Object.freeze({
   pickScriptProperty_: pickScriptProperty_,
   resolvedScriptProperties_: resolvedScriptProperties_,
   resolveBookingSheet_: resolveBookingSheet_,
+  SCHEMA_FORWARD_APPROVED_COLUMNS: SCHEMA_FORWARD_APPROVED_COLUMNS,
+  v2NativeForwardExtras_: v2NativeForwardExtras_,
+  isV2HeaderPrefix_: isV2HeaderPrefix_,
   inspectReservationSchema_: inspectReservationSchema_,
   inspectOutboxSchema_: inspectOutboxSchema_,
   productionSchemaMigrationDryRun_: productionSchemaMigrationDryRun_,
+  HISTORICAL_AMOUNT_SOURCE_COLUMN: HISTORICAL_AMOUNT_SOURCE_COLUMN,
+  transactionAmountBackfillPlan_: transactionAmountBackfillPlan_,
+  backfillTransactionAmountFromHistory_: backfillTransactionAmountFromHistory_,
   migrateProductionV7SchemaToLifecycleV2_: migrateProductionV7SchemaToLifecycleV2_,
   assertSchema_: assertSchema_,
   recordFromRow_: recordFromRow_,
