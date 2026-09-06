@@ -703,12 +703,28 @@ function productionSchemaMigrationDryRun_(opt) {
 }
 
 /**
- * A read-only column map for an inspection result, including states that
+ * A read-only schema view for an inspection result, including states that
  * assertSchema_ refuses. The dry run has to describe a sheet it is not yet
  * allowed to write to.
+ *
+ * It carries the legacy column map deliberately. Records must be built exactly
+ * the way the engine builds them, and on a v7_compat sheet the legacy adapter is
+ * what resolves a pre-migration row's status, date and time — they live in the
+ * original Google Form columns under their own names, not under the V2 names.
+ * Dropping the map would leave those rows reading as status-less, which would
+ * silently UNDERCOUNT the paid future bookings that cannot prove an amount. That
+ * count is what blocks the migration, so undercounting it is the one direction
+ * this must never fail in.
  */
 function assertBackfillSchema_(inspection) {
-  return { kind: inspection.kind, headers: inspection.headers, columns: inspection.columns };
+  return {
+    kind: inspection.kind,
+    headers: inspection.headers,
+    columns: inspection.columns,
+    legacyColumns: inspection.legacyColumns,
+    legacyWriteColumns: inspection.legacyWriteColumns,
+    physicalHeaders: inspection.physicalHeaders,
+  };
 }
 
 function migrateProductionV7SchemaToLifecycleV2_(opt) {
