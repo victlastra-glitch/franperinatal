@@ -541,18 +541,20 @@ check(liveSheet._headers.length === 91, 'the physical sheet becomes 91 columns')
 // backfill wrote gets its `updated_at` stamped, because the row did change. That
 // column is informational — nothing in the engine reads it to make a decision —
 // and no other legacy or V2 cell moves.
-const updatedAtIndex = livePhysicalHeaders.indexOf('updated_at');
-check(updatedAtIndex !== -1 && updatedAtIndex < 90, 'updated_at is inside the pre-existing block');
-const backfilledRowNumbers = new Set([2, 3]);   // the two rows with a stored priceClp
+// Not one pre-existing cell moves. The backfill writes the appended column and
+// nothing else — in particular it does not stamp `updated_at`, because recording
+// what a reservation was always worth is not a modification of the booking, and
+// overwriting the timestamp of its last real change would destroy information.
+check(livePhysicalHeaders.indexOf('updated_at') !== -1, 'updated_at is in the pre-existing block');
 liveSheet._rows.forEach((row, index) => {
   const before = liveBefore[index].slice();
   const after = row.slice(0, 90);
   const touched = before
     .map((value, at) => (String(value) === String(after[at]) ? null : livePhysicalHeaders[at]))
     .filter(Boolean);
-  const expected = backfilledRowNumbers.has(index + 2) ? ['updated_at'] : [];
-  check(JSON.stringify(touched) === JSON.stringify(expected),
-    'row ' + (index + 2) + ' changed exactly ' + (expected.length ? 'updated_at and nothing else' : 'nothing'));
+  check(touched.length === 0,
+    'row ' + (index + 2) + ' has no pre-existing cell changed, not even updated_at'
+      + (touched.length ? ' (changed: ' + touched.join(',') + ')' : ''));
 });
 check(liveMigrate.deterministicAmountBackfilled === 2,
   'and the backfill filled the rows that could prove an amount');

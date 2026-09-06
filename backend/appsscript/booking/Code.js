@@ -670,8 +670,15 @@ function transactionAmountBackfillPlan_(sheet, schema, nowMs) {
  */
 function backfillTransactionAmountFromHistory_(sheet, schema, nowMs) {
   const plan = transactionAmountBackfillPlan_(sheet, schema, nowMs);
+  const column = schema && schema.columns && schema.columns.transaction_amount_clp;
+  if (plan.writes.length && !column) fail_('SCHEMA_NOT_READY');
   plan.writes.forEach(function(write) {
-    updateRecord_(sheet, schema, write.rowNumber, { transaction_amount_clp: String(write.amount) });
+    // Written directly rather than through updateRecord_, which would also stamp
+    // `updated_at`. A backfill records what this reservation was always worth; it
+    // is not a modification of the booking, and overwriting the timestamp of the
+    // last real change on every historical row would destroy information to no
+    // purpose. Nothing else is touched: one cell, in the column just appended.
+    sheet.getRange(write.rowNumber, column).setValue(String(write.amount));
   });
   return {
     historicalRowsTotal: plan.total,
