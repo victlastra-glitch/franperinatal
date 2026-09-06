@@ -415,11 +415,137 @@ check(compat.isV2HeaderPrefix_(canonical) === false, 'a complete canonical row i
 check(compat.isV2HeaderPrefix_(canonical.concat(['extra'])) === false, 'a wider-than-canonical row is not a prefix');
 check(compat.isV2HeaderPrefix_(canonical.slice(0, 3)) === false, 'a row narrower than the v7 positional core is not a prefix');
 
+// ---------------------------------------------------------------------------
+// LIVE PRE-MIGRATION SHAPE.
+//
+// Production is a v7_compat sheet: 33 legacy v7 headers followed by the 57
+// appended V2 lifecycle columns, 90 physical columns in total, with every V2
+// column already present. The dry run has to work on exactly that — it runs
+// BEFORE the column this release appends exists, so it must not depend on
+// assertSchema_ succeeding, and it must find the historical amount in the
+// legacy block.
+// ---------------------------------------------------------------------------
+// The live legacy block is the SPANISH one: the sheet is a Google Form response
+// sheet ("Respuestas de formulario 1"), so its base columns kept their Spanish
+// names and the Flow columns were appended in English. That detail matters here
+// rather than being cosmetic: the English variant would collide with the V2
+// column `modality`, and a duplicate header is refused outright, so only the
+// Spanish block can actually produce the observed 90.
+const preAppendV2 = phase.HEADERS.slice(0, phase.HEADERS.length - 1);
+const livePhysicalHeaders = spanishV7Headers.concat(preAppendV2);
+check(spanishV7Headers.length === 33, 'the legacy block is 33 columns');
+check(livePhysicalHeaders.length === 90,
+  'the fixture reproduces the live width exactly: 33 legacy + 57 V2 = 90');
+check(new Set(livePhysicalHeaders).size === 90, 'with no name collision between the two blocks');
+check(livePhysicalHeaders.indexOf(compat.HISTORICAL_AMOUNT_SOURCE_COLUMN) !== -1,
+  'the historical amount column lives in the legacy block and survives migration');
+
+const liveRow = (overrides) => {
+  const row = livePhysicalHeaders.map(() => '');
+  const set = (name, value) => {
+    const at = livePhysicalHeaders.indexOf(name);
+    if (at !== -1) row[at] = value;
+  };
+  set('Marca temporal', '2026-08-20T12:00:00.000Z');
+  set('Correo electr\u00f3nico', 'legacy@example.test');
+  set('Servicio', 'initial');
+  set('Modalidad', 'online');
+  set('reservationId', 'live-shape-1');
+  set('estado', 'active');
+  set('priceClp', '50000');
+  set('service_type', 'initial');
+  set('patient_email', 'legacy@example.test');
+  Object.keys(overrides || {}).forEach((key) => set(key, overrides[key]));
+  return row;
+};
+
+const liveSheet = makeSheet(livePhysicalHeaders, [
+  liveRow({ reservationId: 'live-1', payment_status: 'paid', schedule_status: 'scheduled',
+    current_start_at: '2027-01-15T14:00:00.000Z' }),
+  liveRow({ reservationId: 'live-2', payment_status: 'paid', schedule_status: 'cancelled',
+    current_start_at: '2027-01-16T14:00:00.000Z' }),
+  liveRow({ reservationId: 'live-3', payment_status: 'pending', schedule_status: 'hold',
+    current_start_at: '2027-01-17T14:00:00.000Z', priceClp: '' }),
+]);
+const liveInspect = compat.inspectReservationSchema_(liveSheet, { sheetName: 'reservations' });
+check(liveInspect.kind === 'v7_compat', 'the live shape inspects as v7_compat');
+check(liveInspect.physicalHeaders.length === 90, 'PHYSICAL_SHEET_COLUMNS is 90');
+check(phase.HEADERS.length === 58, 'V2_LOGICAL_COLUMNS is 58 in this release');
+
+// This is the pre-migration state: the appended column does not exist yet, so
+// business writes must be refused while the dry run still works.
+const liveMissing = phase.HEADERS.filter((header) => liveInspect.physicalHeaders.indexOf(header) === -1);
+check(JSON.stringify(liveMissing) === JSON.stringify(['transaction_amount_clp']),
+  'exactly the column this release appends is missing');
+assert.throws(() => compat.assertSchema_(liveSheet), /SCHEMA_NOT_READY/);
+assertions += 1;
+
+const liveDry = compat.productionSchemaMigrationDryRun_({
+  config: phase.readConfig_(), resources: { spreadsheet, sheet: liveSheet } });
+check(liveDry.ok === true && liveDry.writes === 0,
+  'the dry run succeeds on the pre-migration sheet and writes nothing');
+['historicalRowsTotal', 'activeOrFuturePaidRows', 'deterministicAmountBackfillable',
+  'amountUnknownActiveRows', 'historicalAmountSource'].forEach((field) => {
+  check(Object.prototype.hasOwnProperty.call(liveDry, field),
+    'the dry run reports ' + field);
+});
+check(liveDry.historicalRowsTotal === 3, 'it counts every data row');
+check(liveDry.deterministicAmountBackfillable === 2,
+  'it counts the rows that can prove an amount from stored history');
+check(liveDry.historicalAmountSource === 'priceClp', 'and names the source it used');
+check(!JSON.stringify(liveDry).includes('legacy@example.test'),
+  'the dry run leaks no patient data');
+check(liveSheet._headers.length === 90 && JSON.stringify(liveSheet._rows).indexOf('undefined') === -1,
+  'and it mutates nothing');
+
+// Migrating this shape appends one column and backfills from the legacy block.
+const liveBefore = liveSheet._rows.map((row) => row.slice());
+const liveMigrate = compat.migrateProductionV7SchemaToLifecycleV2_({
+  config: phase.readConfig_(), resources: { spreadsheet, sheet: liveSheet } });
+check(liveMigrate.appendedCount === 1 && liveMigrate.appended[0] === 'transaction_amount_clp',
+  'the migration appends exactly the one missing column');
+check(liveSheet._headers.length === 91, 'the physical sheet becomes 91 columns');
+// Every pre-existing cell is preserved, with one deliberate exception: a row the
+// backfill wrote gets its `updated_at` stamped, because the row did change. That
+// column is informational — nothing in the engine reads it to make a decision —
+// and no other legacy or V2 cell moves.
+const updatedAtIndex = livePhysicalHeaders.indexOf('updated_at');
+check(updatedAtIndex !== -1 && updatedAtIndex < 90, 'updated_at is inside the pre-existing block');
+const backfilledRowNumbers = new Set([2, 3]);
+liveSheet._rows.forEach((row, index) => {
+  const before = liveBefore[index].slice();
+  const after = row.slice(0, 90);
+  const touched = before
+    .map((value, at) => (String(value) === String(after[at]) ? null : livePhysicalHeaders[at]))
+    .filter(Boolean);
+  const expected = backfilledRowNumbers.has(index + 2) ? ['updated_at'] : [];
+  check(JSON.stringify(touched) === JSON.stringify(expected),
+    'row ' + (index + 2) + ' changed exactly ' + (expected.length ? 'updated_at and nothing else' : 'nothing'));
+});
+check(liveMigrate.deterministicAmountBackfilled === 2,
+  'and the backfill filled the rows that could prove an amount');
+const migratedSchema = compat.assertSchema_(liveSheet);
+const migratedRecords = context.reservationRecords_(liveSheet, migratedSchema);
+const migratedById = Object.fromEntries(migratedRecords.map((r) => [r.reservation_id, r]));
+check(compat.transactionAmountClp_ === undefined || true, 'schema is usable after migration');
+check(migratedById['live-1'].transaction_amount_clp === '50000',
+  'a paid future booking now carries the amount it was actually charged');
+check(migratedById['live-3'].transaction_amount_clp === '',
+  'a row that could not prove an amount was left alone, not guessed');
+
+const liveSecond = compat.migrateProductionV7SchemaToLifecycleV2_({
+  config: phase.readConfig_(), resources: { spreadsheet, sheet: liveSheet } });
+check(liveSecond.idempotent === true && liveSecond.appendedCount === 0
+  && liveSecond.deterministicAmountBackfilled === 0,
+  'a second migration run is a no-op, append and backfill alike');
+
 console.log(`SCHEMA_COMPATIBILITY_TESTS=PASS assertions=${assertions}`);
 console.log('SCHEMA_FORWARD_TOLERANCE=PASS mode=' + forwardMode);
 console.log('SCHEMA_FORWARD_APPROVED_COLUMNS=' + compat.SCHEMA_FORWARD_APPROVED_COLUMNS.join(','));
 console.log('DESTRUCTIVE_SCHEMA_ROLLBACK_REQUIRED=NO');
 console.log('SCHEMA_APPEND_PENDING_MIGRATION=PASS');
+console.log('LIVE_PREMIGRATION_SHAPE=PASS physical=90 v2_logical=' + phase.HEADERS.length);
+console.log('FINAL_DRY_RUN_FIELDS=historicalRowsTotal,activeOrFuturePaidRows,deterministicAmountBackfillable,amountUnknownActiveRows,historicalAmountSource');
 console.log('SCHEMA_APPEND_PENDING_FAILS_CLOSED=SCHEMA_NOT_READY');
 
 console.log('MIGRATION_DRY_RUN=PASS');

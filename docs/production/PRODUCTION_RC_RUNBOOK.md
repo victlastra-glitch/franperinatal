@@ -217,21 +217,38 @@ Every runtime from the BRIDGE release onward carries both halves of the
 append-only contract, so it tolerates a sheet one approved column wider **or**
 narrower than its own header list:
 
-| Sheet | Runtime | Result |
+Two different counts, never interchangeable:
+
+| Term | What it means | Value today |
 | --- | --- | --- |
-| 57 columns | BRIDGE (57 headers) | healthy |
-| 57 columns | FINAL (58 headers) | `SCHEMA_NOT_READY` — inspectable and migratable, no business write |
-| 58 columns | FINAL (58 headers) | healthy |
-| 58 columns | **BRIDGE (57 headers)** | healthy — the extra column is read-through |
+| **physical sheet columns** | header cells on the live sheet: the legacy v7 block plus the appended V2 block | 90, becoming 91 |
+| **V2 lifecycle columns** | `RESERVATION_HEADERS`, what the runtime addresses by name | 57 in BRIDGE, 58 in FINAL |
+
+The live sheet is `v7_compat`, not `v2_native`: its base columns kept the Spanish
+names of the Google Form it grew from, the Flow columns were appended in English,
+and the 57 V2 lifecycle columns were appended after that. The runtime resolves
+V2 columns by name, so the physical width is not something it depends on. Never
+report the physical width as the schema width.
+
+| V2 columns on the sheet | Runtime | Result |
+| --- | --- | --- |
+| 57 present | BRIDGE (57 headers) | healthy |
+| 57 present | FINAL (58 headers) | `SCHEMA_NOT_READY` — inspectable and migratable, no business write |
+| 58 present | FINAL (58 headers) | healthy |
+| 58 present | **BRIDGE (57 headers)** | healthy — the extra column is read-through |
 
 That last row is the point. It is what makes rollback non-destructive, and it is
-why the bridge must be deployed **before** the sheet is widened.
+why the bridge must be deployed **before** the sheet is widened. For a
+`v7_compat` sheet the tolerance comes for free, because columns resolve by name;
+the explicit allowlist is what extends the same guarantee to a `v2_native`
+sheet, where width is exact.
 
 **Stage 1 — BRIDGE.**
 
 1. Build staging from the bridge commit and push (steps 2–3).
 2. Create the version and repoint the existing Web App (steps 8–9).
-3. Confirm Production is healthy on the still-57-column sheet. Money behaviour
+3. Confirm Production is healthy on the sheet as it stands, before any append.
+   Money behaviour
    is unchanged by design, so the no-charge smoke must look exactly as before.
 4. Record this version. **It is the rollback target for stage 2.**
 
@@ -250,7 +267,7 @@ why the bridge must be deployed **before** the sheet is widened.
    that cannot prove an amount keeps none.
 4. Run it again: `idempotent=true`, `appendedCount=0`,
    `deterministicAmountBackfilled=0`.
-5. Verify the BRIDGE is still healthy on the now-58-column sheet. It must be, and
+5. Verify the BRIDGE is still healthy on the widened sheet. It must be, and
    confirming it is what proves the rollback target is live.
 6. Build staging from the final commit, create the version, repoint.
 

@@ -59,10 +59,13 @@ has to look. Never collapse them.
 
 ## Schema
 
-Append-only V7 compatibility: the reservation sheet grows only at the end. The
-V7 baseline is 57 columns and today it carries **58** — column 58 is
+Append-only V7 compatibility: the reservation sheet grows only at the end.
+`RESERVATION_HEADERS` is **58** V2 lifecycle columns — column 58 is
 `transaction_amount_clp`, the amount frozen onto a reservation at order creation
-(`fran-payment-integrity` owns what it means). Never
+(`fran-payment-integrity` owns what it means). That is not the physical width:
+Production is `v7_compat` and still carries its legacy Google Form and Flow
+columns, so the sheet is wider and the runtime resolves V2 columns by name.
+Never say "the schema has N physical columns". Never
 delete, reorder or rename a column; append. Legacy v7 statuses stay readable.
 
 ## Before you finish
