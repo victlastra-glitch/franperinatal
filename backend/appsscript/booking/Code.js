@@ -913,6 +913,9 @@ function assertBookableSlot_(date, time, nowMs) {
   const requestedStart = startAt_(String(date || ''), String(time || ''));
   const weekday = new Date(String(date) + 'T00:00:00Z').getUTCDay();
   if (weekday === 0 || weekday === 6) fail_('REQUEST_REJECTED');
+  // The same list availability withholds. Refused here too, so a direct call
+  // that ignores what the picker showed cannot book a holiday either.
+  if (typeof isBookingHoliday_ === 'function' && isBookingHoliday_(String(date || ''))) fail_('REQUEST_REJECTED');
   const currentMs = nowMs === undefined ? Date.now() : Number(nowMs);
   if (!Number.isFinite(currentMs)) fail_('REQUEST_REJECTED');
   const today = localDateLabel_(new Date(currentMs));

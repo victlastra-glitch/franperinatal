@@ -393,6 +393,17 @@ Three surfaces now hold the contract:
 The date-less horizon read is a visual convenience for dimming full days. It
 must never make an hour selectable.
 
+**Holidays are the server's decision.** The list lived only in
+`assets/booking.js` and `manage.html`, so the picker hid 18 September while the
+server would have accepted a direct booking for it. `BOOKING_HOLIDAYS_CL` is now
+in `CalendarGateway.js`: availability reports every working hour of a holiday as
+occupied, and `assertBookableSlot_` refuses one outright. A client that
+subtracts the occupied hours therefore needs no holiday list of its own; the
+copies still shipped in the page are advisory, only for dimming a day before the
+server has been asked, and a test fails if they ever drift from the server's.
+Chile moves several of these by decree, so the list is explicit dates and has to
+be updated by hand.
+
 After any deploy that touches availability, check a spring-forward date
 explicitly. `availability-dst-bounds.test.mjs` discovers the transitions from
 the runtime's own timezone data rather than hardcoding them.
