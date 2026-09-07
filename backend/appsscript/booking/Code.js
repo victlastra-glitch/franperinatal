@@ -1212,7 +1212,11 @@ function signFlowParams_(params, secretKey) {
   const toSign = Object.keys(params).sort().reduce(function(value, key) {
     return params[key] === null || params[key] === undefined ? value : value + key + String(params[key]);
   }, '');
-  return Utilities.computeHmacSha256Signature(toSign, secretKey).map(function(byte) {
+  // Flow verifies the signature over the UTF-8 bytes it decodes from the body.
+  // The two-argument String overload does NOT encode as UTF-8: it maps every
+  // non-ASCII character to '?', so a subject such as "Sesión" is signed as
+  // "Sesi?n" and the provider rejects the request. The charset is explicit.
+  return Utilities.computeHmacSha256Signature(toSign, secretKey, Utilities.Charset.UTF_8).map(function(byte) {
     return ('0' + ((byte < 0 ? byte + 256 : byte).toString(16))).slice(-2);
   }).join('');
 }

@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
-import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
 import { createFixedDate } from './helpers/fixed-date.mjs';
+import { createUtilitiesStub, flowSignatureOracle } from './helpers/apps-script-utilities.mjs';
 
 const FixedDate = createFixedDate();
 
@@ -18,12 +19,10 @@ const propertyValues = {
   INTERNAL_NOTIFICATION_EMAIL: allowlisted,
   IDEMPOTENCY_NAMESPACE: 'fran-booking', STATUS_TOKEN_SECRET: secret,
 };
-const bytes = (value) => [...value].map((byte) => (byte > 127 ? byte - 256 : byte));
-const digestBytes = (value) => {
-  const text = String(value);
-  if (text === 'synthetic-store') return bytes(Buffer.from('390f55363168', 'hex'));
-  if (text === 'synthetic-calendar') return bytes(Buffer.from('6c0535f4450c', 'hex'));
-  return bytes(createHash('sha256').update(text).digest());
+const digestOverride = (text) => {
+  if (text === 'synthetic-store') return Buffer.from('390f55363168', 'hex');
+  if (text === 'synthetic-calendar') return Buffer.from('6c0535f4450c', 'hex');
+  return null;
 };
 
 let headers = [];
@@ -53,11 +52,9 @@ const sheet = {
 
 const context = {
   console, Date: FixedDate, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math, encodeURIComponent, decodeURIComponent,
-  Utilities: {
-    DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, getUuid: randomUUID,
-    computeDigest: (_algorithm, value) => digestBytes(value),
-    computeHmacSha256Signature: (value, key) => bytes(createHmac('sha256', String(key)).update(String(value)).digest()),
-  },
+  // Faithful runtime model: the implicit HMAC overload is US-ASCII, so a
+  // signature over "Sesión" is only right when the code asks for UTF-8.
+  Utilities: createUtilitiesStub({ getUuid: randomUUID, digestOverride }),
   PropertiesService: { getScriptProperties: () => ({ getProperties: () => ({ ...propertyValues }) }) },
   SpreadsheetApp: { openById: () => ({ getId: () => 'synthetic-store', getSheetByName: () => sheet }) },
   CalendarApp: { getCalendarById: (id) => ({ getId: () => id }) },
@@ -114,8 +111,9 @@ fetchImpl = (url, options) => {
   check(!Object.prototype.hasOwnProperty.call(params, 'optional'), 'optional payload omitted');
   check(params.timeout === '900' && params.checkout_timeout === '900', 'Flow timeout and checkout_timeout are 900 seconds');
   const unsigned = { ...params }; delete unsigned.s;
-  const expected = flow.signFlowParams_(unsigned, 'synthetic-flow-secret');
-  check(params.s === expected, 'HMAC signature matches sorted key+value contract');
+  // Independent oracle (Node HMAC over UTF-8 bytes), never the signer under test.
+  const expected = flowSignatureOracle(unsigned, 'synthetic-flow-secret');
+  check(params.s === expected, 'HMAC signature matches sorted key+value contract over UTF-8 bytes');
   const keys = body.split('&').map((part) => decodeURIComponent(part.split('=')[0]));
   check(JSON.stringify(keys) === JSON.stringify([...keys].sort()), 'form body keys are sorted');
   return {
@@ -129,7 +127,7 @@ check(created.ok && created.paymentUrl.startsWith('https://www.flow.cl/app/web/p
   && /^fran-booking-st-[0-9a-f]{32}$/i.test(created.publicStatusToken), 'token response parsing and payment URL construction');
 check(flow.INITIAL_PRICE_CLP === 50000, 'canonical INITIAL_PRICE_CLP is 50000');
 const signedBody = Object.fromEntries(String(lastFetch.options.payload).split('&').map((part) => part.split('=').map(decodeURIComponent)));
-check(signedBody.amount === '50000' && signedBody.s === flow.signFlowParams_({
+check(signedBody.amount === '50000' && signedBody.s === flowSignatureOracle({
   amount: signedBody.amount, apiKey: signedBody.apiKey, checkout_timeout: signedBody.checkout_timeout,
   commerceOrder: signedBody.commerceOrder,
   currency: signedBody.currency, email: signedBody.email, subject: signedBody.subject, timeout: signedBody.timeout,

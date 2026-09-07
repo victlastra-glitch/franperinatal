@@ -8,9 +8,10 @@
  * Nothing here reads the host clock, opens a socket, sends mail, or reaches a
  * real service: every gateway is a fake that records what it was asked to do.
  */
-import { createHash, createHmac, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import vm from 'node:vm';
+import { createUtilitiesStub } from './apps-script-utilities.mjs';
 
 const FILES = ['Code.js', 'Lifecycle.js', 'EmailTemplates.js', 'CalendarGateway.js', 'Reconciliation.js', 'RefundGateway.js'];
 const SOURCE = Object.fromEntries(await Promise.all(FILES.map(async (name) => [
@@ -29,8 +30,6 @@ export const DAY_MS = 24 * HOUR_MS;
 // a weekday inside WORKING_HOURS, the 120-minute lead time and the 90-day
 // horizon relative to this instant.
 export const T0 = Date.parse('2026-09-01T13:00:00.000Z');
-
-const bytes = (value) => [...value].map((byte) => (byte > 127 ? byte - 256 : byte));
 
 // ---------------------------------------------------------------------------
 // Harness. `patches` rewrites source before it enters the VM; that is how the
@@ -134,11 +133,10 @@ export function buildHarness(patches) {
   const context = {
     console, Date: MutableDate, Intl, Set, Number, String, Object, Array, JSON, RegExp, Math,
     encodeURIComponent, decodeURIComponent,
-    Utilities: {
-      DigestAlgorithm: { SHA_256: 'sha256' }, Charset: { UTF_8: 'utf8' }, getUuid: randomUUID,
-      computeDigest: (_algorithm, value) => bytes(createHash('sha256').update(String(value)).digest()),
-      computeHmacSha256Signature: (value, key) => bytes(createHmac('sha256', String(key)).update(String(value)).digest()),
-    },
+    // Faithful to the real runtime: the two-argument HMAC overload is US-ASCII,
+    // not UTF-8. A Flow signature over a non-ASCII value is only correct when the
+    // production code passes Utilities.Charset.UTF_8 explicitly.
+    Utilities: createUtilitiesStub({ getUuid: randomUUID }),
     PropertiesService: {
       getScriptProperties: () => ({
         getProperties: () => ({

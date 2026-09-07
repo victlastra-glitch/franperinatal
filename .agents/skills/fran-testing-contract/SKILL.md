@@ -35,7 +35,7 @@ workstation clock or that needs dates bumped each week. The two policy suites sh
 | --- | --- |
 | Any change at all | `node scripts/assert-production-secret-scan.mjs`, `git diff --check` |
 | `Lifecycle.js`, policy, capabilities | `management-policy-24h`, `capability-reachability`, `lifecycle` |
-| Payment / Flow / refund | `flow-contract`, `pre-transaction-contract`, `lifecycle`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/assert-production-legacy-price-scan.mjs` |
+| Payment / Flow / refund | `flow-contract`, `flow-signature-charset`, `pre-transaction-contract`, `lifecycle`, `transaction-amount-integrity`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/assert-production-legacy-price-scan.mjs` |
 | `Reconciliation.js` / `CalendarGateway.js` | `calendar-metadata-reconciliation`, `lifecycle-harness`, `calendar-manifest-contract` |
 | Outbox / triggers / retries | `notification-outbox-worker`, `notification-outbox-sheet`, `sequential-notification-harness`, `no-drain-notification-harness`, `production-trigger-contract` |
 | Email content or templates | `email-design-system-v3`, `lifecycle-email-v2` |
@@ -62,6 +62,12 @@ accepted baseline and are not gates.
 - **Never let a test assert a value only its own mock defines.** That is exactly how
   this repo produced a false-positive trigger-cadence gate. Synthetic objects must
   expose only what the real API exposes.
+- **Stub Google services as they behave, not as they are assumed to.** Use
+  `test/helpers/apps-script-utilities.mjs` for `Utilities`: its two-argument HMAC
+  overload is US-ASCII because that is what the real runtime does, and a stub that
+  assumed UTF-8 let a Production-breaking Flow signature defect pass every suite
+  (2026-09-07). A signature or digest assertion needs an independent oracle, never
+  the function under test.
 - **No network, no real Google service, no real Flow, no email, no booking.** Fakes
   should reject the wrong call shape rather than tolerate it.
 - **Report the counters the suites print** (`NO_NETWORK_TESTS=PASS count=…`,
