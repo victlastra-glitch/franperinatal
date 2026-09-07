@@ -76,6 +76,18 @@ Money contract of record: `docs/production/CANCELLATION_RESCHEDULE_POLICY_V2.md`
    upstream and returns only Flow-expected text.
 9. **`/api/payment-status` returns a no-PII allowlist.** Never forward
    `publicStatusToken`, the Flow token, contact details or clinical fields.
+10. **Every Flow API signature is computed over UTF-8 bytes, explicitly.**
+   `signFlowParams_` (Code.js) and `refundSign_` (RefundGateway.js) must call
+   `Utilities.computeHmacSha256Signature(toSign, secretKey, Utilities.Charset.UTF_8)`.
+   The two-argument String overload is **not** UTF-8 on the real runtime: it
+   encodes as US-ASCII and turns every non-ASCII character into `?`, so a subject
+   like `Sesión Francisca Bustos` is signed as `Sesi?n …` and Flow rejects every
+   `payment/create` — at any amount. This broke Production on 2026-09-07 and was
+   invisible to a test stub that modelled the implicit overload as UTF-8. The
+   stub of record is `test/helpers/apps-script-utilities.mjs` (faithful to the
+   measured runtime); any new Flow signer must be verified against an independent
+   UTF-8 HMAC oracle, never against the signer itself. Contract of record:
+   `CANCELLATION_RESCHEDULE_POLICY_V2.md`, **Money → Provider signature encoding**.
 
 ## Test safety — fail closed
 
@@ -88,6 +100,7 @@ The offline contract suite is the default and uses mocked network:
 
 ```
 node backend/appsscript/booking/test/flow-contract.test.mjs
+node backend/appsscript/booking/test/flow-signature-charset.test.mjs
 node backend/appsscript/booking/test/pre-transaction-contract.test.mjs
 node backend/appsscript/booking/test/lifecycle.test.mjs
 node scripts/test-production-payment-status-privacy.mjs

@@ -252,6 +252,25 @@ artefact, no patient email. The refusal is idempotent across webhook retries,
 and a later callback that *does* agree cannot auto-confirm a parked reservation
 — clearing manual review is a human decision.
 
+**Provider signature encoding.** Every Flow API signature (`signFlowParams_` for
+`payment/create` and `payment/getStatus`, `refundSign_` for `refund/*`) is an
+HMAC-SHA256 over the sorted `key+value` concatenation, computed with
+`Utilities.Charset.UTF_8` **explicitly**. This is a contract, not a style
+choice. On 2026-09-07 every booking-path `payment/create` was being rejected by
+Flow at CLP 500 and CLP 50000 alike, while standalone provider probes with
+ASCII-only subjects succeeded. The proven cause, measured on the real Apps
+Script V8 runtime with synthetic inputs: the two-argument String overload of
+`Utilities.computeHmacSha256Signature` is **not** UTF-8 — it encodes as
+US-ASCII and maps every non-ASCII character to `?`, so the subject
+`Sesión Francisca Bustos` was signed as `Sesi?n Francisca Bustos` while the body
+carried the UTF-8 bytes Flow verifies against. The provider's error code alone
+was not diagnostic (it is only documented for another endpoint); the runtime
+probe was. Prevention: the test stub for `Utilities` models the implicit
+overload as US-ASCII, exactly as measured, and the signature suite verifies the
+transmitted `s` against an independent Node HMAC over UTF-8 bytes rather than
+against the signer under test. Removing the explicit charset from either signer
+fails the suite.
+
 **Refund authority.** `createProviderRefundOnce_` refunds the bound amount. An
 unknown bound amount is not a licence to guess: it records
 `refund_status=manual_review` with `refund_last_error_code=REFUND_AMOUNT_UNKNOWN`,
@@ -489,11 +508,26 @@ replay staying at one effective call; and an ordinary 50000 booking flowing
 green through reschedule and cancellation with its bound amount intact. Seven
 further mutations must each be detected.
 
+`node backend/appsscript/booking/test/flow-signature-charset.test.mjs`
+
+Covers the Flow signature encoding contract: the `Utilities` stub is first
+proven faithful to the digests measured on the real Apps Script runtime
+(implicit overload equals US-ASCII, `Sesión` signed as `Sesi?n`), then the
+production signers are checked against an independent UTF-8 oracle — the
+non-ASCII subject, the ASCII control, `payment/create` at CLP 500 and CLP 50000
+with the signed string equal to the transmitted body minus `s`, and
+`payment/getStatus` and `refund/create` with a non-ASCII value. Two mutations,
+each removing the explicit `Utilities.Charset.UTF_8` from one signer, must be
+detected.
+
 Both policy suites share one VM harness, `test/helpers/policy-harness.mjs`, so
 the fake gateways and the mutation machinery cannot drift between them. Its Flow
 `payment/getStatus` fake echoes the settled amount and currency, as the real
 provider does, and exposes an override so the reconciliation gate can be driven
-from a real webhook call rather than a unit stub.
+from a real webhook call rather than a unit stub. Its `Utilities` stub comes from
+`test/helpers/apps-script-utilities.mjs`, which reproduces the measured runtime
+charset behaviour; a suite that models the implicit HMAC overload as UTF-8 is
+the reason the 2026-09-07 signing defect passed every test.
 
 Note: `docs/booking/` is gitignored in this repository, so the operational
 notes there are local only. This page is the tracked document of record.
@@ -513,7 +547,7 @@ node backend/appsscript/booking/test/availability-dst-bounds.test.mjs
 for t in phase-a booking-clock-contract lifecycle notification-outbox-worker \
          notification-outbox-sheet sequential-notification-harness \
          no-drain-notification-harness pre-transaction-contract flow-contract \
-         lifecycle-harness calendar-metadata-reconciliation \
+         flow-signature-charset lifecycle-harness calendar-metadata-reconciliation \
          email-design-system-v3 lifecycle-email-v2 \
          production-derived-integration session-duration-contract \
          property-compatibility calendar-manifest-contract \

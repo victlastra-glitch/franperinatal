@@ -22,7 +22,9 @@ function refundSign_(params, secretKey) {
   const canonical = Object.keys(params).sort().reduce(function(result, key) {
     return params[key] === null || params[key] === undefined ? result : result + key + params[key];
   }, '');
-  return hexBytes_(Utilities.computeHmacSha256Signature(canonical, secretKey));
+  // Flow API signature: explicit UTF-8, same contract as signFlowParams_. The
+  // implicit String overload signs non-ASCII as '?' and the provider rejects it.
+  return hexBytes_(Utilities.computeHmacSha256Signature(canonical, secretKey, Utilities.Charset.UTF_8));
 }
 
 function refundForm_(params) {
