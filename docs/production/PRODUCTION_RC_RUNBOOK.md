@@ -538,15 +538,25 @@ pushed, and the draft PR documents the compatibility gates.
 - `BOOKING_APPLICATION_E2E` passed on the real booking path (measured 2026-09-08
   at a bounded CLP 500 with the public price at 50000; see §5)
 - Refund micro-E2E passed **or** waived with recorded provider-side blocker
-- Rollback to v7 restated and still executable
+- Rollback to the **immediately previous verified immutable** Production version
+  restated and still executable (for the current permanent runtime **v20** from
+  `8455f3b` that is **v18** from `3d5a9a8`); `docs/production/v7/Código.js`
+  remains the historical v7 recovery baseline only, not the immediate rollback
 
-Until those live steps run: `READY_FOR_PRODUCTION_RELEASE=NO`.
+Measured status, 2026-09-08: every criterion above has Production evidence —
+binding and fileset gates, schema migration and triggers (Policy V2 release),
+Apps Script v20 + Pages deployed, no-charge smoke, `FLOW_PROVIDER_MICRO_E2E`
+(2026-09-06), `BOOKING_APPLICATION_E2E` (2026-09-08), refund waived with the
+recorded provider-side blocker, rollback v18 present and repointable. Declaring
+`READY_FOR_PRODUCTION_RELEASE=YES` is the release owner's decision because it
+unlocks §9 (merging the RC into `main`); this document does not make that
+declaration, and PR #2 remains draft and unmerged until it is made.
 
 ---
 
 ## 7. Exact rollback
 
-1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it is **v9**). Never repoint to `@HEAD`. For a release that appended a reservation column, the rollback target is the BRIDGE version from §2.3a, and no sheet edit is required.
+1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it was **v9**; for the current permanent **v20** it is **v18**). Never repoint to `@HEAD`, and never to a TEMP lane version (v19, v21, v22). For a release that appended a reservation column, the rollback target is the BRIDGE version from §2.3a, and no sheet edit is required.
 2. Pages: restore the previous Production deployment in Cloudflare (Deployments → previous Production → Rollback).
 3. Do not change Script Properties or Flow keys as rollback.
 4. Git: do not merge this RC to `main` during rollback.

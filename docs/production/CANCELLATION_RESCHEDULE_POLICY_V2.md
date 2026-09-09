@@ -515,7 +515,14 @@ Script Property had been crossed — the fail-closed behaviour worked as designe
 and produced the one mistaken, unpaid CLP 50000 order that expired at its
 15-minute hold. **v22** (the self-contained lane) was repointed live once on
 2026-09-08, served the single CLP 500 create, and was restored to v20 before any
-payment, again positively confirmed. At closure no Production deployment
+payment, again positively confirmed. How that window is evidenced without
+operational identifiers: the one-shot runner's transcript shows, in order, the
+deployment listing bound to `@22`, a `200` from the sanitized
+`e2e_lane_preflight` action (which exists only in v22 — v20 answers `NOT_FOUND`),
+the create with public payment status `payment_pending` / amount **500** (v20 can
+only price a new order at 50000, so a 500-priced order is itself proof of v22
+serving it), and then the listing bound to `@20` before the payment was made.
+At closure no Production deployment
 references v19, v21 or v22; they remain only as immutable version history. None
 of this is architecture: the permanent runtime prices every new order from the
 catalog only.
