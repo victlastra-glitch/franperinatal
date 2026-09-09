@@ -319,8 +319,8 @@ check(byType.SESSION_CANCELLED.state === 'sent' && byType.PATIENT_CANCELLED.stat
 check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1
   && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada').body),
   'exactly one neutral cancellation mail reaches the patient, with no refund claim');
-check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado').length === 1
-  && mailBodies.some((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado'
+check(mailBodies.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada').length === 1
+  && mailBodies.some((item) => item.subject === 'Reembolso confirmado · sesión cancelada'
     && item.body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
     && item.body.includes('hasta 10 días hábiles')
     && item.body.includes('Agendar nueva sesión: ')

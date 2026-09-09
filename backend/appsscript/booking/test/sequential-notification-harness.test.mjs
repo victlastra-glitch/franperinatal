@@ -368,7 +368,7 @@ const cancelKey = String(outboxRows.find((row) => row.reservation_id === record(
 mailBodies = [];
 const sentCancel = drainOutbox(Date.parse('2026-09-03T17:50:00.000Z'));
 check(sentCancel.ok && sentCancel.processed >= 1, 'cancellation notifications are processed');
-const cancelMail = mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado');
+const cancelMail = mailBodies.find((item) => item.subject === 'Reembolso confirmado · sesión cancelada');
 check(cancelMail && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
   'refund-confirmed email sent once, neutral cancellation not repeated');
 assertChileTime(cancelMail.body, '16:00', 'cancellation shows Chile local appointment context');

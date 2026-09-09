@@ -204,6 +204,7 @@ for (const [name, rendered] of Object.entries(patientStates)) {
 }
 check(preheaderOf(cancelled.htmlBody) === 'La hora quedó liberada. Puedes agendar una nueva sesión cuando quieras.', 'neutral cancellation preheader');
 check(preheaderOf(cancelledRefunded.htmlBody) === 'El reembolso fue procesado al mismo medio de pago.', 'refund-confirmed preheader');
+check(cancelledRefunded.subject === 'Reembolso confirmado · sesión cancelada', 'refund-confirmed subject leads with the refund');
 
 // Layout tokens.
 check(confirmed.htmlBody.includes('class="v4-outer" align="center" style="padding:24px;"')
@@ -234,8 +235,8 @@ check(clinicianChange.subject === 'Hubo un cambio en tu próxima sesión', 'clin
 for (const [name, rendered] of Object.entries({ SESSION_CANCELLED: cancelled, REJECTED: cancelledRejected, LATE: cancelledLate, MISROUTED: cancelledMisrouted })) {
   check(rendered.subject === 'Tu sesión fue cancelada', name + ': neutral cancellation subject');
 }
-check(cancelledRefunded.subject === 'Tu sesión fue cancelada · reembolso confirmado'
-  && cancelledClinicianRefunded.subject === 'Tu sesión fue cancelada · reembolso confirmado', 'refund-confirmed subject is distinct');
+check(cancelledRefunded.subject === 'Reembolso confirmado · sesión cancelada'
+  && cancelledClinicianRefunded.subject === 'Reembolso confirmado · sesión cancelada', 'refund-confirmed subject is distinct and refund-led');
 check(internal.subject === 'Acción requerida: el reembolso no pudo procesarse automáticamente', 'internal subject — provider failure');
 check(internalTbd.subject === 'Acción requerida: la reserva necesita revisión manual', 'internal subject — policy review');
 check(!/a las \d{2}:\d{2}/.test(confirmed.subject + rescheduled.subject), 'subjects no longer carry the long "a las" form');
@@ -311,19 +312,27 @@ const ECONOMIC = /(pago|cobro|valor|devoluci[oó]n|reembolso|en proceso|procesad
 const CLAIMS_PROCESSED_REFUND = /(reembolso[^.]{0,40}(fue|ha sido|est[aá])\s+(procesad|complet|realiz|devuelt|emitid|en proceso))|(te (hemos )?devolvimos|dinero devuelto|reembolso completado|reembolso realizado|reembolso confirmado)/i;
 const HUMAN_CANCEL_COPY = 'Si necesitas apoyo o tienes dudas, puedes escribirnos. Estamos aquí para acompañarte cuando lo necesites.';
 
-for (const [name, rendered] of Object.entries({
-  SESSION_CANCELLED: cancelled, REJECTED_REFUND: cancelledRejected, LATE: cancelledLate,
-  PATIENT_CANCELLED_REFUNDED: cancelledRefunded, CLINICIAN_CANCELLED_REFUNDED: cancelledClinicianRefunded, MISROUTED: cancelledMisrouted,
-})) {
-  const html = rendered.htmlBody; const both = html + '\n' + rendered.body;
+const NEUTRAL_CANCELLED = { SESSION_CANCELLED: cancelled, REJECTED_REFUND: cancelledRejected, LATE: cancelledLate, MISROUTED: cancelledMisrouted };
+const REFUND_CONFIRMED = { PATIENT_CANCELLED_REFUNDED: cancelledRefunded, CLINICIAN_CANCELLED_REFUNDED: cancelledClinicianRefunded };
+for (const [name, rendered] of Object.entries(NEUTRAL_CANCELLED)) {
+  const html = rendered.htmlBody;
   check(html.includes('>TU SESIÓN FUE CANCELADA<') && html.includes('>Tu sesión fue cancelada.<'), name + ': cancellation eyebrow and H1');
   check(html.includes('bgcolor="#F6E6E6"') && html.includes('color:#8C4F4B;">TU SESIÓN FUE CANCELADA<'), name + ': cancellation band uses the accessible accent #8C4F4B');
+}
+for (const [name, rendered] of Object.entries(Object.assign({}, NEUTRAL_CANCELLED, REFUND_CONFIRMED))) {
+  const html = rendered.htmlBody; const both = html + '\n' + rendered.body;
   check(html.includes('La sesión agendada para el miércoles 16 de septiembre de 2026 a las 11:00 fue cancelada. La hora quedó liberada.'), name + ': lead names the slot and says it was released');
   check(html.includes('>Fecha</td>') && html.includes('>miércoles 16 de septiembre de 2026<') && html.includes('>Hora</td>') && html.includes('>11:00 (Chile)<'), name + ': shows Fecha and Hora');
   check(!/>Modalidad<\/td>|>Duración<\/td>|>Valor<\/td>/.test(html) && !/\$50\.000|(?<!\d)50000(?!\d)/.test(both), name + ': hides modality, duration and value');
   check(!/meet\.google\.com|ENTRAR A LA SESIÓN/i.test(both), name + ': hides Meet');
   check(!/manage\.html|open=reschedule|open=cancel|REAGENDAR SESIÓN|CANCELAR SESIÓN|[a-z]{64}/.test(both), name + ': carries no management link or token');
-  check(html.includes('>AGENDAR NUEVA SESIÓN</a>') && html.includes('href="https://franciscabustos.cl/reserva"') && primaryCount(html) === 1, name + ': single primary AGENDAR NUEVA SESIÓN');
+  // The cancellation is the completed job: re-booking is a quiet outline action,
+  // never a charcoal primary that reads as conversion recovery.
+  check(primaryCount(html) === 0 && !html.includes('color:#FFFFFF;">'), name + ': cancelled states have ZERO charcoal primary CTA');
+  check(html.includes('>AGENDAR NUEVA SESIÓN</a>') && html.includes('href="https://franciscabustos.cl/reserva"'), name + ': the re-booking action remains available');
+  const rebook = html.slice(html.lastIndexOf('<table', html.indexOf('>AGENDAR NUEVA SESIÓN</a>')), html.indexOf('>AGENDAR NUEVA SESIÓN</a>'));
+  check(rebook.includes(SECONDARY) && rebook.includes('height="48"') && rebook.includes('min-height:48px;line-height:48px'), name + ': re-booking is the 48px outline secondary');
+  check((html.match(/min-height:48px/g) || []).length === 1, name + ': exactly one action button in the whole email');
   check(html.includes(HUMAN_CANCEL_COPY) && rendered.body.includes(HUMAN_CANCEL_COPY), name + ': human copy');
   check(rendered.body.includes('Agendar nueva sesión: https://franciscabustos.cl/reserva') && rendered.body.includes('Fecha: miércoles 16 de septiembre de 2026') && rendered.body.includes('Hora: 11:00 (Chile)'),
     name + ': text/plain is equivalent');
@@ -336,16 +345,22 @@ for (const [name, rendered] of Object.entries({ SESSION_CANCELLED: cancelled, RE
   check(!CLAIMS_PROCESSED_REFUND.test(both) && !/REEMBOLSO/.test(both), name + ': neutral cancellation makes no refund claim and has no REEMBOLSO block');
 }
 check(cancelled.htmlBody === cancelledRejected.htmlBody && cancelled.body === cancelledRejected.body, 'the neutral email is byte-identical whether the refund is pending or rejected');
-// Refund-confirmed variant: the approved block, once, quietly.
-for (const [name, rendered] of Object.entries({ PATIENT_CANCELLED_REFUNDED: cancelledRefunded, CLINICIAN_CANCELLED_REFUNDED: cancelledClinicianRefunded })) {
-  const html = rendered.htmlBody;
-  check(html.includes('>REEMBOLSO CONFIRMADO</td>') && html.includes(REFUND_COPY) && rendered.body.includes('\nREEMBOLSO CONFIRMADO\n' + REFUND_COPY), name + ': REEMBOLSO CONFIRMADO block with the approved copy in html and text');
-  check(html.indexOf('>Hora</td>') < html.indexOf('>REEMBOLSO CONFIRMADO</td>') && html.indexOf('>REEMBOLSO CONFIRMADO</td>') < html.indexOf(HUMAN_CANCEL_COPY), name + ': cancellation stays principal; refund block sits after the facts');
-  const block = html.slice(html.indexOf('>REEMBOLSO CONFIRMADO</td>') - 700, html.indexOf(REFUND_COPY) + REFUND_COPY.length);
-  check(block.includes('background-color:#FFF7F2') && block.includes('border:1px solid #E7DDD3') && !/✔|✅|💸|🎉/.test(block) && !/font-size:(2[0-9]|3[0-9])px/.test(block),
-    name + ': refund block is a quiet cream panel, no icon, no money emphasis');
-  check((html.match(/min-height:48px/g) || []).length === 1, name + ': exactly one action button');
+// Refund-confirmed variant: arrives after the neutral cancellation, so the refund
+// leads and the cancelled session is context. Only under a REFUNDED record.
+const countOf = (text, needle) => text.split(needle).length - 1;
+for (const [name, rendered] of Object.entries(REFUND_CONFIRMED)) {
+  const html = rendered.htmlBody; const body = rendered.body;
+  check(html.includes('>REEMBOLSO CONFIRMADO<') && html.includes('bgcolor="#FFF7F2"') && !html.includes('>TU SESIÓN FUE CANCELADA<'), name + ': eyebrow is REEMBOLSO CONFIRMADO on the quiet cream band');
+  check(html.includes('>Tu reembolso fue confirmado.<') && !html.includes('>Tu sesión fue cancelada.<'), name + ': H1 is "Tu reembolso fue confirmado."');
+  check(html.indexOf('>Tu reembolso fue confirmado.<') < html.indexOf(REFUND_COPY) && html.indexOf(REFUND_COPY) < html.indexOf('La sesión agendada para el')
+    && html.indexOf('La sesión agendada para el') < html.indexOf('>Fecha</td>') && html.indexOf('>Hora</td>') < html.indexOf(HUMAN_CANCEL_COPY),
+    name + ': refund leads; the cancelled session stays as context (lead, Fecha, Hora) before the human copy');
+  check(countOf(html, REFUND_COPY) === 1 && countOf(body, REFUND_COPY) === 1, name + ': the approved refund copy appears exactly once in html and in text');
+  check(body.startsWith('FRANCISCA BUSTOS M.\nPSICOLOGÍA PERINATAL\n\nREEMBOLSO CONFIRMADO\n') && body.includes('\n' + REFUND_COPY + '\n'), name + ': text/plain leads with REEMBOLSO CONFIRMADO and the copy');
+  check(!/✔|✅|💸|🎉/.test(html) && html.slice(html.indexOf(REFUND_COPY) - 400, html.indexOf(REFUND_COPY)).includes('font-size:16px;font-weight:400'),
+    name + ': no icon; the refund copy is body-sized, not money emphasis');
 }
+check(cancelledMisrouted.subject === 'Tu sesión fue cancelada' && !cancelledMisrouted.htmlBody.includes('REEMBOLSO'), 'a refund-confirmed event on a non-REFUNDED record renders the neutral email (fail-closed)');
 
 // ---------------------------------------------------------------------------
 // INTERNAL — operator tool, human-first
@@ -387,7 +402,7 @@ for (const [name, rendered] of Object.entries({ PATIENT_CANCELLED_REFUNDED: canc
 // ---------------------------------------------------------------------------
 const MUTATIONS = [
   ['MUTATION_REFUND_COPY_ON_NEUTRAL_CANCELLATION', [
-    ["(refundConfirmed ? emailV4InfoBlock_('REEMBOLSO CONFIRMADO', EMAIL_V4_REFUND_COPY) : '')", "emailV4InfoBlock_('REEMBOLSO', EMAIL_V4_REFUND_COPY)"]],
+    ["(refundConfirmed ? emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_COPY), 16) : '')", "emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_COPY), 16)"]],
     (ctx) => { const r = renderWith(ctx)('SESSION_CANCELLED', rejectedRecord, {}, null); return ECONOMIC.test(r.htmlBody) ? 'refund_copy_leaked_into_neutral_cancellation' : null; }],
   ['MUTATION_SECOND_PRIMARY_CTA', [
     ["(actions.reschedule ? emailV4SecondaryRow_(actions.reschedule.href, actions.reschedule.label) : '')", "(actions.reschedule ? emailV4PrimaryRow_(actions.reschedule.href, actions.reschedule.label) : '')"]],
@@ -402,6 +417,10 @@ const MUTATIONS = [
     (ctx) => { const r = renderWith(ctx)('SESSION_CANCELLED', rejectedRecord, {}, null); return /en proceso|reembolso/i.test(r.htmlBody) ? 'en_proceso_claimed_after_rejection' : null; }],
   ['MUTATION_REFUND_CLAIM_WITHOUT_REFUNDED_RECORD', [["return confirmedEvent && String(record && record.refund_status || '') === LIFECYCLE.REFUND_STATUS.REFUNDED;", 'return confirmedEvent;']],
     (ctx) => { const r = renderWith(ctx)('PATIENT_CANCELLED', rejectedRecord, {}, null); return /REEMBOLSO CONFIRMADO|reembolso confirmado/.test(r.htmlBody + r.subject) ? 'refund_claimed_on_rejected_record' : null; }],
+  ['MUTATION_CANCELLATION_FIRST_REFUND_H1', [["emailV4Headline_('Tu reembolso fue confirmado.')", "emailV4Headline_('Tu sesión fue cancelada.')"]],
+    (ctx) => { const r = renderWith(ctx)('PATIENT_CANCELLED', refundedRecord, {}, null); return r.htmlBody.includes('>Tu sesión fue cancelada.<') || !r.htmlBody.includes('>Tu reembolso fue confirmado.<') ? 'cancellation_first_h1_restored' : null; }],
+  ['MUTATION_CANCELLED_PRIMARY_REBOOK_CTA', [["emailV4SecondaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN', 24)", "emailV4PrimaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN')"]],
+    (ctx) => { const r = renderWith(ctx)('SESSION_CANCELLED', pendingRecord, {}, null); return primaryCount(r.htmlBody) > 0 ? 'charcoal_primary_on_cancelled' : null; }],
   ['MUTATION_REMOTE_FONT_DEPENDENCY', [["+ emailV4Style_()\n    + '</head>'", "+ emailV4Style_()\n    + '<link href=\"https://fonts.googleapis.com/css2?family=Fraunces\" rel=\"stylesheet\">'\n    + '</head>'"]],
     (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return /fonts\.googleapis\.com|<link/i.test(r.htmlBody) ? 'remote_font_loaded' : null; }],
   ['MUTATION_LABEL_BELOW_FLOOR', [["font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.16em;", "font-size:10px;font-weight:600;line-height:1.4;letter-spacing:.16em;"]],

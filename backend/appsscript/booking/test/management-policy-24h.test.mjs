@@ -304,7 +304,7 @@ clean.state.refundStatusOverride = 'accepted';
 check(clean.rowFor(4).refund_status === 'refunded' && clean.rowFor(4).booking_status === 'cancelled',
   'GE24 provider confirmation completes both the refund and the cancellation');
 clean.drain();
-const b4Final = clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado');
+const b4Final = clean.state.mail.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada');
 check(b4Final.length === 1, 'REFUND_CONFIRMED_PATIENT_EMAIL_MAX=1 after provider confirmation');
 check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1,
   'the provider confirmation does not repeat the neutral cancellation email');
@@ -313,7 +313,7 @@ check(/El reembolso fue procesado al mismo medio de pago utilizado\./.test(b4Fin
   'GE24 final email carries the approved refund copy verbatim');
 clean.context.refundConfirmation_({ parameter: { token: clean.rowFor(4).refund_provider_reference } });
 clean.drain();
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado').length === 1,
+check(clean.state.mail.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada').length === 1,
   'a replayed provider callback does not produce a second refund-confirmed email');
 
 // 19-23 · <24h cancellation: released, silent, and permanently non-refundable.
@@ -664,7 +664,7 @@ function probes(h) {
     h.context.refundConfirmation_({ parameter: { token: h.rowFor(56).refund_provider_reference } });
     h.state.refundStatusOverride = 'accepted';
     h.drain();
-    return h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado').length === 1
+    return h.state.mail.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada').length === 1
       && h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1;
   });
   // The refund-confirmed communication is fail-closed on the persisted record:

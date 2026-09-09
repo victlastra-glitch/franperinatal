@@ -503,7 +503,7 @@ refundStatusOverride = 'accepted';
 check(byKey(6).refund_status === 'refunded' && byKey(6).booking_status === 'cancelled',
   'R provider confirmation completes the refund and the cancellation');
 drain();
-const finalCancelMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado');
+const finalCancelMail = mailBodies.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada');
 check(finalCancelMail.length === 1, 'R10 REFUND_CONFIRMED_PATIENT_EMAIL_COUNT=1');
 check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
   'R10 the provider confirmation does not repeat the neutral cancellation email');
@@ -635,7 +635,7 @@ context.refundConfirmation_({ parameter: { token: recoveredToken } });
 refundStatusOverride = 'accepted';
 check(byKey(22).refund_status === 'refunded', 'R eventual provider confirmation reaches REFUNDED');
 drain();
-const recoveredMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado');
+const recoveredMail = mailBodies.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada');
 check(recoveredMail.length === 1
   && recoveredMail[0].body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
   && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
