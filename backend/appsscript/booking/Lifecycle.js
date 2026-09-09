@@ -854,24 +854,20 @@ function manualPolicyRefundNotificationNeeded_(record) {
 }
 
 /**
- * A cancellation that is ALREADY terminal at cancellation time and owes a
- * notification. Two shapes qualify:
- *
- *  - refund MANUAL_REVIEW — out of policy, an operator has to look
- *  - refund NOT_REQUIRED  — decided non-refundable inside the 24-hour cutoff
- *
- * A refundable cancellation is excluded on purpose: it is still
- * cancellation_requested here and is spoken for by the provider-confirmed
- * final email. The consumer decides which patient/operator notifications the
- * shape actually earns.
+ * A paid cancellation whose booking truth is durably persisted and whose slot
+ * is released owes the patient a neutral cancellation confirmation — whether it
+ * is already terminal (cancelled; refund NOT_REQUIRED or MANUAL_REVIEW) or still
+ * cancellation_requested while a refund is in flight. Refund truth is a separate
+ * communication that only the provider-confirmed path can send, so the refund
+ * state is not consulted here. The consumer decides which patient/operator
+ * notifications the shape actually earns.
  */
 function terminalCancellationNotificationNeeded_(record) {
   if (!record) return false;
-  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED) return false;
+  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED
+    && record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED) return false;
   if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
-  const refund = String(record.refund_status || '');
-  return refund === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW
-    || refund === LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
+  return record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.CANCELLED;
 }
 
 function enqueueTerminalCancellationNotificationBestEffort_(deps, record) {

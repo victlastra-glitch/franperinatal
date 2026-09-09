@@ -54,7 +54,7 @@ Patient email wording is contract-tested, including the rule that a
 non-refundable cancellation email must contain **no** economic vocabulary
 (`pago`, `cobro`, `valor`, `devolución`, `reembolso`, `$50.000`, `50000`).
 Changing that copy means changing
-`backend/appsscript/booking/test/email-design-system-v3.test.mjs` and
+`backend/appsscript/booking/test/email-design-system-v4.test.mjs` and
 `lifecycle-email-v2.test.mjs` deliberately — see `fran-workflow-automation-integrity`.
 
 ## Before finishing

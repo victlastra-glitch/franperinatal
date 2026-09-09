@@ -256,7 +256,7 @@ const confirmationKey = String(record().notification_outbox_key);
 mailBodies = [];
 const sentConfirmation = drainOutbox(Date.parse('2026-09-03T16:10:00.000Z'));
 check(sentConfirmation.ok && sentConfirmation.results[0].ok && mailBodies.length === 1, 'confirmation sent once');
-check(mailBodies[0].subject.startsWith('Tu sesión está confirmada · ') && mailBodies[0].subject.includes('a las 13:00'), 'confirmation subject');
+check(mailBodies[0].subject.startsWith('Tu sesión está confirmada · ') && mailBodies[0].subject.endsWith('· 13:00'), 'confirmation subject');
 assertChileTime(mailBodies[0].body, '13:00', 'confirmation uses America/Santiago local time');
 check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
   && mailBodies[0].body.includes('Reagendar:') && mailBodies[0].body.includes('Cancelar:')
@@ -291,7 +291,7 @@ check(phase.reconstructLifecycleEventType_(record()) === 'PATIENT_RESCHEDULED', 
 mailBodies = [];
 const sentReschedule = drainOutbox(Date.parse('2026-09-03T16:20:00.000Z'));
 check(sentReschedule.ok && sentReschedule.results[0].ok && mailBodies.length === 1, 'patient reschedule email sent once');
-check(mailBodies[0].subject.startsWith('Tu sesión fue reagendada · ') && mailBodies[0].subject.includes('a las 14:00'), 'patient reschedule subject');
+check(mailBodies[0].subject.startsWith('Tu sesión fue reagendada · ') && mailBodies[0].subject.endsWith('· 14:00'), 'patient reschedule subject');
 assertChileTime(mailBodies[0].body, '14:00', 'patient reschedule uses Chile local time');
 check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
   && mailBodies[0].body.includes('Cancelar:') && !mailBodies[0].body.includes('Reagendar:'),
@@ -348,11 +348,13 @@ check(record().payment_status === 'paid' && record().patient_reschedule_count ==
   && record().refund_status === 'refund_pending' && cancel.refund === 'requested',
   'cancel keeps historical payment, quota=1, and requests the full Flow refund once');
 
-// Nothing reaches the patient while the refund is pending.
+// The neutral cancellation confirmation reaches the patient now; nothing about
+// the refund does until the provider confirms it.
 mailBodies = [];
 check(drainOutbox(Date.parse('2026-09-03T17:49:00.000Z')).ok
-  && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'no patient cancellation email is queued while the refund is pending');
+  && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1
+  && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada').body),
+  'exactly one neutral patient cancellation email is sent while the refund is pending, with no refund claim');
 
 context.refundConfirmation_({ parameter: { token: record().refund_provider_reference } });
 check(record().refund_status === 'refunded' && record().booking_status === 'cancelled',
@@ -366,8 +368,9 @@ const cancelKey = String(outboxRows.find((row) => row.reservation_id === record(
 mailBodies = [];
 const sentCancel = drainOutbox(Date.parse('2026-09-03T17:50:00.000Z'));
 check(sentCancel.ok && sentCancel.processed >= 1, 'cancellation notifications are processed');
-const cancelMail = mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada');
-check(cancelMail, 'cancellation email sent once');
+const cancelMail = mailBodies.find((item) => item.subject === 'Reembolso confirmado · sesión cancelada');
+check(cancelMail && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'refund-confirmed email sent once, neutral cancellation not repeated');
 assertChileTime(cancelMail.body, '16:00', 'cancellation shows Chile local appointment context');
 check(cancelMail.body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
   && cancelMail.body.includes('hasta 10 días hábiles')

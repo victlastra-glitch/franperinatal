@@ -286,15 +286,17 @@ check(clean.rowFor(4).refund_status === 'refund_pending'
   && clean.rowFor(4).booking_status === 'cancellation_requested',
   'GE24 cancellation waits for provider confirmation before completing');
 clean.drain();
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'GE24 pending refund sends NO patient cancellation email and makes no refund claim');
+const b4Neutral = clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada');
+check(b4Neutral.length === 1
+  && !/(reembolso|devoluci[oó]n|en proceso|procesad|\$50\.000|50000)/i.test(b4Neutral[0].body + (b4Neutral[0].htmlBody || '')),
+  'GE24 pending refund sends exactly one NEUTRAL cancellation email and makes no refund claim');
 // 24 · double click / replay
 const b4Replay = clean.context.patientCancel_({ postData: { contents: JSON.stringify({ token: b4.cancel }) } });
 clean.drain();
 check(b4Replay.ok && b4Replay.replay === true && clean.state.refundCreateCalls === refundsBeforeB4 + 1,
   'DOUBLE_CLICK: a second cancel creates no second refund');
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'DOUBLE_CLICK: a second cancel sends no patient email either');
+check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1,
+  'DOUBLE_CLICK: a second cancel sends no second patient email');
 // 18 · provider-confirmed REFUNDED => exactly one final patient email
 clean.state.refundStatusOverride = 'refunded';
 clean.context.refundConfirmation_({ parameter: { token: clean.rowFor(4).refund_provider_reference } });
@@ -302,15 +304,17 @@ clean.state.refundStatusOverride = 'accepted';
 check(clean.rowFor(4).refund_status === 'refunded' && clean.rowFor(4).booking_status === 'cancelled',
   'GE24 provider confirmation completes both the refund and the cancellation');
 clean.drain();
-const b4Final = clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada');
-check(b4Final.length === 1, 'FINAL_PATIENT_CANCELLATION_EMAIL_MAX=1 after provider confirmation');
+const b4Final = clean.state.mail.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada');
+check(b4Final.length === 1, 'REFUND_CONFIRMED_PATIENT_EMAIL_MAX=1 after provider confirmation');
+check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1,
+  'the provider confirmation does not repeat the neutral cancellation email');
 check(/El reembolso fue procesado al mismo medio de pago utilizado\./.test(b4Final[0].body)
   && /hasta 10 días hábiles/.test(b4Final[0].body),
   'GE24 final email carries the approved refund copy verbatim');
 clean.context.refundConfirmation_({ parameter: { token: clean.rowFor(4).refund_provider_reference } });
 clean.drain();
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1,
-  'a replayed provider callback does not produce a second final email');
+check(clean.state.mail.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada').length === 1,
+  'a replayed provider callback does not produce a second refund-confirmed email');
 
 // 19-23 · <24h cancellation: released, silent, and permanently non-refundable.
 const b5 = clean.paidBooking(5, '2026-09-10', '13:00', 24 * HOUR_MS);
@@ -439,11 +443,18 @@ check(['manual_review', 'refund_failed'].indexOf(clean.rowFor(8).refund_status) 
   && clean.rowFor(8).booking_status === 'cancellation_requested',
   'GE24 refund failure parks the reservation for manual review');
 clean.drain();
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'GE24 refund failure sends NO patient email claiming a refund');
+const b8Neutral = clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada');
+check(b8Neutral.length === 1
+  && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(b8Neutral[0].body + (b8Neutral[0].htmlBody || '')),
+  'GE24 refund failure sends exactly one neutral cancellation email and NO patient email claiming a refund');
+check(clean.state.mail.filter((item) => /reembolso confirmado|fue procesado/i.test(item.subject + item.body)
+  && item.to !== OPS_EMAIL).length === 0,
+  'GE24 refund failure never tells the patient a refund is confirmed or in progress');
 check(clean.state.mail.filter((item) => item.to === OPS_EMAIL
-  && /Revisión operativa/.test(item.subject + item.body)).length >= 1,
-  'GE24 refund failure raises the internal manual-review notice');
+  && /Acción requerida/.test(item.subject)
+  && /Rechazado por el proveedor|Resultado del proveedor desconocido|No pudo procesarse/.test(item.body)
+  && item.body.includes('Revisar manualmente. No reintentar automáticamente.')).length >= 1,
+  'GE24 refund failure raises the internal ACCIÓN REQUERIDA notice with a human refund label');
 
 // 26 · /manage capability rendering is exactly the backend decision.
 [
@@ -476,7 +487,7 @@ check(!publicKeys.some((key) => /reason|booking_status|refund_status|schedule_st
 // 27/28/29 · Copy contracts.
 const templates = clean.context.__EMAIL_TEMPLATE_TEST_EXPORTS__;
 const POLICY_REMINDER = 'Puedes reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.';
-check(templates.emailV3ManagementPolicyCopy_() === POLICY_REMINDER,
+check(templates.emailV4ManagementPolicyCopy_() === POLICY_REMINDER,
   'CONFIRMATION_EMAIL_POLICY_REMINDER is the approved copy and reads 24 from the policy constant');
 const confirmationRecord = Object.assign(confirmedPaid(FRIDAY_15), { service_type: 'initial', modality: 'online' });
 const confirmationEmail = clean.context.renderLifecycleNotificationEmail_({
@@ -647,18 +658,20 @@ function probes(h) {
     h.state.mail.length = 0;
     h.context.patientCancel_({ postData: { contents: JSON.stringify({ token: booking.cancel }) } });
     h.drain();
-    if (h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length !== 0) return false;
+    if (h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length !== 1) return false;
     h.state.refundStatusOverride = 'refunded';
     h.context.refundConfirmation_({ parameter: { token: h.rowFor(56).refund_provider_reference } });
     h.context.refundConfirmation_({ parameter: { token: h.rowFor(56).refund_provider_reference } });
     h.state.refundStatusOverride = 'accepted';
     h.drain();
-    return h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1;
+    return h.state.mail.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada').length === 1
+      && h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1;
   });
-  // The cross-type guard: a pre-confirmation SESSION_CANCELLED already sent must
-  // block a later provider-confirmed PATIENT_CANCELLED from becoming a second
-  // patient email. Same-type repeats are covered by the durable outbox replay,
-  // so only this crossing exercises enqueuePatientCancellationNotificationOnce_.
+  // The refund-confirmed communication is fail-closed on the persisted record:
+  // routing PATIENT_CANCELLED at a row that is NOT refunded (here: decided
+  // non-refundable) must enqueue nothing, so a rejected or parked refund can
+  // never turn into a second patient email or a refund claim. The neutral
+  // cancellation email itself stays at exactly one.
   probe('cross_type_cancellation_email_once', () => {
     const booking = h.paidBooking(58, '2026-09-11', '14:00', 24 * HOUR_MS);
     const start = Date.parse(h.rowFor(58).current_start_at);
@@ -669,9 +682,11 @@ function probes(h) {
     const first = h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length;
     const second = h.context.enqueuePatientCancellationNotificationOnce_(
       h.sheet, h.schema(), h.rowFor(58), 'PATIENT_CANCELLED');
+    const third = h.context.enqueuePatientCancellationNotificationOnce_(
+      h.sheet, h.schema(), h.rowFor(58), 'SESSION_CANCELLED');
     h.drain();
-    const total = h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length;
-    return first === 1 && second === null && total === 1;
+    const total = h.state.mail.filter((item) => /Tu sesión fue cancelada/.test(item.subject)).length;
+    return first === 1 && second === null && third === null && total === 1;
   });
   probe('endpoint_past_session_closed', () => {
     const booking = h.paidBooking(57, '2026-09-11', '13:00', 5 * HOUR_MS);
@@ -734,11 +749,11 @@ const MUTATIONS = [
   },
   {
     key: 'MUTATION_EMAIL_IDEMPOTENCY',
-    label: 'F. remove final patient cancellation email idempotency',
+    label: 'F. let a non-REFUNDED record route a refund-confirmed patient email (second email / false claim)',
     patches: {
       'Code.js': [[
-        'if (patientCancellationNotificationExists_(store, record && record.reservation_id)) return null;',
-        '',
+        "&& String(record && record.refund_status || '') !== LIFECYCLE.REFUND_STATUS.REFUNDED) return null;",
+        '&& false) return null;',
       ]],
     },
     mustFail: ['cross_type_cancellation_email_once'],
