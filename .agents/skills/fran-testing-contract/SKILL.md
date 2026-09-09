@@ -38,7 +38,7 @@ workstation clock or that needs dates bumped each week. The two policy suites sh
 | Payment / Flow / refund | `flow-contract`, `flow-signature-charset`, `pre-transaction-contract`, `lifecycle`, `transaction-amount-integrity`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/assert-production-legacy-price-scan.mjs` |
 | `Reconciliation.js` / `CalendarGateway.js` | `calendar-metadata-reconciliation`, `lifecycle-harness`, `calendar-manifest-contract` |
 | Outbox / triggers / retries | `notification-outbox-worker`, `notification-outbox-sheet`, `sequential-notification-harness`, `no-drain-notification-harness`, `production-trigger-contract` |
-| Email content or templates | `email-design-system-v3`, `lifecycle-email-v2` |
+| Email content or templates | `email-design-system-v4`, `lifecycle-email-v2` |
 | `_worker.js` or any `/api/*` route | `scripts/assert-production-worker-structure.mjs _worker.js`, `scripts/test-production-worker-routes.mjs`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/test-manage-contract.mjs`, `preview-host-validation` |
 | Schema / properties / v7 compatibility | `v7-schema-compatibility`, `property-compatibility`, `session-duration-contract`, `production-derived-integration` |
 | Deployable fileset / clasp | `clasp-fileset-release-gate`, `clasp-staging-release-gate`, `scripts/assert-production-clasp-staging-gate.mjs` |
@@ -82,7 +82,7 @@ Required for any change a user can see or interact with; a passing static gate i
 not a substitute, and there is no build whose success could stand in for it.
 
 Available tooling: local Chrome driven headless over the DevTools Protocol, used by
-`node scripts/render-email-v3-previews.mjs` (offline, deterministic, 22 full-page
+`node scripts/render-email-v4-previews.mjs` (offline, deterministic, 32 full-page
 screenshots at 600/430/390/375/320 plus a dark-scheme reference). Reuse this
 approach for page verification; do not introduce a new E2E framework or dependency
 to satisfy a routine check.

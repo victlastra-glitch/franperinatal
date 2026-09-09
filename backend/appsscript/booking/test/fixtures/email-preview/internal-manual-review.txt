@@ -1,0 +1,17 @@
+ACCIÓN REQUERIDA
+
+El reembolso no pudo procesarse automáticamente.
+
+Este aviso es interno. No es confirmación de reembolso al paciente; la reserva requiere revisión humana.
+
+Pago: Confirmado
+Reembolso: Rechazado por el proveedor
+Acción: Revisar manualmente. No reintentar automáticamente.
+
+DATOS OPERATIVOS
+Referencia: fran-booking-reservation-synthetic
+Código: PROVIDER_REFUND_REJECTED
+Proveedor: intentado
+Estados internos: payment=paid · refund=manual_review
+
+FRANCISCA BUSTOS M. · PSICOLOGÍA PERINATAL · AVISO INTERNO

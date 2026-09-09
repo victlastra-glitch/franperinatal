@@ -297,9 +297,10 @@ drain();
 // manual-review alert is raised because refund/create succeeded.
 check(outboxRows.filter((row) => row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 0,
   'MANUAL_REVIEW_NOTIFICATION_COUNT=0 while the refund is healthy and pending');
-check(outboxRows.filter((row) => row.event_type === 'SESSION_CANCELLED').length === 0
-  && mailed.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'REFUND_PENDING_PATIENT_EMAIL_COUNT=0');
+check(outboxRows.filter((row) => row.event_type === 'SESSION_CANCELLED').length === 1
+  && mailed.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1
+  && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(mailed.find((item) => item.subject === 'Tu sesión fue cancelada').body),
+  'REFUND_PENDING_NEUTRAL_CANCELLATION_EMAIL_COUNT=1 with no refund claim');
 check(outboxRows.filter((row) => row.event_type === 'PATIENT_CANCELLED').length === 0
   && mailed.filter((item) => /reembolso fue procesado|reembolso completado/i.test(
     item.subject + item.body + (item.htmlBody || ''))).length === 0,

@@ -645,7 +645,7 @@ for t in phase-a booking-clock-contract lifecycle notification-outbox-worker \
          notification-outbox-sheet sequential-notification-harness \
          no-drain-notification-harness pre-transaction-contract flow-contract \
          flow-signature-charset lifecycle-harness calendar-metadata-reconciliation \
-         email-design-system-v3 lifecycle-email-v2 \
+         email-design-system-v4 lifecycle-email-v2 \
          production-derived-integration session-duration-contract \
          property-compatibility calendar-manifest-contract \
          production-trigger-contract v7-schema-compatibility \
@@ -667,7 +667,7 @@ node scripts/test-booking-availability-contract.mjs
 git diff --check
 
 # email previews (needs local Chrome; deterministic, offline)
-node scripts/render-email-v3-previews.mjs
+node scripts/render-email-v4-previews.mjs
 ```
 
 The `*-nonprod-*` scripts and `scripts/validate-nonprod-boundary.sh` /

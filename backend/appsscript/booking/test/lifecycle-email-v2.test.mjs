@@ -480,14 +480,20 @@ const reentered = context.beginRefundForPaidCancellation_(
 check(refundCreateCalls === refundCreatesBeforeReenter && reentered && reentered.replay === true,
   'R5 REFUND_CREATE_EFFECTIVE_MAX=1 — re-entering the refund creates no second provider refund');
 
-// 7 refund pending => zero patient emails
+// 7 refund pending => exactly one NEUTRAL cancellation email, no refund claim.
+// Booking truth and refund truth are decoupled: the patient learns the session
+// is cancelled now; the refund is spoken about only once the provider confirms.
 mailBodies = [];
 drain();
-check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'R7 REFUND_PENDING_PATIENT_EMAIL_COUNT=0');
+const pendingCancelMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada');
+check(pendingCancelMail.length === 1, 'R7 REFUND_PENDING_NEUTRAL_CANCELLATION_EMAIL_COUNT=1');
+check(!/(reembolso|devoluci[oó]n|en proceso|procesad|\$50\.000|50000)/i.test(pendingCancelMail[0].body + (pendingCancelMail[0].htmlBody || '')),
+  'R7 the neutral cancellation email carries no refund claim, no "en proceso", no amount');
 check(outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
-  && ['SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'].includes(row.event_type)).length === 0,
-  'R7 no patient cancellation notification exists before provider confirmation');
+  && row.event_type === 'SESSION_CANCELLED').length === 1
+  && outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
+  && ['PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'].includes(row.event_type)).length === 0,
+  'R7 one neutral cancellation notification exists and no refund-confirmed one before provider confirmation');
 
 // 10/11 provider-confirmed REFUNDED => exactly one final email with the copy
 refundStatusOverride = 'refunded';
@@ -497,8 +503,10 @@ refundStatusOverride = 'accepted';
 check(byKey(6).refund_status === 'refunded' && byKey(6).booking_status === 'cancelled',
   'R provider confirmation completes the refund and the cancellation');
 drain();
-const finalCancelMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada');
+const finalCancelMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado');
 check(finalCancelMail.length === 1, 'R10 REFUND_CONFIRMED_PATIENT_EMAIL_COUNT=1');
+check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'R10 the provider confirmation does not repeat the neutral cancellation email');
 check(finalCancelMail[0].body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
   && finalCancelMail[0].body.includes('hasta 10 días hábiles')
   && /REEMBOLSO/.test(finalCancelMail[0].htmlBody || ''),
@@ -512,10 +520,10 @@ refundStatusOverride = 'refunded';
 context.refundConfirmation_({ parameter: { token: byKey(6).refund_provider_reference } });
 refundStatusOverride = 'accepted';
 drain();
-check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0
+check(mailBodies.filter((item) => /Tu sesión fue cancelada/.test(item.subject)).length === 0
   && outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
     && row.event_type === 'PATIENT_CANCELLED').length === 1,
-  'R12 callback replay keeps FRANCISCA_PATIENT_EMAIL_COUNT_MAX=1');
+  'R12 callback replay keeps the refund-confirmed email at exactly one');
 // 14 there is no separate refund-success email type
 check(outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
   && ['REFUND_COMPLETED', 'REFUND_REQUESTED'].includes(row.event_type)).length === 0,
@@ -598,15 +606,19 @@ check(outboxRows.filter((row) => row.reservation_id === byKey(22).reservation_id
   'R9 exactly one internal manual-review notification is preserved');
 mailBodies = [];
 drain();
-check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'R8 REFUND_FAILED_PATIENT_EMAIL_COUNT=0');
-check(mailBodies.filter((item) => item.subject.startsWith('Revisión operativa')).length === 1
-  && mailBodies.some((item) => item.subject.startsWith('Revisión operativa')
+const failedRefundCancelMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada');
+check(failedRefundCancelMail.length === 1
+  && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(failedRefundCancelMail[0].body + (failedRefundCancelMail[0].htmlBody || '')),
+  'R8 a rejected refund still yields exactly one neutral cancellation email with no refund claim');
+check(mailBodies.filter((item) => /reembolso confirmado|fue procesado/i.test(item.subject + item.body)).length === 0,
+  'R8 REFUND_FAILED_PATIENT_REFUND_CLAIM_COUNT=0');
+check(mailBodies.filter((item) => item.subject.startsWith('Acción requerida')).length === 1
+  && mailBodies.some((item) => item.subject.startsWith('Acción requerida')
     && /no es confirmación de reembolso/i.test(item.body)
     && item.body.includes(byKey(22).reservation_id)
-    && item.body.includes('Pago: paid')
-    && item.body.includes('revisión humana')),
-  'R9 the internal operational alert is intact and internal');
+    && item.body.includes('Pago: Confirmado')
+    && item.body.includes('Revisar manualmente. No reintentar automáticamente.')),
+  'R9 the internal operational alert is human-first, intact and internal');
 
 // Replay after a failed create must not fire a second refund.
 const failReplay = context.patientCancel_({ postData: { contents: JSON.stringify({ token: failCancelTok }) } });
@@ -623,10 +635,11 @@ context.refundConfirmation_({ parameter: { token: recoveredToken } });
 refundStatusOverride = 'accepted';
 check(byKey(22).refund_status === 'refunded', 'R eventual provider confirmation reaches REFUNDED');
 drain();
-const recoveredMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada');
+const recoveredMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada · reembolso confirmado');
 check(recoveredMail.length === 1
-  && recoveredMail[0].body.includes('El reembolso fue procesado al mismo medio de pago utilizado.'),
-  'R after recovery the single final cancellation email is sent exactly once');
+  && recoveredMail[0].body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
+  && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'R after recovery the refund-confirmed email is sent exactly once and the neutral one is not repeated');
 mailBodies = [];
 drain();
 check(mailBodies.length === 0, 'R13 reconciliation/worker replay keeps the patient email count at one');
@@ -655,7 +668,7 @@ const tbdRendered = context.renderLifecycleNotificationEmail_({
   capabilityTokens: {},
   previewOrigin,
 });
-check(tbdRendered.subject.startsWith('Revisión operativa')
+check(tbdRendered.subject.startsWith('Acción requerida')
   && /no es confirmación de reembolso/i.test(tbdRendered.body + tbdRendered.htmlBody)
   && tbdRendered.body.includes('fran-booking-reservation-ops-alert')
   && !tbdRendered.htmlBody.includes('min-height:48px')
