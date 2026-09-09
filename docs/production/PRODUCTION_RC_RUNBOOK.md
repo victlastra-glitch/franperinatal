@@ -12,12 +12,13 @@ authorize execution during the local RC mission.
 
 | Item | Value |
 |---|---|
-| Draft PR | `#2` (keep draft; base `baseline/production-v7-full-20260831`) |
-| RC branch | `feat/production-booking-lifecycle-v2-port` |
+| Canonical branch (current) | `production` — the only branch Production is maintained and deployed from; every change goes branch → preview → PR against `production` (`AGENTS.md`). `main` is legacy lineage, preserved in `legacy/main-pre-production-lineage-20260905`, never a merge target for new work. |
+| Historical draft PR | `#2` (base `baseline/production-v7-full-20260831`) — the original Production lifecycle RC. Historical/in-flight: remains draft and unmerged; no merge, retarget or closure is authorized by this runbook or by FRA-5; any future decision on it needs separate authorization. Not a prerequisite for anything below. |
+| Historical RC branch | `feat/production-booking-lifecycle-v2-port` — provenance of the lifecycle port; current work does not branch from it. |
 | Full baseline | `baseline/production-v7-full-20260831` |
 | Historical Apps Script-only baseline | `baseline/production-v7-20260831` @ `a616c43` (immutable) |
 | Apps Script runtime | `backend/appsscript/booking/{Code,Lifecycle,EmailTemplates,CalendarGateway,Reconciliation,RefundGateway,TriggerInstallGuard}.js` + `appsscript.json` (7 JS files + `appsscript.json` = 8 deployable files) |
-| Rollback Apps Script | the immediately previous **verified immutable** Production version (never a fixed number; for the Policy V2 release that is **v9**). `docs/production/v7/Código.js` is the historical v7 recovery baseline only. |
+| Rollback Apps Script | the immediately previous **verified immutable** Production version (never a fixed number; for the Policy V2 release that was **v9**; for the current permanent runtime **v20** from `8455f3b` it is **v18** from `3d5a9a8`). `docs/production/v7/Código.js` is the historical v7 recovery baseline only. TEMP lane versions v19, v21 and v22 were each briefly live on the existing Web App during FRA-4 (2026-09-07/08) and were restored to the permanent version each time; at closure none is referenced, and none may be repointed to again. |
 | Rollback web | previous Cloudflare Pages Production deployment |
 | Prices | `INITIAL_PRICE_CLP=50000` / `FOLLOWUP_PRICE_CLP=50000` |
 | Session | `SESSION_DURATION_MINUTES=50` (clinical event) |
@@ -441,7 +442,26 @@ Production provider evidence, 2026-09-06 (§5A only; do not re-interpret as §5B
   covering the refund amount **plus** the refund service fee (CLP 202 + IVA = CLP 240
   at the time of this run). The second authorized CLP 500 payment was not created;
   whether it would have cleared the condition is unverified.
-- `BOOKING_APPLICATION_E2E=NOT_RUN` — still required at 50000, no test-price override
+- `BOOKING_APPLICATION_E2E=NOT_RUN` at that date — see the 2026-09-08 result next
+
+Production booking-application evidence, 2026-09-08 (§5B, measured):
+
+- `BOOKING_APPLICATION_E2E=PASS` — real public booking path on the Production
+  runtime; one reservation bound to CLP 500 by a temporary, since-retired lane
+  (public/catalog price 50000 untouched); `payment/create` 200; one real charge
+  PAID and reconciled; booking confirmed once; Calendar + Meet; confirmation and
+  reschedule emails once each; one reschedule (same event, Meet preserved);
+  cancellation ≥ 24 h with slot released.
+- `FLOW_REFUND_E2E=BLOCKED_WITH_PROVIDER_EVIDENCE` — exactly one `refund/create`
+  for the bound 500, rejected by Flow; backend `PROVIDER_REFUND_REJECTED` →
+  manual review; no refund-confirmation email; no automatic retry; no second
+  attempt. The provider's response for this attempt was not retained, so no
+  cause (funds, fee or otherwise) is asserted.
+- Money: new charges 1 · gross 500 · refunded 0; one mistaken catalog-priced order
+  created by a crossed Script Property in an earlier lane variant, never paid,
+  expired at its 15-minute hold.
+- Contract of record and details: `CANCELLATION_RESCHEDULE_POLICY_V2.md`,
+  **Production booking E2E — 2026-09-08**.
 
 ### A. FLOW_PROVIDER_MICRO_E2E
 
@@ -501,12 +521,19 @@ never send booking confirmation.
 
 ## 6. Pass / fail criteria
 
-`READY_FOR_PRODUCTION_DEPLOY_APPROVAL=YES` after this RC is merged locally,
-pushed, and the draft PR documents the compatibility gates.
+Vocabulary note. `READY_FOR_PRODUCTION_DEPLOY_APPROVAL` and
+`READY_FOR_PRODUCTION_RELEASE` are the pass/fail flags of the original RC
+workflow (the PR #2 era). They describe Production readiness only; neither flag
+authorizes or implies any Git merge, and Git canonicality is governed solely by
+`AGENTS.md` (`production` canonical, `main` legacy).
+
+`READY_FOR_PRODUCTION_DEPLOY_APPROVAL=YES` once the RC is complete locally, pushed,
+and its PR documents the compatibility gates.
 
 `READY_FOR_PRODUCTION_RELEASE=YES` only if:
 
-- Draft PR reviewed against `baseline/production-v7-full-20260831`
+- RC reviewed against `baseline/production-v7-full-20260831` (historical criterion,
+  satisfied for the Policy V2 release)
 - Binding **name** checks passed
 - Remote fileset gate passed
 - Schema dry-run + append-only migration + idempotent second run passed
@@ -516,20 +543,34 @@ pushed, and the draft PR documents the compatibility gates.
 - Apps Script + Pages deployed as above
 - No-charge smoke passed
 - `FLOW_PROVIDER_MICRO_E2E` passed
-- `BOOKING_APPLICATION_E2E` passed at 50000
-- Refund micro-E2E passed **or** waived with recorded provider-funds blocker
-- Rollback to v7 restated and still executable
+- `BOOKING_APPLICATION_E2E` passed on the real booking path (measured 2026-09-08
+  at a bounded CLP 500 with the public price at 50000; see §5)
+- Refund micro-E2E passed **or** waived with recorded provider-side blocker
+- Rollback to the **immediately previous verified immutable** Production version
+  restated and still executable (for the current permanent runtime **v20** from
+  `8455f3b` that is **v18** from `3d5a9a8`); `docs/production/v7/Código.js`
+  remains the historical v7 recovery baseline only, not the immediate rollback
 
-Until those live steps run: `READY_FOR_PRODUCTION_RELEASE=NO`.
+Measured status, 2026-09-08: every criterion above has Production evidence —
+binding and fileset gates, schema migration and triggers (Policy V2 release),
+Apps Script v20 + Pages deployed, no-charge smoke, `FLOW_PROVIDER_MICRO_E2E`
+(2026-09-06), `BOOKING_APPLICATION_E2E` (2026-09-08), refund waived with the
+recorded provider-side blocker, rollback v18 present and repointable. Declaring
+`READY_FOR_PRODUCTION_RELEASE=YES` remains the release owner's decision; this
+document does not make it. Three things are deliberately kept apart: the
+measured Production state above; the current canonical Git state (`production`
+at `8455f3b`, the source of the live v20); and the historical RC state (PR #2
+draft and unmerged, separately governed). None depends on the others.
 
 ---
 
 ## 7. Exact rollback
 
-1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it is **v9**). Never repoint to `@HEAD`. For a release that appended a reservation column, the rollback target is the BRIDGE version from §2.3a, and no sheet edit is required.
+1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it was **v9**; for the current permanent **v20** it is **v18**). Never repoint to `@HEAD`, and never to a TEMP lane version (v19, v21, v22). For a release that appended a reservation column, the rollback target is the BRIDGE version from §2.3a, and no sheet edit is required.
 2. Pages: restore the previous Production deployment in Cloudflare (Deployments → previous Production → Rollback).
 3. Do not change Script Properties or Flow keys as rollback.
-4. Git: do not merge this RC to `main` during rollback.
+4. Git: do not merge or canonicalize any in-flight release while a rollback is
+   underway. `production` stays canonical; `main` (legacy lineage) is untouched.
 5. Never redeploy artifact `28b1b8e` as Production baseline.
 
 ---
@@ -542,12 +583,21 @@ Until those live steps run: `READY_FOR_PRODUCTION_RELEASE=NO`.
 
 ---
 
-## 9. Git merge / main canonicalization after Production verification
+## 9. Git canonicality after Production verification
 
-Only after `READY_FOR_PRODUCTION_RELEASE=YES` and a separate merge authorization:
+Governed by `AGENTS.md`; restated here only so this runbook cannot be read
+against it:
 
-1. Merge the RC into `main` via GitHub (not force-push).
-2. Do not delete `baseline/production-v7-20260831` or `baseline/production-v7-full-20260831`.
-3. Tag the merged SHA `production-lifecycle-v2-<date>` after the live smoke stays green.
-
-Until that authorization: leave this PR **draft**, unmerged.
+1. Work is canonical only once merged through an authorized PR into
+   `production`. The live v20 runtime is canonical `8455f3b`, merged that way
+   (PR #11). Docs-only PRs against `production` never authorize a runtime deploy.
+2. `main` is legacy lineage (`legacy/main-pre-production-lineage-20260905`). It
+   receives no new merges and is not a canonicalization target.
+3. PR #2 (`feat/production-booking-lifecycle-v2-port`) is the historical
+   lifecycle RC: draft, unmerged, separately governed. Merging, retargeting or
+   closing it needs its own authorization and is not part of any release gate.
+4. Do not delete `baseline/production-v7-20260831`,
+   `baseline/production-v7-full-20260831` or the legacy lineage branch.
+5. Tagging a verified Production SHA (for example `production-lifecycle-v2-<date>`
+   on the canonical merge commit) is optional and happens after the live smoke
+   stays green.
