@@ -17,7 +17,7 @@ authorize execution during the local RC mission.
 | Full baseline | `baseline/production-v7-full-20260831` |
 | Historical Apps Script-only baseline | `baseline/production-v7-20260831` @ `a616c43` (immutable) |
 | Apps Script runtime | `backend/appsscript/booking/{Code,Lifecycle,EmailTemplates,CalendarGateway,Reconciliation,RefundGateway,TriggerInstallGuard}.js` + `appsscript.json` (7 JS files + `appsscript.json` = 8 deployable files) |
-| Rollback Apps Script | the immediately previous **verified immutable** Production version (never a fixed number; for the Policy V2 release that is **v9**). `docs/production/v7/Código.js` is the historical v7 recovery baseline only. |
+| Rollback Apps Script | the immediately previous **verified immutable** Production version (never a fixed number; for the Policy V2 release that was **v9**; for the current permanent runtime **v20** from `8455f3b` it is **v18** from `3d5a9a8`). `docs/production/v7/Código.js` is the historical v7 recovery baseline only. TEMP versions v21/v22 are unreferenced test history and must never be repointed to. |
 | Rollback web | previous Cloudflare Pages Production deployment |
 | Prices | `INITIAL_PRICE_CLP=50000` / `FOLLOWUP_PRICE_CLP=50000` |
 | Session | `SESSION_DURATION_MINUTES=50` (clinical event) |
@@ -441,7 +441,24 @@ Production provider evidence, 2026-09-06 (§5A only; do not re-interpret as §5B
   covering the refund amount **plus** the refund service fee (CLP 202 + IVA = CLP 240
   at the time of this run). The second authorized CLP 500 payment was not created;
   whether it would have cleared the condition is unverified.
-- `BOOKING_APPLICATION_E2E=NOT_RUN` — still required at 50000, no test-price override
+- `BOOKING_APPLICATION_E2E=NOT_RUN` at that date — see the 2026-09-08 result next
+
+Production booking-application evidence, 2026-09-08 (§5B, measured):
+
+- `BOOKING_APPLICATION_E2E=PASS` — real public booking path on the Production
+  runtime; one reservation bound to CLP 500 by a temporary, since-retired lane
+  (public/catalog price 50000 untouched); `payment/create` 200; one real charge
+  PAID and reconciled; booking confirmed once; Calendar + Meet; confirmation and
+  reschedule emails once each; one reschedule (same event, Meet preserved);
+  cancellation ≥ 24 h with slot released.
+- `FLOW_REFUND_E2E=BLOCKED_WITH_PROVIDER_EVIDENCE` — exactly one `refund/create`
+  for the bound 500, rejected by Flow; backend `PROVIDER_REFUND_REJECTED` →
+  manual review; no refund-confirmation email; no second attempt.
+- Money: new charges 1 · gross 500 · refunded 0; one mistaken catalog-priced order
+  created by a crossed Script Property in an earlier lane variant, never paid,
+  expired at its 15-minute hold.
+- Contract of record and details: `CANCELLATION_RESCHEDULE_POLICY_V2.md`,
+  **Production booking E2E — 2026-09-08**.
 
 ### A. FLOW_PROVIDER_MICRO_E2E
 
@@ -516,8 +533,9 @@ pushed, and the draft PR documents the compatibility gates.
 - Apps Script + Pages deployed as above
 - No-charge smoke passed
 - `FLOW_PROVIDER_MICRO_E2E` passed
-- `BOOKING_APPLICATION_E2E` passed at 50000
-- Refund micro-E2E passed **or** waived with recorded provider-funds blocker
+- `BOOKING_APPLICATION_E2E` passed on the real booking path (measured 2026-09-08
+  at a bounded CLP 500 with the public price at 50000; see §5)
+- Refund micro-E2E passed **or** waived with recorded provider-side blocker
 - Rollback to v7 restated and still executable
 
 Until those live steps run: `READY_FOR_PRODUCTION_RELEASE=NO`.

@@ -1,11 +1,13 @@
 # Cancellation & Reschedule Policy V2 — patient self-management
 
-Status: **deployed to Production on 2026-09-04** from `7eaf034` — Apps Script immutable
-**v10** on the existing versioned Web App deployment (`AKfycbyfioG2bs…`, same `/exec`),
-Cloudflare Pages Production deployment `f1626b71…`. Previous immutable version **v9**
-and the baseline-binding Pages deployment `34bc77bd…` remain as rollback targets.
-Provider micro-E2E run 2026-09-06 (payment PASS, refund blocked on provider funds);
-`BOOKING_APPLICATION_E2E` at 50000 remains **not run**. Baseline it builds on: `bf62852`.
+Status: **deployed to Production**. Current permanent runtime is Apps Script immutable
+**v20**, built from canonical `8455f3b` (PR #11, explicit UTF-8 Flow signatures) on the
+existing versioned Web App deployment (same `/exec`); rollback target **v18**
+(`3d5a9a8`). Policy V2 itself first shipped on 2026-09-04 from `7eaf034` as v10 on the
+same deployment, Cloudflare Pages Production `f1626b71…`. The Production booking E2E
+was measured on 2026-09-08 at a bounded CLP 500 through the real public booking path
+(see **Production booking E2E — 2026-09-08** below); the public/catalog price stayed
+50000 throughout. Baseline it builds on: `bf62852`.
 
 ## The rule
 
@@ -271,6 +273,15 @@ transmitted `s` against an independent Node HMAC over UTF-8 bytes rather than
 against the signer under test. Removing the explicit charset from either signer
 fails the suite.
 
+Release evidence, 2026-09-07: PR #11 merged as canonical `8455f3b`; staged
+8-file artefact byte-identical to canonical; pushed, immutable Apps Script
+**v20** created and the existing versioned Web App repointed to it; v20 pulled
+back and verified byte-identical to canonical, both Flow signers explicit UTF-8,
+no temporary lane symbols, catalog 50000, holiday 2026-09-18 fully occupied,
+availability healthy. Rollback target: **v18**. Production proof followed on
+2026-09-08: the first booking-path `payment/create` accepted by Flow since the
+port (see **Production booking E2E — 2026-09-08**).
+
 **Refund authority.** `createProviderRefundOnce_` refunds the bound amount. An
 unknown bound amount is not a licence to guess: it records
 `refund_status=manual_review` with `refund_last_error_code=REFUND_AMOUNT_UNKNOWN`,
@@ -442,9 +453,72 @@ without additional spend. No claim is made here about settlement timing or
 availability mechanics beyond what Flow documents.
 
 Recorded per runbook §6 as `FLOW_REFUND_E2E=BLOCKED_PROVIDER_FUNDS_501`, the
-"waived with recorded provider-funds blocker" branch. It does **not** substitute
-for `BOOKING_APPLICATION_E2E`, which must run at 50000 with no Production
-test-price override and is still outstanding.
+"waived with recorded provider-funds blocker" branch. It did **not** substitute
+for the booking-application E2E, which is recorded next.
+
+## Production booking E2E — 2026-09-08
+
+The real public booking path, end to end, on the Production runtime, with a
+synthetic operator identity (`hola@franciscabustos.cl`), no patient data, and a
+bounded charge of CLP 500. The public/catalog price was 50000 before, during and
+after; the 500 was bound to one reservation as its immutable
+`transaction_amount_clp` by a **temporary, since-retired test mechanism** (below),
+and every downstream read — payment status, reconciliation, email, refund — used
+that bound amount, exactly as the Money section requires.
+
+Why the E2E was needed at all: every booking-path `payment/create` had been
+rejected by Flow at any amount. The proven cause and the permanent fix are in
+**Money → Provider signature encoding** (implicit Apps Script HMAC charset,
+`Sesión` signed as `Sesi?n`; fixed in canonical `8455f3b`, immutable v20). The
+first Production `payment/create` accepted by Flow since the port was the
+2026-09-08 create below.
+
+| step | result |
+| --- | --- |
+| runtime serving the create | TEMP immutable v22 (canonical v20 + bounded lane), repointed back to **v20 before payment**, both transitions positively verified in the deployment listing |
+| `payment/create` | HTTP 200, order/token/URL persisted, `amount=500`, `currency=CLP` |
+| payment | one real charge, CLP 500, `payment/getStatus` PAID (status 2), reconciled by `providerAmountMatchesTransaction_`; public status `payment_confirmed`, amount 500 |
+| booking | confirmed exactly once; slot 2026-09-16 11:00 occupied |
+| Calendar / Meet | one event, Meet conference created |
+| confirmation email | one, via the outbox |
+| reschedule | exactly one, 11:00 → 15:00 same day, `patient_reschedule_count=1`, same Calendar event id, Meet preserved, one reschedule email (delivered on the next 5-minute outbox tick) |
+| cancellation | ≥ 24 h before the current start, accepted once; slot released (availability for 2026-09-16 shows no occupancy) |
+| refund | exactly one `refund/create` for the bound 500; Flow **rejected** it; backend recorded `PROVIDER_REFUND_REJECTED` → manual review; **no** refund-confirmation email to the patient; no second attempt |
+| money | total new charges 1 · gross CLP 500 · refunded 0 · plus one earlier catalog-priced order that was created by mistake (see below), never paid, expired at its 15-minute hold |
+
+Terminal classification: `BOOKING_APPLICATION_E2E=PASS` for the application path;
+`FLOW_REFUND_E2E=BLOCKED_WITH_PROVIDER_EVIDENCE` after the single authorized
+attempt (provider-side rejection, same class as the 2026-09-06 funds condition).
+
+**The temporary lane, retired.** A `DO NOT MERGE` branch
+(`temp/fra4-e2e-lane-20260907`) compiled four constants into a TEMP-only Apps
+Script version: the enrolled synthetic mailbox, amount 500 (compiled ceiling 500),
+an absolute expiry (2026-09-12T02:59:59Z), and the deterministic commerce
+identifier of one earlier failed row that a read-only
+`payment/getStatusByCommerceId` had proven absent at Flow (`1700 Transaction not
+found`). At most one lane order per enrolled address, counted from the sheet
+under the reservation lock; a sanitized read-only preflight had to report
+`ok=true` before the single create. It never entered `production`, it is
+referenced by no deployment (v21 and v22 remain only as unreferenced immutable
+history), and it read no Script Property. An earlier Script-Property-driven
+variant (v19/v21) failed closed to the catalog price when a property was
+crossed, which produced the one mistaken, unpaid, expired CLP 50000 order — the
+fail-closed behaviour worked as designed. None of this is architecture: the
+permanent runtime prices every new order from the catalog only.
+
+Cleanup verified (FRA-5): existing Web App at **v20**; v21/v22 unreferenced;
+canonical `8455f3b` and v20 contain no lane symbols; no `E2E_LANE_*` Script
+Property is read by v20 (the four were deleted); public price 50000; availability
+healthy, holiday 2026-09-18 fully occupied, the cancelled E2E slot free; no
+browser-facing `script.google.com` reference; local checkout/token artefacts
+destroyed.
+
+Follow-up (FRA-6, non-blocking): the cancellation UI can show a duplicated state
+while cancelling ("Cancelar sesión" and "Cancelando…") and its final copy can say
+the refund is "en proceso" although the backend recorded a terminal
+`PROVIDER_REFUND_REJECTED`. The fix must map the page deterministically to the
+persisted backend/provider state and never imply a confirmed or still-processing
+refund after a terminal rejection.
 
 ## Residual decisions at deploy-readiness
 
