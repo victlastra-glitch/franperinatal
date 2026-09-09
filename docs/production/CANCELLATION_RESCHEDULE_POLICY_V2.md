@@ -488,7 +488,10 @@ first Production `payment/create` accepted by Flow since the port was the
 
 Terminal classification: `BOOKING_APPLICATION_E2E=PASS` for the application path;
 `FLOW_REFUND_E2E=BLOCKED_WITH_PROVIDER_EVIDENCE` after the single authorized
-attempt (provider-side rejection, same class as the 2026-09-06 funds condition).
+attempt: the provider rejected the request and the reservation sits in manual
+review. No cause beyond "provider rejected" is asserted for this attempt, because
+the provider's response body for it was not retained; nothing here should be read
+as a funds or fee diagnosis.
 
 **The temporary lane, retired.** A `DO NOT MERGE` branch
 (`temp/fra4-e2e-lane-20260907`) compiled four constants into a TEMP-only Apps
@@ -498,16 +501,29 @@ identifier of one earlier failed row that a read-only
 `payment/getStatusByCommerceId` had proven absent at Flow (`1700 Transaction not
 found`). At most one lane order per enrolled address, counted from the sheet
 under the reservation lock; a sanitized read-only preflight had to report
-`ok=true` before the single create. It never entered `production`, it is
-referenced by no deployment (v21 and v22 remain only as unreferenced immutable
-history), and it read no Script Property. An earlier Script-Property-driven
-variant (v19/v21) failed closed to the catalog price when a property was
-crossed, which produced the one mistaken, unpaid, expired CLP 50000 order — the
-fail-closed behaviour worked as designed. None of this is architecture: the
-permanent runtime prices every new order from the catalog only.
+`ok=true` before the single create. It never entered `production` and it read no
+Script Property.
 
-Cleanup verified (FRA-5): existing Web App at **v20**; v21/v22 unreferenced;
-canonical `8455f3b` and v20 contain no lane symbols; no `E2E_LANE_*` Script
+Transitory deployment history, kept on purpose. Three TEMP versions existed.
+**v19** (Script-Property-driven lane on the pre-fix runtime) was the live
+version when the original outage was diagnosed and was replaced by permanent v20
+on 2026-09-07. **v21** (Script-Property-driven lane on v20) was repointed live on
+the existing Web App three times on 2026-09-08, each for minutes, and restored to
+v20 each time with the restore positively confirmed in the deployment listing;
+during its third window one create was made and priced at the catalog because a
+Script Property had been crossed — the fail-closed behaviour worked as designed
+and produced the one mistaken, unpaid CLP 50000 order that expired at its
+15-minute hold. **v22** (the self-contained lane) was repointed live once on
+2026-09-08, served the single CLP 500 create, and was restored to v20 before any
+payment, again positively confirmed. At closure no Production deployment
+references v19, v21 or v22; they remain only as immutable version history. None
+of this is architecture: the permanent runtime prices every new order from the
+catalog only.
+
+Cleanup verified (FRA-5): existing Web App at **v20** (canonical
+`8455f3bfcef3546fab5d9b169805f35244b8c3e1`, permanent rollback **v18**); no TEMP
+lane version referenced by any deployment; canonical `8455f3b` and v20 contain
+no lane symbols; no `E2E_LANE_*` Script
 Property is read by v20 (the four were deleted); public price 50000; availability
 healthy, holiday 2026-09-18 fully occupied, the cancelled E2E slot free; no
 browser-facing `script.google.com` reference; local checkout/token artefacts

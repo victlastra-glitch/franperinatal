@@ -17,7 +17,7 @@ authorize execution during the local RC mission.
 | Full baseline | `baseline/production-v7-full-20260831` |
 | Historical Apps Script-only baseline | `baseline/production-v7-20260831` @ `a616c43` (immutable) |
 | Apps Script runtime | `backend/appsscript/booking/{Code,Lifecycle,EmailTemplates,CalendarGateway,Reconciliation,RefundGateway,TriggerInstallGuard}.js` + `appsscript.json` (7 JS files + `appsscript.json` = 8 deployable files) |
-| Rollback Apps Script | the immediately previous **verified immutable** Production version (never a fixed number; for the Policy V2 release that was **v9**; for the current permanent runtime **v20** from `8455f3b` it is **v18** from `3d5a9a8`). `docs/production/v7/Código.js` is the historical v7 recovery baseline only. TEMP versions v21/v22 are unreferenced test history and must never be repointed to. |
+| Rollback Apps Script | the immediately previous **verified immutable** Production version (never a fixed number; for the Policy V2 release that was **v9**; for the current permanent runtime **v20** from `8455f3b` it is **v18** from `3d5a9a8`). `docs/production/v7/Código.js` is the historical v7 recovery baseline only. TEMP lane versions v19, v21 and v22 were each briefly live on the existing Web App during FRA-4 (2026-09-07/08) and were restored to the permanent version each time; at closure none is referenced, and none may be repointed to again. |
 | Rollback web | previous Cloudflare Pages Production deployment |
 | Prices | `INITIAL_PRICE_CLP=50000` / `FOLLOWUP_PRICE_CLP=50000` |
 | Session | `SESSION_DURATION_MINUTES=50` (clinical event) |
@@ -453,7 +453,9 @@ Production booking-application evidence, 2026-09-08 (§5B, measured):
   cancellation ≥ 24 h with slot released.
 - `FLOW_REFUND_E2E=BLOCKED_WITH_PROVIDER_EVIDENCE` — exactly one `refund/create`
   for the bound 500, rejected by Flow; backend `PROVIDER_REFUND_REJECTED` →
-  manual review; no refund-confirmation email; no second attempt.
+  manual review; no refund-confirmation email; no automatic retry; no second
+  attempt. The provider's response for this attempt was not retained, so no
+  cause (funds, fee or otherwise) is asserted.
 - Money: new charges 1 · gross 500 · refunded 0; one mistaken catalog-priced order
   created by a crossed Script Property in an earlier lane variant, never paid,
   expired at its 15-minute hold.
