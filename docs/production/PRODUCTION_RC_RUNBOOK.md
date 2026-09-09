@@ -12,8 +12,9 @@ authorize execution during the local RC mission.
 
 | Item | Value |
 |---|---|
-| Draft PR | `#2` (keep draft; base `baseline/production-v7-full-20260831`) |
-| RC branch | `feat/production-booking-lifecycle-v2-port` |
+| Canonical branch (current) | `production` — the only branch Production is maintained and deployed from; every change goes branch → preview → PR against `production` (`AGENTS.md`). `main` is legacy lineage, preserved in `legacy/main-pre-production-lineage-20260905`, never a merge target for new work. |
+| Historical draft PR | `#2` (base `baseline/production-v7-full-20260831`) — the original Production lifecycle RC. Historical/in-flight: remains draft and unmerged; no merge, retarget or closure is authorized by this runbook or by FRA-5; any future decision on it needs separate authorization. Not a prerequisite for anything below. |
+| Historical RC branch | `feat/production-booking-lifecycle-v2-port` — provenance of the lifecycle port; current work does not branch from it. |
 | Full baseline | `baseline/production-v7-full-20260831` |
 | Historical Apps Script-only baseline | `baseline/production-v7-20260831` @ `a616c43` (immutable) |
 | Apps Script runtime | `backend/appsscript/booking/{Code,Lifecycle,EmailTemplates,CalendarGateway,Reconciliation,RefundGateway,TriggerInstallGuard}.js` + `appsscript.json` (7 JS files + `appsscript.json` = 8 deployable files) |
@@ -520,12 +521,19 @@ never send booking confirmation.
 
 ## 6. Pass / fail criteria
 
-`READY_FOR_PRODUCTION_DEPLOY_APPROVAL=YES` after this RC is merged locally,
-pushed, and the draft PR documents the compatibility gates.
+Vocabulary note. `READY_FOR_PRODUCTION_DEPLOY_APPROVAL` and
+`READY_FOR_PRODUCTION_RELEASE` are the pass/fail flags of the original RC
+workflow (the PR #2 era). They describe Production readiness only; neither flag
+authorizes or implies any Git merge, and Git canonicality is governed solely by
+`AGENTS.md` (`production` canonical, `main` legacy).
+
+`READY_FOR_PRODUCTION_DEPLOY_APPROVAL=YES` once the RC is complete locally, pushed,
+and its PR documents the compatibility gates.
 
 `READY_FOR_PRODUCTION_RELEASE=YES` only if:
 
-- Draft PR reviewed against `baseline/production-v7-full-20260831`
+- RC reviewed against `baseline/production-v7-full-20260831` (historical criterion,
+  satisfied for the Policy V2 release)
 - Binding **name** checks passed
 - Remote fileset gate passed
 - Schema dry-run + append-only migration + idempotent second run passed
@@ -548,9 +556,11 @@ binding and fileset gates, schema migration and triggers (Policy V2 release),
 Apps Script v20 + Pages deployed, no-charge smoke, `FLOW_PROVIDER_MICRO_E2E`
 (2026-09-06), `BOOKING_APPLICATION_E2E` (2026-09-08), refund waived with the
 recorded provider-side blocker, rollback v18 present and repointable. Declaring
-`READY_FOR_PRODUCTION_RELEASE=YES` is the release owner's decision because it
-unlocks §9 (merging the RC into `main`); this document does not make that
-declaration, and PR #2 remains draft and unmerged until it is made.
+`READY_FOR_PRODUCTION_RELEASE=YES` remains the release owner's decision; this
+document does not make it. Three things are deliberately kept apart: the
+measured Production state above; the current canonical Git state (`production`
+at `8455f3b`, the source of the live v20); and the historical RC state (PR #2
+draft and unmerged, separately governed). None depends on the others.
 
 ---
 
@@ -559,7 +569,8 @@ declaration, and PR #2 remains draft and unmerged until it is made.
 1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it was **v9**; for the current permanent **v20** it is **v18**). Never repoint to `@HEAD`, and never to a TEMP lane version (v19, v21, v22). For a release that appended a reservation column, the rollback target is the BRIDGE version from §2.3a, and no sheet edit is required.
 2. Pages: restore the previous Production deployment in Cloudflare (Deployments → previous Production → Rollback).
 3. Do not change Script Properties or Flow keys as rollback.
-4. Git: do not merge this RC to `main` during rollback.
+4. Git: do not merge or canonicalize any in-flight release while a rollback is
+   underway. `production` stays canonical; `main` (legacy lineage) is untouched.
 5. Never redeploy artifact `28b1b8e` as Production baseline.
 
 ---
@@ -572,12 +583,21 @@ declaration, and PR #2 remains draft and unmerged until it is made.
 
 ---
 
-## 9. Git merge / main canonicalization after Production verification
+## 9. Git canonicality after Production verification
 
-Only after `READY_FOR_PRODUCTION_RELEASE=YES` and a separate merge authorization:
+Governed by `AGENTS.md`; restated here only so this runbook cannot be read
+against it:
 
-1. Merge the RC into `main` via GitHub (not force-push).
-2. Do not delete `baseline/production-v7-20260831` or `baseline/production-v7-full-20260831`.
-3. Tag the merged SHA `production-lifecycle-v2-<date>` after the live smoke stays green.
-
-Until that authorization: leave this PR **draft**, unmerged.
+1. Work is canonical only once merged through an authorized PR into
+   `production`. The live v20 runtime is canonical `8455f3b`, merged that way
+   (PR #11). Docs-only PRs against `production` never authorize a runtime deploy.
+2. `main` is legacy lineage (`legacy/main-pre-production-lineage-20260905`). It
+   receives no new merges and is not a canonicalization target.
+3. PR #2 (`feat/production-booking-lifecycle-v2-port`) is the historical
+   lifecycle RC: draft, unmerged, separately governed. Merging, retargeting or
+   closing it needs its own authorization and is not part of any release gate.
+4. Do not delete `baseline/production-v7-20260831`,
+   `baseline/production-v7-full-20260831` or the legacy lineage branch.
+5. Tagging a verified Production SHA (for example `production-lifecycle-v2-<date>`
+   on the canonical merge commit) is optional and happens after the live smoke
+   stays green.
