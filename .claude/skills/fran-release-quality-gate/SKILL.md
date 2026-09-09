@@ -84,8 +84,11 @@ be reordered. Read-only summary of what that implies for an agent:
 - Triggers are installed and verified only through `TriggerInstallGuard.js`, after
   the schema step.
 - Provider E2E (`FLOW_PROVIDER_MICRO_E2E`, `BOOKING_APPLICATION_E2E`) is money and
-  requires explicit authorization; `BOOKING_APPLICATION_E2E` runs at 50000 with no
-  Production test-price override.
+  requires explicit authorization for the exact amount and mechanism.
+  `BOOKING_APPLICATION_E2E` traverses the real public Production booking path
+  (measured 2026-09-08 at a bounded CLP 500 with the catalog at CLP 50000). A
+  reduced-value TEMP lane is never canonical architecture and must be retired and
+  unreferenced when the run ends. Authority: `PRODUCTION_RC_RUNBOOK.md` §5.
 
 **No deploy, no clasp push, no trigger install, no wrangler publish, no provider
 E2E, and no Production write without explicit human authorization for that specific

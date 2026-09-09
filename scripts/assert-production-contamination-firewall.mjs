@@ -27,6 +27,11 @@ const forbidden = [
   "APP_ENV = 'nonprod'",
   'reservations_nonprod',
   'notification_outbox_nonprod',
+  // Temporary E2E lane machinery (FRA-4, 2026-09: TEMP versions v19/v21/v22) is
+  // historical and must never return to the permanent runtime: no property,
+  // constant, action or helper of a reduced-value lane may appear here.
+  'E2E_LANE_',
+  'e2e_lane_',
 ];
 
 const texts = {};

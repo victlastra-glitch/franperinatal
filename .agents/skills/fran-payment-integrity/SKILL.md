@@ -108,11 +108,18 @@ node scripts/assert-production-legacy-price-scan.mjs
 node backend/appsscript/booking/test/transaction-amount-integrity.test.mjs
 ```
 
-Provider E2E is a runbook operation, not a coding step, and is split on purpose:
-`FLOW_PROVIDER_MICRO_E2E` may use a provider-minimum amount and proves **nothing**
-about application pricing; `BOOKING_APPLICATION_E2E` must run at 50000 with no
-Production test-price override. See `docs/production/PRODUCTION_RC_RUNBOOK.md`.
-Executing either needs explicit human authorization — see `fran-release-quality-gate`.
+Provider E2E is a runbook operation, not a coding step, and is split on purpose
+(authority: `docs/production/PRODUCTION_RC_RUNBOOK.md` §5; this paragraph only
+points at it). `FLOW_PROVIDER_MICRO_E2E` may use a provider-minimum amount and
+proves **nothing** about the application lifecycle or price/catalog behaviour.
+`BOOKING_APPLICATION_E2E` must traverse the **real public Production booking
+path** and the real Production integration end to end. Historical evidence: the
+E2E measured on 2026-09-08 ran at a **bounded CLP 500** while the public/catalog
+price stayed **CLP 50000** throughout. Any future real-money E2E needs explicit
+human authorization for the exact amount **and** the exact mechanism; if a
+reduced-value TEMP lane is used it must be non-canonical, bounded, single-use,
+expiring, and retired/unreferenced when the run ends — it is never architecture.
+Executing either E2E needs explicit human authorization — see `fran-release-quality-gate`.
 
 Report money-touching work with the counters the repo already uses:
 `PRODUCTION_PAYMENT_CREATE_CALLS`, `PRODUCTION_REFUND_CREATE_CALLS`,
