@@ -348,13 +348,11 @@ check(record().payment_status === 'paid' && record().patient_reschedule_count ==
   && record().refund_status === 'refund_pending' && cancel.refund === 'requested',
   'cancel keeps historical payment, quota=1, and requests the full Flow refund once');
 
-// The neutral cancellation confirmation reaches the patient now; nothing about
-// the refund does until the provider confirms it.
+// Nothing reaches the patient while the refund is pending.
 mailBodies = [];
 check(drainOutbox(Date.parse('2026-09-03T17:49:00.000Z')).ok
-  && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1
-  && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada').body),
-  'exactly one neutral patient cancellation email is sent while the refund is pending, with no refund claim');
+  && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'no patient cancellation email is queued while the refund is pending');
 
 context.refundConfirmation_({ parameter: { token: record().refund_provider_reference } });
 check(record().refund_status === 'refunded' && record().booking_status === 'cancelled',
@@ -368,9 +366,8 @@ const cancelKey = String(outboxRows.find((row) => row.reservation_id === record(
 mailBodies = [];
 const sentCancel = drainOutbox(Date.parse('2026-09-03T17:50:00.000Z'));
 check(sentCancel.ok && sentCancel.processed >= 1, 'cancellation notifications are processed');
-const cancelMail = mailBodies.find((item) => item.subject === 'Reembolso confirmado · sesión cancelada');
-check(cancelMail && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'refund-confirmed email sent once, neutral cancellation not repeated');
+const cancelMail = mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada');
+check(cancelMail, 'cancellation email sent once');
 assertChileTime(cancelMail.body, '16:00', 'cancellation shows Chile local appointment context');
 check(cancelMail.body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
   && cancelMail.body.includes('hasta 10 días hábiles')

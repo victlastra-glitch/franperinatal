@@ -84,11 +84,12 @@ function escapeEmailText_(value) {
 }
 
 function lifecycleEmailDateParts_(iso) {
+  const raw = String(iso || '');
   const formatted = typeof formatPatientFacingDateTime_ === 'function' ? formatPatientFacingDateTime_(iso) : '';
-  if (!formatted) return { date: '', time: '', combined: '' };
+  if (!formatted) return { date: '', time: '', combined: '', iso: raw };
   const pieces = formatted.split(', ');
-  if (pieces.length < 2) return { date: formatted, time: '', combined: formatted };
-  return { date: pieces[0], time: pieces[pieces.length - 1], combined: formatted };
+  if (pieces.length < 2) return { date: formatted, time: '', combined: formatted, iso: raw };
+  return { date: pieces[0], time: pieces[pieces.length - 1], combined: formatted, iso: raw };
 }
 
 // Short, locale-safe date for subjects: "mié 16 sep". Weekday and month names
@@ -117,10 +118,10 @@ function lifecycleEmailShortDate_(iso) {
 }
 
 /** Human-first subjects. The refund claim needs a REFUNDED record, not just the event. */
-function lifecycleNotificationSubject_(eventType, dateParts, record) {
+function lifecycleNotificationSubject_(eventType, dateParts) {
   const parts = dateParts || {};
   const time = String(parts.time || '');
-  const shortDate = record && record.current_start_at ? lifecycleEmailShortDate_(record.current_start_at) : '';
+  const shortDate = parts.iso ? lifecycleEmailShortDate_(parts.iso) : '';
   const dateBit = shortDate && time ? ' · ' + shortDate + ' · ' + time
     : (parts.date && time ? ' · ' + parts.date + ' · ' + time : '');
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.BOOKING_CONFIRMED) return 'Tu sesión está confirmada' + dateBit;
@@ -129,14 +130,12 @@ function lifecycleNotificationSubject_(eventType, dateParts, record) {
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED
     || eventType === LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_CANCELLED
     || eventType === LIFECYCLE.NOTIFICATION_TYPE.SESSION_CANCELLED) {
-    return emailV4RefundConfirmed_(eventType, record)
-      ? 'Reembolso confirmado · sesión cancelada'
-      : 'Tu sesión fue cancelada';
+    return 'Tu sesión fue cancelada';
   }
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_REQUESTED) return 'Solicitud de reembolso en curso';
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_COMPLETED) return 'Reembolso completado';
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW) {
-    return emailV4InternalReview_(record).subject;
+    return 'Acción requerida: la reserva necesita revisión manual';
   }
   return 'Actualización de tu reserva';
 }
@@ -557,7 +556,7 @@ function renderLifecycleEmailHtml_(input) {
   const kind = lifecycleEmailV4Kind_(notification.eventType);
   const parts = lifecycleEmailDateParts_(record.current_start_at);
   const previous = lifecycleEmailDateParts_(record.original_start_at);
-  const subject = lifecycleNotificationSubject_(notification.eventType, parts, record);
+  const subject = lifecycleNotificationSubject_(notification.eventType, parts);
   const showsMeet = typeof lifecycleNotificationShowsMeet_ === 'function'
     && lifecycleNotificationShowsMeet_(notification.eventType);
   const meetUrl = showsMeet && notification.meet && notification.meet.meetUrl
@@ -590,23 +589,19 @@ function renderLifecycleEmailHtml_(input) {
       ? 'La sesión agendada para el ' + parts.date + ' a las ' + parts.time + ' fue cancelada. La hora quedó liberada.'
       : 'La sesión que tenías agendada fue cancelada. La hora quedó liberada.';
     const refundConfirmed = emailV4RefundConfirmed_(notification.eventType, record);
-    // The cancellation is the completed job: re-booking stays one quiet outline
-    // action away, never a charcoal primary that reads as a conversion push.
-    // The refund-confirmed variant arrives after the neutral cancellation, so the
-    // refund is its headline and the cancelled session is kept only as context.
+    // The cancellation leads; the approved refund copy is an information block
+    // underneath, and only on a provider-confirmed REFUNDED record. Re-booking
+    // stays one quiet outline action away, never a charcoal conversion primary.
     return emailV4Document_({
       title: subject,
       preheader: refundConfirmed ? EMAIL_V4_PREHEADER.cancelledRefunded : EMAIL_V4_PREHEADER.cancelled,
       rows: emailV4Header_()
-        + (refundConfirmed
-          ? emailV4Eyebrow_('REEMBOLSO CONFIRMADO', EMAIL_V4.cream, EMAIL_V4.charcoal)
-            + emailV4Headline_('Tu reembolso fue confirmado.')
-          : emailV4Eyebrow_('TU SESIÓN FUE CANCELADA', EMAIL_V4.cancelBg, EMAIL_V4.cancelAccent, 'v4-cancel')
-            + emailV4Headline_('Tu sesión fue cancelada.'))
+        + emailV4Eyebrow_('TU SESIÓN FUE CANCELADA', EMAIL_V4.cancelBg, EMAIL_V4.cancelAccent, 'v4-cancel')
+        + emailV4Headline_('Tu sesión fue cancelada.')
         + emailV4Body_(escapeEmailText_(emailV4Greeting_(record)), 24, EMAIL_V4.charcoal)
-        + (refundConfirmed ? emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_COPY), 16) : '')
         + emailV4Body_(escapeEmailText_(when), 16)
         + emailV4Details_(cancelledRows)
+        + (refundConfirmed ? emailV4InfoBlock_('REEMBOLSO', EMAIL_V4_REFUND_COPY) : '')
         + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 32)
         + emailV4SecondaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN', 24)
         + emailV4Footer_(),
@@ -729,16 +724,17 @@ function renderLifecycleEmailText_(input) {
   }
 
   if (kind === 'cancelled') {
-    const refundConfirmed = emailV4RefundConfirmed_(notification.eventType, record);
     const lines = emailV4TextHeader_();
-    lines.push(refundConfirmed ? 'REEMBOLSO CONFIRMADO' : 'TU SESIÓN FUE CANCELADA', '', emailV4Greeting_(record), '');
-    if (refundConfirmed) lines.push(EMAIL_V4_REFUND_COPY, '');
+    lines.push('TU SESIÓN FUE CANCELADA', '', emailV4Greeting_(record), '');
     lines.push(parts.date && parts.time
       ? 'La sesión agendada para el ' + parts.date + ' a las ' + parts.time + ' fue cancelada. La hora quedó liberada.'
       : 'La sesión que tenías agendada fue cancelada. La hora quedó liberada.');
     lines.push('');
     if (parts.date) lines.push('Fecha: ' + parts.date);
     if (parts.time) lines.push('Hora: ' + parts.time + ' (Chile)');
+    if (emailV4RefundConfirmed_(notification.eventType, record)) {
+      lines.push('', 'REEMBOLSO', EMAIL_V4_REFUND_COPY);
+    }
     lines.push('', EMAIL_V4_CANCELLED_HUMAN_COPY);
     lines.push('', 'Agendar nueva sesión: ' + emailV4BookingUrl_(origin));
     return lines.concat(emailV4TextFooter_()).join('\n');

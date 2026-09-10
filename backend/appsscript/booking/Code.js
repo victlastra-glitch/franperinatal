@@ -2006,64 +2006,52 @@ function enqueueManualPolicyRefundNotification_(sheet, schema, record) {
   return enqueueLifecycleNotification_(sheet, schema, record, LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW);
 }
 
-// Booking cancellation truth and refund truth are two separate patient
-// communications, each sent at most once per reservation.
+// A reservation gets at most ONE patient cancellation email.
 //
-// SESSION_CANCELLED is the neutral cancellation confirmation: enqueued as soon as
-// the cancellation is durably persisted and the slot released, whatever the
-// refund is doing (requested, pending, rejected, parked, not required). It makes
-// no economic claim at all. PATIENT_CANCELLED / CLINICIAN_CANCELLED is the
-// refund-confirmed communication, enqueued only from refundConfirmation_ once the
-// provider has confirmed REFUNDED, and it is the only patient email allowed to
-// carry the refund copy. Neither group can be enqueued twice, and a rejected or
-// unknown refund outcome never produces any patient refund wording.
+// SESSION_CANCELLED is the pre-provider-confirmation variant: it is enqueued at
+// cancellation time only when no refund is in flight, and it makes no refund
+// claim. PATIENT_CANCELLED / CLINICIAN_CANCELLED is the final variant, enqueued
+// only from refundConfirmation_ once the provider confirms REFUNDED, and it
+// carries the refund copy. Whichever lands first wins, so a later provider
+// confirmation can never produce a second Francisca patient email.
 var PATIENT_CANCELLATION_NOTIFICATION_TYPES = Object.freeze([
   'SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED',
 ]);
-var PATIENT_CANCELLATION_NEUTRAL_TYPES = Object.freeze(['SESSION_CANCELLED']);
-var PATIENT_CANCELLATION_REFUND_CONFIRMED_TYPES = Object.freeze(['PATIENT_CANCELLED', 'CLINICIAN_CANCELLED']);
 
-function patientCancellationNotificationGroup_(eventType) {
-  const type = String(eventType || '');
-  if (PATIENT_CANCELLATION_REFUND_CONFIRMED_TYPES.indexOf(type) !== -1) return PATIENT_CANCELLATION_REFUND_CONFIRMED_TYPES;
-  if (PATIENT_CANCELLATION_NEUTRAL_TYPES.indexOf(type) !== -1) return PATIENT_CANCELLATION_NEUTRAL_TYPES;
-  return PATIENT_CANCELLATION_NOTIFICATION_TYPES;
-}
-
-function patientCancellationNotificationExists_(outboxStore, reservationId, types) {
+function patientCancellationNotificationExists_(outboxStore, reservationId) {
   const id = String(reservationId || '');
   if (!id) return false;
-  const group = types || PATIENT_CANCELLATION_NOTIFICATION_TYPES;
   return outboxStore.records().some(function(row) {
     return String(row.reservation_id || '') === id
-      && group.indexOf(String(row.event_type || '')) !== -1
+      && PATIENT_CANCELLATION_NOTIFICATION_TYPES.indexOf(String(row.event_type || '')) !== -1
       && String(row.state || '') !== 'superseded';
   });
 }
 
 function enqueuePatientCancellationNotificationOnce_(sheet, schema, record, eventType) {
   const store = notificationOutboxStoreFromSheet_(sheet);
-  const group = patientCancellationNotificationGroup_(eventType);
-  // The refund-confirmed communication is fail-closed on the persisted record:
-  // without REFUNDED there is nothing confirmed to say, whatever routed it here.
-  if (group === PATIENT_CANCELLATION_REFUND_CONFIRMED_TYPES
-    && String(record && record.refund_status || '') !== LIFECYCLE.REFUND_STATUS.REFUNDED) return null;
-  if (patientCancellationNotificationExists_(store, record && record.reservation_id, group)) return null;
+  if (patientCancellationNotificationExists_(store, record && record.reservation_id)) return null;
   return enqueueLifecycleNotification_(sheet, schema, record, eventType, null, store);
 }
 
 /**
- * When the neutral patient cancellation confirmation is owed: the cancellation
- * is durably persisted (cancelled, or cancellation_requested with the slot
- * already released while a refund is in flight) on a paid reservation. The
- * refund state is deliberately not consulted — refund truth travels separately.
+ * When the economically-silent patient cancellation confirmation is owed.
+ *
+ * A refundable cancellation is NOT covered here: it stays in
+ * cancellation_requested until the provider confirms, and the final
+ * PATIENT_CANCELLED variant is the one that speaks. This variant covers the
+ * cancellations that are already terminal at cancellation time:
+ *
+ *  - refund NOT_REQUIRED  — decided non-refundable inside the 24-hour cutoff
+ *  - refund MANUAL_REVIEW — out of policy, parked for a human
  */
 function patientCancellationConfirmationNeeded_(record) {
   if (!record) return false;
-  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED
-    && record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED) return false;
+  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED) return false;
   if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
-  return record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.CANCELLED;
+  const refund = String(record.refund_status || '');
+  return refund === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW
+    || refund === LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
 }
 
 function enqueueSessionCancelledNotification_(sheet, schema, record) {
@@ -2246,7 +2234,7 @@ function renderLifecycleNotificationEmail_(input) {
   if (!input || !input.notification || !input.record || !input.previewOrigin) fail_('NOTIFICATION_RENDER_INVALID');
   const parts = lifecycleEmailDateParts_(input.record.current_start_at);
   return {
-    subject: lifecycleNotificationSubject_(input.notification.eventType, parts, input.record),
+    subject: lifecycleNotificationSubject_(input.notification.eventType, parts),
     body: renderLifecycleEmailText_(input),
     htmlBody: renderLifecycleEmailHtml_(input),
   };
