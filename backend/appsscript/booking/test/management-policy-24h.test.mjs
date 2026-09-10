@@ -286,31 +286,35 @@ check(clean.rowFor(4).refund_status === 'refund_pending'
   && clean.rowFor(4).booking_status === 'cancellation_requested',
   'GE24 cancellation waits for provider confirmation before completing');
 clean.drain();
+const b4Request = clean.state.mail.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada');
+check(b4Request.length === 1, 'GE24 the accepted refund request sends exactly one patient email');
+check(/El abono puede tardar hasta 10 días hábiles en verse reflejado/.test(b4Request[0].body)
+  && !/El reembolso fue procesado|reembolso fue confirmado|reembolso fue completado/i.test(b4Request[0].body),
+  'GE24 the refund email confirms the request and claims no settlement');
 check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'GE24 pending refund sends NO patient cancellation email and makes no refund claim');
+  'GE24 no neutral cancellation email for a refundable cancellation');
 // 24 · double click / replay
 const b4Replay = clean.context.patientCancel_({ postData: { contents: JSON.stringify({ token: b4.cancel }) } });
 clean.drain();
 check(b4Replay.ok && b4Replay.replay === true && clean.state.refundCreateCalls === refundsBeforeB4 + 1,
   'DOUBLE_CLICK: a second cancel creates no second refund');
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'DOUBLE_CLICK: a second cancel sends no patient email either');
-// 18 · provider-confirmed REFUNDED => exactly one final patient email
+check(clean.state.mail.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada').length === 1,
+  'DOUBLE_CLICK: a second cancel sends no additional patient email');
+// 18 · provider-confirmed REFUNDED => no further patient email at all
 clean.state.refundStatusOverride = 'refunded';
 clean.context.refundConfirmation_({ parameter: { token: clean.rowFor(4).refund_provider_reference } });
 clean.state.refundStatusOverride = 'accepted';
 check(clean.rowFor(4).refund_status === 'refunded' && clean.rowFor(4).booking_status === 'cancelled',
   'GE24 provider confirmation completes both the refund and the cancellation');
+const mailBeforeConfirm = clean.state.mail.length;
 clean.drain();
-const b4Final = clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada');
-check(b4Final.length === 1, 'FINAL_PATIENT_CANCELLATION_EMAIL_MAX=1 after provider confirmation');
-check(/El reembolso fue procesado al mismo medio de pago utilizado\./.test(b4Final[0].body)
-  && /hasta 10 días hábiles/.test(b4Final[0].body),
-  'GE24 final email carries the approved refund copy verbatim');
+check(clean.state.mail.length === mailBeforeConfirm,
+  'FINAL_PATIENT_CANCELLATION_EMAIL_MAX=0 after provider confirmation');
 clean.context.refundConfirmation_({ parameter: { token: clean.rowFor(4).refund_provider_reference } });
 clean.drain();
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1,
-  'a replayed provider callback does not produce a second final email');
+check(clean.state.mail.length === mailBeforeConfirm
+  && clean.state.mail.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada').length === 1,
+  'a replayed provider callback produces no additional patient email');
 
 // 19-23 · <24h cancellation: released, silent, and permanently non-refundable.
 const b5 = clean.paidBooking(5, '2026-09-10', '13:00', 24 * HOUR_MS);
@@ -640,7 +644,7 @@ function probes(h) {
       { sheet: h.sheet, calendarGateway: null }, h.schema(), h.rowFor(55));
     return h.state.refundCreateCalls === before + 1;
   });
-  probe('endpoint_ge24_final_email_max_1', () => {
+  probe('endpoint_ge24_single_refund_email', () => {
     const booking = h.paidBooking(56, '2026-09-11', '12:00', 26 * HOUR_MS);
     const start = Date.parse(h.rowFor(56).current_start_at);
     h.setNow(start - 25 * HOUR_MS);
@@ -648,12 +652,15 @@ function probes(h) {
     h.context.patientCancel_({ postData: { contents: JSON.stringify({ token: booking.cancel }) } });
     h.drain();
     if (h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length !== 0) return false;
+    const atRequest = h.state.mail.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada').length;
     h.state.refundStatusOverride = 'refunded';
     h.context.refundConfirmation_({ parameter: { token: h.rowFor(56).refund_provider_reference } });
     h.context.refundConfirmation_({ parameter: { token: h.rowFor(56).refund_provider_reference } });
     h.state.refundStatusOverride = 'accepted';
     h.drain();
-    return h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1;
+    const afterConfirm = h.state.mail.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada').length;
+    return atRequest === 1 && afterConfirm === 1
+      && h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0;
   });
   // The cross-type guard: a pre-confirmation SESSION_CANCELLED already sent must
   // block a later provider-confirmed PATIENT_CANCELLED from becoming a second
@@ -672,6 +679,37 @@ function probes(h) {
     h.drain();
     const total = h.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length;
     return first === 1 && second === null && total === 1;
+  });
+  probe('endpoint_no_second_email_on_provider_confirmation', () => {
+    const booking = h.paidBooking(59, '2026-09-11', '15:00', 26 * HOUR_MS);
+    const start = Date.parse(h.rowFor(59).current_start_at);
+    h.setNow(start - 25 * HOUR_MS);
+    h.state.mail.length = 0;
+    h.context.patientCancel_({ postData: { contents: JSON.stringify({ token: booking.cancel }) } });
+    h.drain();
+    const atRequest = h.state.mail.length;
+    h.state.refundStatusOverride = 'refunded';
+    h.context.refundConfirmation_({ parameter: { token: h.rowFor(59).refund_provider_reference } });
+    h.state.refundStatusOverride = 'accepted';
+    h.drain();
+    // Exactly one patient email in total, and the provider confirmation added none.
+    return atRequest === 1 && h.state.mail.length === 1
+      && h.state.mail[0].subject === 'Tu solicitud de reembolso fue gestionada';
+  });
+  probe('endpoint_single_patient_communication_guard', () => {
+    const booking = h.paidBooking(60, '2026-09-11', '16:00', 26 * HOUR_MS);
+    const start = Date.parse(h.rowFor(60).current_start_at);
+    h.setNow(start - 25 * HOUR_MS);
+    h.state.mail.length = 0;
+    h.context.patientCancel_({ postData: { contents: JSON.stringify({ token: booking.cancel }) } });
+    h.drain();
+    if (h.state.mail.length !== 1) return false;
+    // Whatever else tries to speak to this patient, the guard refuses.
+    h.context.enqueueRefundRequestedNotification_(h.sheet, h.schema(), h.rowFor(60));
+    h.context.enqueuePatientCancellationNotificationOnce_(h.sheet, h.schema(), h.rowFor(60), 'PATIENT_CANCELLED');
+    h.context.enqueuePatientCancellationNotificationOnce_(h.sheet, h.schema(), h.rowFor(60), 'SESSION_CANCELLED');
+    h.drain();
+    return h.state.mail.length === 1;
   });
   probe('endpoint_past_session_closed', () => {
     const booking = h.paidBooking(57, '2026-09-11', '13:00', 5 * HOUR_MS);
@@ -742,6 +780,17 @@ const MUTATIONS = [
       ]],
     },
     mustFail: ['cross_type_cancellation_email_once'],
+  },
+  {
+    key: 'MUTATION_REFUND_EMAIL_IDEMPOTENCY',
+    label: 'I. remove the single-patient-communication guard',
+    patches: {
+      'Code.js': [[
+        'function patientTerminalNotificationExists_(outboxStore, reservationId) {',
+        'function patientTerminalNotificationExists_(outboxStore, reservationId) {\n  return false;',
+      ]],
+    },
+    mustFail: ['endpoint_single_patient_communication_guard'],
   },
   {
     key: 'MUTATION_NONREFUNDABLE_CALLBACK',

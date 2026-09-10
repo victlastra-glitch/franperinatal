@@ -106,6 +106,10 @@ const cancelledRefunded = render('PATIENT_CANCELLED', refundedRecord, { RESCHEDU
 const cancelledClinicianRefunded = render('CLINICIAN_CANCELLED', refundedRecord, {}, null);
 // A refund-confirmed event whose record is NOT refunded must fail closed to the neutral email.
 const cancelledMisrouted = render('PATIENT_CANCELLED', rejectedRecord, {}, null);
+// The single refund communication, sent when the application accepts the request.
+const refundRequestedRecord = Object.assign({}, baseRecord, { payment_status: 'paid', refund_status: 'refund_requested' });
+const refundRequested = render('REFUND_REQUESTED', refundRequestedRecord, { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN }, null);
+const refundRequestedPending = render('REFUND_REQUESTED', pendingRecord, {}, null);
 const internal = render('REFUND_FAILED_MANUAL_REVIEW', rejectedRecord, {}, null);
 const internalTbd = render('REFUND_FAILED_MANUAL_REVIEW', Object.assign({}, baseRecord, {
   payment_status: 'paid', refund_status: 'manual_review', refund_last_error_code: 'BUSINESS_POLICY_TBD',
@@ -123,6 +127,8 @@ const patientStates = {
   PATIENT_CANCELLED_REFUNDED: cancelledRefunded,
   CLINICIAN_CANCELLED_REFUNDED: cancelledClinicianRefunded,
   PATIENT_CANCELLED_MISROUTED: cancelledMisrouted,
+  REFUND_REQUESTED: refundRequested,
+  REFUND_REQUESTED_PENDING: refundRequestedPending,
 };
 const allStates = Object.assign({}, patientStates, { REFUND_FAILED_MANUAL_REVIEW: internal, REFUND_FAILED_TBD: internalTbd });
 
@@ -373,6 +379,37 @@ for (const [name, rendered] of Object.entries(REFUND_CONFIRMED)) {
   check(body.includes('\nREEMBOLSO\n' + REFUND_COPY), name + ': text/plain carries the labelled refund section');
   check(!/✔|✅|💸|🎉/.test(html), name + ': no icon on the refund block');
 }
+// ---------------------------------------------------------------------------
+// The single refund communication: confirms the REQUEST, never the settlement.
+// ---------------------------------------------------------------------------
+const SETTLEMENT_CLAIM = /reembolso fue procesado|reembolso fue confirmado|reembolso fue completado|dinero ya fue reembolsado|ya fue reembolsado/i;
+for (const [name, rendered] of Object.entries({ REQUESTED: refundRequested, PENDING: refundRequestedPending })) {
+  const html = rendered.htmlBody; const body = rendered.body; const both = html + '\n' + body;
+  check(rendered.subject === 'Tu solicitud de reembolso fue gestionada', name + ': subject confirms the request');
+  check(html.includes('>SOLICITUD DE REEMBOLSO<'), name + ': eyebrow is SOLICITUD DE REEMBOLSO');
+  check(html.includes('>Tu solicitud de reembolso fue gestionada.<'), name + ': H1 confirms the request was handled');
+  check(both.includes('El abono puede tardar hasta 10 días hábiles en verse reflejado, según tu banco o emisor.'),
+    name + ': carries the approved 10-business-day copy verbatim');
+  check(!SETTLEMENT_CLAIM.test(both), name + ': never claims the money has already settled');
+  check(html.includes('>Fecha</td>') && html.includes('>miércoles 16 de septiembre de 2026<')
+    && html.includes('>Hora</td>') && html.includes('>11:00 (Chile)<'),
+    name + ': the session date and time are secondary context');
+  check(primaryCount(html) === 0 && !html.includes('color:#FFFFFF;">'), name + ': no primary CTA');
+  check(html.includes('>AGENDAR NUEVA SESIÓN</a>') && html.includes('href="https://franciscabustos.cl/reserva"')
+    && (html.match(/min-height:48px/g) || []).length === 1,
+    name + ': re-booking is the single quiet secondary action');
+  check(!/meet\.google\.com|ENTRAR A LA SESIÓN/i.test(both), name + ': hides Meet');
+  check(!/manage\.html|open=reschedule|open=cancel|REAGENDAR SESIÓN|CANCELAR SESIÓN|[a-z]{64}/.test(both),
+    name + ': carries no management link or token');
+  check(!/\$50\.000|(?<!\d)50000(?!\d)/.test(both) && !/>Modalidad<\/td>|>Duración<\/td>|>Valor<\/td>/.test(html),
+    name + ': shows no value, modality or duration');
+  check(!/\bflow\b|commerce.?order|provider.?reference|refund_status|BUSINESS_POLICY_TBD|PROVIDER_REFUND|REFUND_CREATE/i.test(both),
+    name + ': no Flow vocabulary and no internal codes');
+  check(body.includes('Agendar nueva sesión: https://franciscabustos.cl/reserva')
+    && body.includes('Fecha: miércoles 16 de septiembre de 2026') && body.includes('Hora: 11:00 (Chile)'),
+    name + ': text/plain is equivalent');
+}
+
 check(cancelledMisrouted.subject === 'Tu sesión fue cancelada' && !cancelledMisrouted.htmlBody.includes('REEMBOLSO'), 'a refund-confirmed event on a non-REFUNDED record renders the neutral email (fail-closed)');
 
 // ---------------------------------------------------------------------------
@@ -456,6 +493,7 @@ const artifacts = {
   'session-clinician-change': clinicianChange,
   'session-cancelled': cancelled,
   'session-cancelled-refunded': cancelledRefunded,
+  'refund-requested': refundRequested,
   'internal-manual-review': internal,
 };
 for (const [base, rendered] of Object.entries(artifacts)) {

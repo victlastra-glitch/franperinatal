@@ -874,9 +874,26 @@ function terminalCancellationNotificationNeeded_(record) {
     || refund === LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
 }
 
+/**
+ * A paid cancellation whose refund the application has just accepted and handed
+ * to the provider owes the patient exactly ONE refund communication, sent now —
+ * at request time, not at provider-confirmation time. It confirms that the
+ * request was handled; it makes no claim that the money has settled.
+ */
+function refundRequestedNotificationNeeded_(record) {
+  if (!record) return false;
+  if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
+  const refund = String(record.refund_status || '');
+  // Accepted by the application: handed to the provider (requested) or already
+  // in flight (pending). Both mean the request itself is settled on our side.
+  return refund === LIFECYCLE.REFUND_STATUS.REQUESTED
+    || refund === LIFECYCLE.REFUND_STATUS.PENDING;
+}
+
 function enqueueTerminalCancellationNotificationBestEffort_(deps, record) {
   if (!deps || typeof deps.enqueueNotification !== 'function') return;
-  if (!terminalCancellationNotificationNeeded_(record)) return;
+  if (!terminalCancellationNotificationNeeded_(record)
+    && !refundRequestedNotificationNeeded_(record)) return;
   try { deps.enqueueNotification(record); } catch (_) {}
 }
 

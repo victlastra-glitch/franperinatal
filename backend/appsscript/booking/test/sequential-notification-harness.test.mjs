@@ -348,36 +348,45 @@ check(record().payment_status === 'paid' && record().patient_reschedule_count ==
   && record().refund_status === 'refund_pending' && cancel.refund === 'requested',
   'cancel keeps historical payment, quota=1, and requests the full Flow refund once');
 
-// Nothing reaches the patient while the refund is pending.
+// A: the single refund communication is sent when the application accepts the
+// request, not when the provider later confirms.
 mailBodies = [];
-check(drainOutbox(Date.parse('2026-09-03T17:49:00.000Z')).ok
-  && mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'no patient cancellation email is queued while the refund is pending');
+const sentRequest = drainOutbox(Date.parse('2026-09-03T17:49:00.000Z'));
+check(sentRequest.ok, 'refund-request notifications are processed');
+const refundMail = mailBodies.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada');
+check(refundMail.length === 1, 'REFUND_REQUEST_PATIENT_EMAIL_COUNT=1 at request time');
+check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'the neutral cancellation email is not also sent for a refundable cancellation');
+assertChileTime(refundMail[0].body, '16:00', 'refund request shows Chile local appointment context');
+check(refundMail[0].body.includes('El abono puede tardar hasta 10 días hábiles en verse reflejado')
+  && !/El reembolso fue procesado|reembolso fue confirmado|Tu reembolso fue completado/i.test(refundMail[0].body)
+  && !/\$50\.000|Modalidad:|Duración:/.test(refundMail[0].body)
+  && refundMail[0].body.includes('Agendar nueva sesión: ')
+  && !refundMail[0].body.includes('Entrar a la sesión:')
+  && !/meet\.google\.com/i.test(refundMail[0].body)
+  && !refundMail[0].body.includes('Reagendar:')
+  && !refundMail[0].body.includes('Cancelar:'),
+  'the refund email confirms the request without claiming settlement, no Meet, no value, no CTAs');
 
+// B: the provider confirmation adds no second patient email.
 context.refundConfirmation_({ parameter: { token: record().refund_provider_reference } });
 check(record().refund_status === 'refunded' && record().booking_status === 'cancelled',
   'provider confirmation completes the refund and the cancellation');
-check(outboxRows.some((row) => row.reservation_id === record().reservation_id && row.event_type === 'PATIENT_CANCELLED'),
-  'provider confirmation queues the single final PATIENT_CANCELLED notification');
-
-const cancelKey = String(outboxRows.find((row) => row.reservation_id === record().reservation_id
-  && row.event_type === 'PATIENT_CANCELLED').logical_key);
-
+check(!outboxRows.some((row) => row.reservation_id === record().reservation_id
+  && row.event_type === 'PATIENT_CANCELLED'),
+  'provider confirmation queues NO patient cancellation notification');
 mailBodies = [];
-const sentCancel = drainOutbox(Date.parse('2026-09-03T17:50:00.000Z'));
-check(sentCancel.ok && sentCancel.processed >= 1, 'cancellation notifications are processed');
-const cancelMail = mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada');
-check(cancelMail, 'cancellation email sent once');
-assertChileTime(cancelMail.body, '16:00', 'cancellation shows Chile local appointment context');
-check(cancelMail.body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
-  && cancelMail.body.includes('hasta 10 días hábiles')
-  && !/\$50\.000|Modalidad:|Duración:/.test(cancelMail.body)
-  && cancelMail.body.includes('Agendar nueva sesión: ')
-  && !cancelMail.body.includes('Entrar a la sesión:')
-  && !/meet\.google\.com/i.test(cancelMail.body)
-  && !cancelMail.body.includes('Reagendar:')
-  && !cancelMail.body.includes('Cancelar:'),
-  'final cancellation carries the approved refund copy, no Meet, no value, no CTAs');
+drainOutbox(Date.parse('2026-09-03T17:50:00.000Z'));
+check(mailBodies.length === 0, 'REFUND_CONFIRMED_ADDITIONAL_PATIENT_EMAIL_COUNT=0');
+
+// C/F: a duplicate callback and a replay add nothing either.
+context.refundConfirmation_({ parameter: { token: record().refund_provider_reference } });
+mailBodies = [];
+drainOutbox(Date.parse('2026-09-03T17:51:00.000Z'));
+check(mailBodies.length === 0, 'DUPLICATE_CALLBACK_ADDITIONAL_PATIENT_EMAIL_COUNT=0');
+check(outboxRows.filter((row) => row.reservation_id === record().reservation_id
+  && row.event_type === 'REFUND_REQUESTED').length === 1,
+  'exactly one refund communication exists for the reservation across replays');
 mailBodies = [];
 check(drainOutbox(Date.parse('2026-09-03T17:51:00.000Z')).processed === 0 && mailBodies.length === 0,
   'cancellation notification replay does not resend');
@@ -388,7 +397,9 @@ context.refundConfirmation_({ parameter: { token: record().refund_provider_refer
 mailBodies = [];
 check(drainOutbox(Date.parse('2026-09-03T17:52:00.000Z')).ok && mailBodies.length === 0
   && outboxRows.filter((row) => row.reservation_id === record().reservation_id
-    && row.event_type === 'PATIENT_CANCELLED').length === 1,
+    && row.event_type === 'REFUND_REQUESTED').length === 1
+  && !outboxRows.some((row) => row.reservation_id === record().reservation_id
+    && row.event_type === 'PATIENT_CANCELLED'),
   'callback replay keeps FRANCISCA_PATIENT_EMAIL_COUNT_MAX=1');
 worker.enqueueLifecycleNotification_(sheet, schema(), record(), 'SESSION_CANCELLED');
 check(mailBodies.length === 0, 'same logical cancellation enqueue does not duplicate');

@@ -48,6 +48,7 @@ var EMAIL_V4_PREHEADER = Object.freeze({
   rescheduled: 'Revisa tu nueva fecha y el enlace de la sesión.',
   cancelled: 'La hora quedó liberada. Puedes agendar una nueva sesión cuando quieras.',
   cancelledRefunded: 'El reembolso fue procesado al mismo medio de pago.',
+  refundRequested: 'Recibimos tu solicitud de reembolso y ya fue gestionada.',
   internal: 'Aviso interno. No es confirmación de reembolso al paciente.',
   generic: 'Actualización operativa de tu reserva.',
 });
@@ -56,6 +57,12 @@ var EMAIL_V4_PREHEADER = Object.freeze({
 // follow-up alike; it makes no claim about which session this is.
 var EMAIL_V4_SESSION_COPY = 'No necesitas preparar nada especial para la sesión. '
   + 'Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';
+
+// Approved copy for the single refund communication. It confirms that the
+// REQUEST was handled and never claims the money has settled: the provider may
+// still take days, and the patient receives no second email either way.
+var EMAIL_V4_REFUND_REQUESTED_COPY = 'El abono puede tardar hasta 10 días hábiles en verse '
+  + 'reflejado, según tu banco o emisor.';
 
 // Approved refund copy. Rendered only once the provider has confirmed the
 // refund as REFUNDED, never before.
@@ -132,7 +139,7 @@ function lifecycleNotificationSubject_(eventType, dateParts) {
     || eventType === LIFECYCLE.NOTIFICATION_TYPE.SESSION_CANCELLED) {
     return 'Tu sesión fue cancelada';
   }
-  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_REQUESTED) return 'Solicitud de reembolso en curso';
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_REQUESTED) return 'Tu solicitud de reembolso fue gestionada';
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_COMPLETED) return 'Reembolso completado';
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW) {
     return 'Acción requerida: la reserva necesita revisión manual';
@@ -148,6 +155,7 @@ function lifecycleEmailV4Kind_(eventType) {
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.PATIENT_CANCELLED
     || eventType === LIFECYCLE.NOTIFICATION_TYPE.CLINICIAN_CANCELLED
     || eventType === LIFECYCLE.NOTIFICATION_TYPE.SESSION_CANCELLED) return 'cancelled';
+  if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_REQUESTED) return 'refund_requested';
   if (eventType === LIFECYCLE.NOTIFICATION_TYPE.REFUND_FAILED_MANUAL_REVIEW) return 'internal';
   return 'generic';
 }
@@ -667,7 +675,28 @@ function renderLifecycleEmailHtml_(input) {
     });
   }
 
-  // Dormant operational states (REFUND_REQUESTED / REFUND_COMPLETED / unknown).
+  if (kind === 'refund_requested') {
+    // The request is the completed job. No primary CTA, no Flow vocabulary, no
+    // internal codes, and no claim that the money has already been returned.
+    const refundRows = [];
+    if (parts.date) refundRows.push(['Fecha', parts.date]);
+    if (parts.time) refundRows.push(['Hora', parts.time + ' (Chile)']);
+    return emailV4Document_({
+      title: subject,
+      preheader: EMAIL_V4_PREHEADER.refundRequested,
+      rows: emailV4Header_()
+        + emailV4Eyebrow_('SOLICITUD DE REEMBOLSO', EMAIL_V4.cream, EMAIL_V4.charcoal)
+        + emailV4Headline_('Tu solicitud de reembolso fue gestionada.')
+        + emailV4Body_(escapeEmailText_(emailV4Greeting_(record)), 24, EMAIL_V4.charcoal)
+        + emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_REQUESTED_COPY), 16)
+        + emailV4Details_(refundRows)
+        + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 32)
+        + emailV4SecondaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN', 24)
+        + emailV4Footer_(),
+    });
+  }
+
+  // Dormant operational states (REFUND_COMPLETED / unknown).
   // V4 chrome, existing copy, no invented policy language, no CTA.
   return emailV4Document_({
     title: subject,
@@ -721,6 +750,18 @@ function renderLifecycleEmailText_(input) {
     review.metadataRows.forEach(function(row) { lines.push(row[0] + ': ' + row[1]); });
     lines.push('', EMAIL_V4_BRAND.wordmark + ' · ' + EMAIL_V4_BRAND.descriptor + ' · AVISO INTERNO');
     return lines.join('\n');
+  }
+
+  if (kind === 'refund_requested') {
+    const lines = emailV4TextHeader_();
+    lines.push('SOLICITUD DE REEMBOLSO', '', emailV4Greeting_(record), '');
+    lines.push('Tu solicitud de reembolso fue gestionada.', '');
+    lines.push(EMAIL_V4_REFUND_REQUESTED_COPY, '');
+    if (parts.date) lines.push('Fecha: ' + parts.date);
+    if (parts.time) lines.push('Hora: ' + parts.time + ' (Chile)');
+    lines.push('', EMAIL_V4_CANCELLED_HUMAN_COPY);
+    lines.push('', 'Agendar nueva sesión: ' + emailV4BookingUrl_(origin));
+    return lines.concat(emailV4TextFooter_()).join('\n');
   }
 
   if (kind === 'cancelled') {
@@ -783,6 +824,7 @@ var __EMAIL_TEMPLATE_TEST_EXPORTS__ = Object.freeze({
   EMAIL_V4_PREHEADER: EMAIL_V4_PREHEADER,
   EMAIL_V4_SESSION_COPY: EMAIL_V4_SESSION_COPY,
   EMAIL_V4_REFUND_COPY: EMAIL_V4_REFUND_COPY,
+  EMAIL_V4_REFUND_REQUESTED_COPY: EMAIL_V4_REFUND_REQUESTED_COPY,
   EMAIL_V4_CANCELLED_HUMAN_COPY: EMAIL_V4_CANCELLED_HUMAN_COPY,
   EMAIL_V4_INTERNAL_DISCLAIMER: EMAIL_V4_INTERNAL_DISCLAIMER,
   emailV4ManagementPolicyCopy_: emailV4ManagementPolicyCopy_,

@@ -480,14 +480,19 @@ const reentered = context.beginRefundForPaidCancellation_(
 check(refundCreateCalls === refundCreatesBeforeReenter && reentered && reentered.replay === true,
   'R5 REFUND_CREATE_EFFECTIVE_MAX=1 — re-entering the refund creates no second provider refund');
 
-// 7 refund pending => zero patient emails
+// A: the accepted refund request is the single patient refund communication
 mailBodies = [];
 drain();
+const requestMail = mailBodies.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada');
+check(requestMail.length === 1, 'R7 REFUND_REQUEST_PATIENT_EMAIL_COUNT=1 at request time');
+check(requestMail[0].body.includes('El abono puede tardar hasta 10 días hábiles en verse reflejado')
+  && !/El reembolso fue procesado|reembolso fue confirmado|reembolso fue completado/i.test(requestMail[0].body),
+  'R7 the refund email confirms the request and claims no settlement');
 check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'R7 REFUND_PENDING_PATIENT_EMAIL_COUNT=0');
+  'R7 no neutral cancellation email for a refundable cancellation');
 check(outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
   && ['SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'].includes(row.event_type)).length === 0,
-  'R7 no patient cancellation notification exists before provider confirmation');
+  'R7 no patient cancellation notification exists at any point');
 
 // 10/11 provider-confirmed REFUNDED => exactly one final email with the copy
 refundStatusOverride = 'refunded';
@@ -497,14 +502,13 @@ refundStatusOverride = 'accepted';
 check(byKey(6).refund_status === 'refunded' && byKey(6).booking_status === 'cancelled',
   'R provider confirmation completes the refund and the cancellation');
 drain();
-const finalCancelMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada');
-check(finalCancelMail.length === 1, 'R10 REFUND_CONFIRMED_PATIENT_EMAIL_COUNT=1');
-check(finalCancelMail[0].body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
-  && finalCancelMail[0].body.includes('hasta 10 días hábiles')
-  && /REEMBOLSO/.test(finalCancelMail[0].htmlBody || ''),
-  'R11 the final email carries the exact approved REEMBOLSO copy');
-check(!/\$50\.000|Modalidad:|Duración:|meet\.google\.com/.test(finalCancelMail[0].body),
-  'R11 the final email shows no value, modality, duration or Meet');
+check(mailBodies.length === 0, 'R10 REFUND_CONFIRMED_ADDITIONAL_PATIENT_EMAIL_COUNT=0');
+check(!outboxRows.some((row) => row.reservation_id === byKey(6).reservation_id
+  && ['PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'].includes(row.event_type)),
+  'R11 provider confirmation queues no patient notification at all');
+check(outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
+  && row.event_type === 'REFUND_REQUESTED').length === 1,
+  'R11 exactly one refund communication exists for the reservation');
 
 // 12 callback replay keeps the count at one
 mailBodies = [];
@@ -512,14 +516,17 @@ refundStatusOverride = 'refunded';
 context.refundConfirmation_({ parameter: { token: byKey(6).refund_provider_reference } });
 refundStatusOverride = 'accepted';
 drain();
-check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0
+check(mailBodies.length === 0
   && outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
-    && row.event_type === 'PATIENT_CANCELLED').length === 1,
+    && row.event_type === 'REFUND_REQUESTED').length === 1,
   'R12 callback replay keeps FRANCISCA_PATIENT_EMAIL_COUNT_MAX=1');
-// 14 there is no separate refund-success email type
+// 14 the refund speaks exactly once, at request time, and never as a success claim
 check(outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
-  && ['REFUND_COMPLETED', 'REFUND_REQUESTED'].includes(row.event_type)).length === 0,
-  'R14 no separate Francisca refund-success notification is emitted');
+  && row.event_type === 'REFUND_COMPLETED').length === 0,
+  'R14 no Francisca refund-success notification is emitted');
+check(outboxRows.filter((row) => row.reservation_id === byKey(6).reservation_id
+  && row.event_type === 'REFUND_REQUESTED').length === 1,
+  'R14 the refund is communicated exactly once, at request time');
 mailBodies = [];
 
 const createdG = createBooking(8, '16:00');
@@ -613,8 +620,8 @@ const failReplay = context.patientCancel_({ postData: { contents: JSON.stringify
 check(failReplay.ok && failReplay.replay === true && refundCreateCalls === refundCreatesBeforeFail + 1,
   'R6 replay after a failed refund creates no second refund');
 
-// Once the refund is eventually provider-confirmed, the single final email is
-// emitted exactly once.
+// Even when the refund is only provider-confirmed after an earlier failure, the
+// confirmation still sends nothing: the patient was already told once.
 const recoveredToken = 'REFUNDTOKENRECOVERED000000001';
 store.update(byKey(22), { refund_provider_reference: recoveredToken });
 refundStatusOverride = 'refunded';
@@ -623,10 +630,11 @@ context.refundConfirmation_({ parameter: { token: recoveredToken } });
 refundStatusOverride = 'accepted';
 check(byKey(22).refund_status === 'refunded', 'R eventual provider confirmation reaches REFUNDED');
 drain();
-const recoveredMail = mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada');
-check(recoveredMail.length === 1
-  && recoveredMail[0].body.includes('El reembolso fue procesado al mismo medio de pago utilizado.'),
-  'R after recovery the single final cancellation email is sent exactly once');
+check(mailBodies.length === 0,
+  'R after recovery the provider confirmation still sends no patient email');
+check(outboxRows.filter((row) => row.reservation_id === byKey(22).reservation_id
+  && ['PATIENT_CANCELLED', 'CLINICIAN_CANCELLED', 'REFUND_COMPLETED'].includes(row.event_type)).length === 0,
+  'R after recovery no patient refund-success notification is queued');
 mailBodies = [];
 drain();
 check(mailBodies.length === 0, 'R13 reconciliation/worker replay keeps the patient email count at one');
