@@ -63,6 +63,11 @@ const check = (condition, message) => { assert.ok(condition, message); assertion
 // Synthetic fixtures. Production-canonical values only.
 // ---------------------------------------------------------------------------
 const MEET_URL = 'https://meet.google.com/opaque-meet';
+// Approved FRA-9 presentation copy, restated here as an independent oracle so a
+// silent edit to the template constants fails instead of re-deriving itself.
+const MEET_FALLBACK_LEAD = 'Si el botón no funciona:';
+const MEET_FALLBACK_LABEL = 'Abrir enlace alternativo de Google Meet';
+const REBOOK_LABEL = 'Agendar una nueva sesión';
 const RESCHEDULE_TOKEN = 'r'.repeat(64);
 const CANCEL_TOKEN = 'c'.repeat(64);
 const ORIGINAL_START = '2026-09-16T14:00:00.000Z'; // miércoles 16 de septiembre de 2026, 11:00 (Chile)
@@ -87,6 +92,10 @@ const confirmedFollowup = render('BOOKING_CONFIRMED', Object.assign({}, baseReco
   { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN });
 const confirmedNoMeet = render('BOOKING_CONFIRMED', Object.assign({}, baseRecord, { modality: 'presencial' }),
   { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN }, null);
+// The schema stores no patient name, so every Production send is the nameless
+// path; this record exercises the personalised branch of the existing input.
+const namedRecord = Object.assign({}, baseRecord, { patient_first_name: 'Ana Sofía' });
+const confirmedNamed = render('BOOKING_CONFIRMED', namedRecord, { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN });
 const rescheduled = render('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN });
 // A revoked-but-still-supplied RESCHEDULE token must not resurrect the action.
 const rescheduledLeaky = render('PATIENT_RESCHEDULED', movedRecord, { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN });
@@ -119,6 +128,7 @@ const patientStates = {
   BOOKING_CONFIRMED: confirmed,
   BOOKING_CONFIRMED_FOLLOWUP: confirmedFollowup,
   BOOKING_CONFIRMED_NO_MEET: confirmedNoMeet,
+  BOOKING_CONFIRMED_NAMED: confirmedNamed,
   PATIENT_RESCHEDULED: rescheduled,
   CLINICIAN_RESCHEDULED: clinicianChange,
   SESSION_CANCELLED: cancelled,
@@ -145,6 +155,10 @@ const PRIMARY = 'background-color:#2F3236;border:1px solid #2F3236;border-radius
 const SECONDARY = 'background-color:#FFFCF9;border:1px solid #A89E93;border-radius:2px';
 const TERTIARY_CANCEL = /<a href="[^"]+" target="_blank" class="v4-cancel" style="display:block;padding:14px 12px;line-height:20px;[^"]*color:#8C4F4B;">CANCELAR SESIÓN<\/a>/;
 const primaryCount = (html) => (html.match(/background-color:#2F3236;border:1px solid #2F3236/g) || []).length;
+// Text nodes only. Every tag — and therefore every href attribute — is removed,
+// so this is what the reader actually sees on screen. It is the oracle for "the
+// destination is unchanged but the raw URL is no longer printed".
+const visibleText = (html) => html.replace(/<[^>]*>/g, '\n');
 
 for (const [name, rendered] of Object.entries(allStates)) {
   const html = rendered.htmlBody;
@@ -268,7 +282,8 @@ check(T.emailV4ManagementPolicyCopy_() === POLICY_COPY, 'policy reminder reads t
 {
   const html = confirmed.htmlBody;
   const order = ['FRANCISCA BUSTOS M.', '>TU SESIÓN ESTÁ CONFIRMADA<', '>Tu sesión está confirmada.<', 'Te esperamos el miércoles 16 de septiembre de 2026 a las 11:00.',
-    '>Fecha</td>', '>ENTRAR A LA SESIÓN</a>', '>' + MEET_URL + '</a>', '>REAGENDAR SESIÓN</a>', '>CANCELAR SESIÓN</a>', POLICY_COPY, UNIVERSAL_COPY, '¿Necesitas ayuda?'];
+    '>Fecha</td>', '>ENTRAR A LA SESIÓN</a>', '>' + MEET_FALLBACK_LEAD + '</td>', '>' + MEET_FALLBACK_LABEL + '</a>',
+    '>REAGENDAR SESIÓN</a>', '>CANCELAR SESIÓN</a>', POLICY_COPY, UNIVERSAL_COPY, '¿Necesitas ayuda?'];
   let at = -1;
   for (const needle of order) { const i = html.indexOf(needle); check(i > at, 'confirmed order holds at "' + needle + '"'); at = i; }
   for (const label of ['Fecha', 'Hora', 'Modalidad', 'Duración', 'Valor']) {
@@ -301,9 +316,11 @@ check(confirmedNoMeet.htmlBody.includes('>REAGENDAR SESIÓN</a>') && TERTIARY_CA
   check(html.includes('>TU SESIÓN FUE REAGENDADA<') && html.includes('>Tu sesión fue reagendada.<') && html.includes('Te esperamos en tu nueva fecha.'), 'rescheduled eyebrow, H1, lead');
   check(html.includes('>ANTES<') && html.includes('>NUEVA FECHA<') && html.includes('&#8594;'), 'rescheduled renders ANTES → NUEVA FECHA with a textual arrow');
   check(html.includes('text-decoration:line-through;">miércoles 16 de septiembre de 2026 · 11:00</td>'), 'ANTES is muted and struck through');
-  check(html.includes('font-size:20px;font-weight:600;line-height:1.4;color:#2F3236;">miércoles 16 de septiembre de 2026 · 15:00</td>'), 'NUEVA FECHA carries the weight (20/600)');
-  check(html.indexOf('>ANTES<') < html.indexOf('>Fecha</td>'), 'comparison comes before the detail block');
-  check(html.includes('>ENTRAR A LA SESIÓN</a>') && html.includes('>' + MEET_URL + '</a>') && primaryCount(html) === 1, 'rescheduled keeps the single Meet primary and its fallback');
+  check(html.includes('font-size:20px;font-weight:600;line-height:1.4;color:#2F3236;">miércoles 16 de septiembre de 2026 · 15:00 (Chile)</td>'),
+    'NUEVA FECHA carries the weight (20/600) and owns the explicit Chile zone');
+  check(html.indexOf('>ANTES<') < html.indexOf('>Modalidad</td>'), 'comparison comes before the detail block');
+  check(html.includes('>ENTRAR A LA SESIÓN</a>') && html.includes('>' + MEET_FALLBACK_LABEL + '</a>') && primaryCount(html) === 1,
+    'rescheduled keeps the single Meet primary and its named fallback');
   check(TERTIARY_CANCEL.test(html), 'rescheduled offers CANCELAR as the tertiary link');
   check(!html.includes(SECONDARY), 'rescheduled has no secondary button at all');
   check(!html.includes(POLICY_COPY) && !rescheduled.body.includes(POLICY_COPY), 'policy reminder is confirmation-only');
@@ -342,13 +359,14 @@ for (const [name, rendered] of Object.entries(Object.assign({}, NEUTRAL_CANCELLE
   check(!/>Modalidad<\/td>|>Duración<\/td>|>Valor<\/td>/.test(html) && !/\$50\.000|(?<!\d)50000(?!\d)/.test(both), name + ': hides modality, duration and value');
   check(!/meet\.google\.com|ENTRAR A LA SESIÓN/i.test(both), name + ': hides Meet');
   check(!/manage\.html|open=reschedule|open=cancel|REAGENDAR SESIÓN|CANCELAR SESIÓN|[a-z]{64}/.test(both), name + ': carries no management link or token');
-  // The cancellation is the completed job: re-booking is a quiet outline action,
-  // never a charcoal primary that reads as conversion recovery.
+  // The cancellation is the completed job: re-booking is a quiet text link,
+  // never a button and never a primary that reads as conversion recovery.
   check(primaryCount(html) === 0 && !html.includes('color:#FFFFFF;">'), name + ': cancelled states have ZERO charcoal primary CTA');
-  check(html.includes('>AGENDAR NUEVA SESIÓN</a>') && html.includes('href="https://franciscabustos.cl/reserva"'), name + ': the re-booking action remains available');
-  const rebook = html.slice(html.lastIndexOf('<table', html.indexOf('>AGENDAR NUEVA SESIÓN</a>')), html.indexOf('>AGENDAR NUEVA SESIÓN</a>'));
-  check(rebook.includes(SECONDARY) && rebook.includes('height="48"') && rebook.includes('min-height:48px;line-height:48px'), name + ': re-booking is the 48px outline secondary');
-  check((html.match(/min-height:48px/g) || []).length === 1, name + ': exactly one action button in the whole email');
+  check(html.includes('>' + REBOOK_LABEL + ' &#8594;</a>') && html.includes('href="https://franciscabustos.cl/reserva"'),
+    name + ': the re-booking action remains available at the same destination');
+  check(!/AGENDAR NUEVA SESIÓN/.test(html) && !html.includes(SECONDARY) && !html.includes('height="48"'),
+    name + ': re-booking is no longer an outline button');
+  check((html.match(/min-height:48px/g) || []).length === 0, name + ': the closed states carry no action button at all');
   check(html.includes(HUMAN_CANCEL_COPY) && rendered.body.includes(HUMAN_CANCEL_COPY), name + ': human copy');
   check(rendered.body.includes('Agendar nueva sesión: https://franciscabustos.cl/reserva') && rendered.body.includes('Fecha: miércoles 16 de septiembre de 2026') && rendered.body.includes('Hora: 11:00 (Chile)'),
     name + ': text/plain is equivalent');
@@ -395,9 +413,9 @@ for (const [name, rendered] of Object.entries({ REQUESTED: refundRequested, PEND
     && html.includes('>Hora</td>') && html.includes('>11:00 (Chile)<'),
     name + ': the session date and time are secondary context');
   check(primaryCount(html) === 0 && !html.includes('color:#FFFFFF;">'), name + ': no primary CTA');
-  check(html.includes('>AGENDAR NUEVA SESIÓN</a>') && html.includes('href="https://franciscabustos.cl/reserva"')
-    && (html.match(/min-height:48px/g) || []).length === 1,
-    name + ': re-booking is the single quiet secondary action');
+  check(html.includes('>' + REBOOK_LABEL + ' &#8594;</a>') && html.includes('href="https://franciscabustos.cl/reserva"')
+    && (html.match(/min-height:48px/g) || []).length === 0,
+    name + ': re-booking is a quiet text link, not a button');
   check(!/meet\.google\.com|ENTRAR A LA SESIÓN/i.test(both), name + ': hides Meet');
   check(!/manage\.html|open=reschedule|open=cancel|REAGENDAR SESIÓN|CANCELAR SESIÓN|[a-z]{64}/.test(both),
     name + ': carries no management link or token');
@@ -428,7 +446,7 @@ check(cancelledMisrouted.subject === 'Tu sesión fue cancelada' && !cancelledMis
   check(body.includes('Pago: Confirmado') && body.includes('Reembolso: Rechazado por el proveedor') && body.includes('Acción: Revisar manualmente. No reintentar automáticamente.')
     && body.includes('Referencia: fran-booking-reservation-synthetic') && body.includes('Código: PROVIDER_REFUND_REJECTED'), 'internal text/plain mirrors the rows');
   check(!/Pago: paid|Reembolso: manual_review|Reembolso: refund_failed/.test(body) && !/>paid<|>manual_review<|>refund_failed</.test(html), 'raw states are never the primary information');
-  check(!html.includes('min-height:48px') && !/AGENDAR NUEVA SESIÓN|ENTRAR A LA SESIÓN|¿Necesitas ayuda\?|wa\.me/.test(html), 'internal alert has no patient CTA and no patient footer');
+  check(!html.includes('min-height:48px') && !/Agendar una nueva sesión|ENTRAR A LA SESIÓN|¿Necesitas ayuda\?|wa\.me/.test(html), 'internal alert has no patient CTA and no patient footer');
   check(html.includes('AVISO INTERNO'), 'internal footer says AVISO INTERNO');
   check(!/en proceso|fue procesado|reembolso confirmado/i.test(html + body), 'internal alert never implies the refund is confirmed or in progress');
   check(internalTbd.htmlBody.includes('>Fuera de la política automática<') && internalTbd.htmlBody.includes('>no intentado<'), 'policy-review variant translates BUSINESS_POLICY_TBD and shows no provider attempt');
@@ -445,6 +463,105 @@ check(cancelledMisrouted.subject === 'Tu sesión fue cancelada' && !cancelledMis
   check(html.includes('href="https://wa.me/56957663038"') && html.includes('href="mailto:hola@franciscabustos.cl"'), 'footer keeps WhatsApp and Email');
   const footer = html.slice(html.lastIndexOf('¿Necesitas ayuda?'));
   check((footer.match(/<tr>/g) || []).length <= 4, 'footer is at most four rows');
+}
+
+// ---------------------------------------------------------------------------
+// FRA-9 visual polish — four bounded presentation refinements.
+// Presentation only: every destination, token, amount and lifecycle rule below
+// is asserted to be the one the approved candidate already shipped.
+// ---------------------------------------------------------------------------
+
+// 1 — Meet fallback: a named link. Same href, no raw URL on screen.
+check(T.EMAIL_V4_MEET_FALLBACK_LEAD === MEET_FALLBACK_LEAD && T.EMAIL_V4_MEET_FALLBACK_LABEL === MEET_FALLBACK_LABEL,
+  'approved Meet fallback copy is the exact string pair');
+for (const [name, rendered] of Object.entries({ CONFIRMED: confirmed, NAMED: confirmedNamed, RESCHEDULED: rescheduled, CLINICIAN: clinicianChange })) {
+  const html = rendered.htmlBody;
+  check(html.includes('>' + MEET_FALLBACK_LEAD + '</td>') && html.includes('>' + MEET_FALLBACK_LABEL + '</a>'),
+    name + ': Meet fallback renders the approved copy pair');
+  check(!/meet\.google\.com/.test(visibleText(html)),
+    name + ': no raw Meet URL is visible anywhere in the rendered text');
+  check(countOf(html, 'href="' + MEET_URL + '"') === 2,
+    name + ': the unchanged Meet href is still on both the primary button and the fallback link');
+  check(html.indexOf('>ENTRAR A LA SESIÓN</a>') < html.indexOf('>' + MEET_FALLBACK_LEAD + '</td>')
+    && html.indexOf('>' + MEET_FALLBACK_LEAD + '</td>') < html.indexOf('>' + MEET_FALLBACK_LABEL + '</a>'),
+    name + ': the fallback still sits under the primary button it explains');
+  check(!html.includes('word-break:break-all'), name + ': the URL-wrapping hack left with the printed URL');
+  check(rendered.body.includes('Entrar a la sesión: ' + MEET_URL),
+    name + ': text/plain keeps the full URL, which is its only usable destination');
+}
+
+// 2 — Reschedule states: the highlight is the single schedule statement.
+for (const [name, rendered] of Object.entries({ PATIENT_RESCHEDULED: rescheduled, LEAKY_TOKEN: rescheduledLeaky, CLINICIAN_RESCHEDULED: clinicianChange })) {
+  const html = rendered.htmlBody;
+  check(html.includes('>NUEVA FECHA<'), name + ': the schedule highlight is rendered');
+  check(!/>Fecha<\/td>|>Hora<\/td>/.test(html), name + ': FECHA/HORA are not repeated under the highlight');
+  check(html.includes('· 15:00 (Chile)</td>'), name + ': the highlight carries the explicit Chile zone it now owns');
+  for (const label of ['Modalidad', 'Duración', 'Valor']) {
+    check(html.includes('>' + label + '</td>'), name + ': the remaining detail row ' + label + ' is kept');
+  }
+  check(html.indexOf('>NUEVA FECHA<') < html.indexOf('>Modalidad</td>'), name + ': the highlight leads the remaining details');
+  check(rendered.body.includes('Fecha: miércoles 16 de septiembre de 2026') && rendered.body.includes('Hora: 15:00 (Chile)'),
+    name + ': text/plain still carries complete, unambiguous date and time');
+}
+// Confirmation renders no highlight, so it keeps its own FECHA/HORA rows.
+check(!confirmed.htmlBody.includes('>NUEVA FECHA<') && confirmed.htmlBody.includes('>Fecha</td>') && confirmed.htmlBody.includes('>Hora</td>'),
+  'confirmation keeps FECHA and HORA: it renders no schedule highlight');
+for (const [name, rendered] of Object.entries({ SESSION_CANCELLED: cancelled, REFUNDED: cancelledRefunded, REFUND_REQUESTED: refundRequested })) {
+  check(rendered.htmlBody.includes('>Fecha</td>') && rendered.htmlBody.includes('>Hora</td>'),
+    name + ': date and time are untouched outside the reschedule states');
+}
+
+// 3 — Re-booking after a closed state: quiet link, never a button or a CTA.
+check(T.EMAIL_V4_REBOOK_LABEL === REBOOK_LABEL, 'approved re-booking label is the exact string');
+const REBOOK_ANCHOR = '>' + REBOOK_LABEL + ' &#8594;</a>';
+for (const [name, rendered] of Object.entries({
+  SESSION_CANCELLED: cancelled, REJECTED_REFUND: cancelledRejected, LATE: cancelledLate, MISROUTED: cancelledMisrouted,
+  PATIENT_CANCELLED_REFUNDED: cancelledRefunded, CLINICIAN_CANCELLED_REFUNDED: cancelledClinicianRefunded,
+  REFUND_REQUESTED: refundRequested, REFUND_REQUESTED_PENDING: refundRequestedPending,
+})) {
+  const html = rendered.htmlBody;
+  check(html.includes(REBOOK_ANCHOR), name + ': re-booking renders as the approved sentence-case link with an arrow');
+  check(countOf(html, 'href="https://franciscabustos.cl/reserva"') === 1,
+    name + ': the re-booking destination is unchanged and appears exactly once');
+  check(primaryCount(html) === 0 && !html.includes(SECONDARY) && !html.includes('height="48"') && !html.includes('min-height:48px'),
+    name + ': re-booking is neither a primary nor an outline button');
+  check(!/AGENDAR NUEVA SESIÓN/.test(html) && !/text-transform:uppercase;[^"]*">Agendar/.test(html),
+    name + ': re-booking is not shouted in uppercase button type');
+  check(html.indexOf(HUMAN_CANCEL_COPY) < html.indexOf(REBOOK_ANCHOR) && html.indexOf(REBOOK_ANCHOR) < html.indexOf('¿Necesitas ayuda?'),
+    name + ': re-booking sits after the supportive copy and before the footer');
+  check(html.includes('display:block;padding:14px 0;line-height:20px'), name + ': the quiet link keeps a 48px block target');
+  check(rendered.body.includes('Agendar nueva sesión: https://franciscabustos.cl/reserva'),
+    name + ': text/plain re-booking destination is unchanged');
+}
+
+// 4 — No generic greeting; the personal one survives when a name is supplied.
+check(T.emailV4Greeting_({}) === '' && T.emailV4Greeting_({ patient_first_name: '   ' }) === ''
+  && T.emailV4Greeting_(null) === '', 'a missing or blank name yields no greeting at all');
+check(T.emailV4Greeting_({ patient_first_name: 'Ana Sofía' }) === 'Hola, Ana'
+  && T.emailV4Greeting_({ patient_name: 'Ana Sofía Rojas' }) === 'Hola, Ana',
+  'a supplied name still yields the personal greeting from the first token');
+for (const [name, rendered] of Object.entries(allStates)) {
+  if (name === 'BOOKING_CONFIRMED_NAMED') continue;
+  check(!/(^|\n)\s*Hola,\s*(\n|$)/.test(visibleText(rendered.htmlBody)) && !/^Hola,$/m.test(rendered.body),
+    name + ': the bare "Hola," greeting is never rendered');
+  check(!/;"><\/td>/.test(rendered.htmlBody), name + ': no empty body row is left where the greeting used to be');
+}
+{
+  const leadRow = (html, needle) => html.slice(html.lastIndexOf('<tr><td', html.indexOf(needle)), html.indexOf(needle));
+  const html = confirmedNamed.htmlBody;
+  check(html.includes('>Hola, Ana</td>') && confirmedNamed.body.includes('\nHola, Ana\n'),
+    'a named record renders the personal greeting in html and text');
+  check(html.indexOf('>Tu sesión está confirmada.<') < html.indexOf('>Hola, Ana</td>')
+    && html.indexOf('>Hola, Ana</td>') < html.indexOf('Te esperamos el'),
+    'the personal greeting sits between the H1 and the lead');
+  // Identical rhythm under the H1 either way: the lead absorbs the greeting's top padding.
+  check(/padding:24px 28px 0 28px/.test(leadRow(confirmed.htmlBody, 'Te esperamos el')),
+    'nameless confirmation: the lead absorbs the greeting top padding (24)');
+  check(/padding:16px 28px 0 28px/.test(leadRow(html, 'Te esperamos el')),
+    'named confirmation: the greeting takes 24 and the lead keeps 16');
+  check(confirmedNamed.subject === confirmed.subject
+    && countOf(html, 'href="' + MEET_URL + '"') === countOf(confirmed.htmlBody, 'href="' + MEET_URL + '"'),
+    'the greeting changes nothing but the greeting');
 }
 
 // ---------------------------------------------------------------------------
@@ -469,8 +586,22 @@ const MUTATIONS = [
     (ctx) => { const r = renderWith(ctx)('PATIENT_CANCELLED', rejectedRecord, {}, null); return /REEMBOLSO/.test(r.htmlBody + r.body) || ECONOMIC.test(r.htmlBody + r.body) ? 'refund_claimed_on_rejected_record' : null; }],
   ['MUTATION_REFUND_PROMOTED_TO_H1', [["emailV4Headline_('Tu sesión fue cancelada.')", "emailV4Headline_('Tu reembolso fue confirmado.')"]],
     (ctx) => { const r = renderWith(ctx)('PATIENT_CANCELLED', refundedRecord, {}, null); return !r.htmlBody.includes('>Tu sesión fue cancelada.<') ? 'refund_promoted_over_cancellation_h1' : null; }],
-  ['MUTATION_CANCELLED_PRIMARY_REBOOK_CTA', [["emailV4SecondaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN', 24)", "emailV4PrimaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN')"]],
+  ['MUTATION_CANCELLED_PRIMARY_REBOOK_CTA', [["emailV4QuietActionRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL, 8)", "emailV4PrimaryRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL)"]],
     (ctx) => { const r = renderWith(ctx)('SESSION_CANCELLED', pendingRecord, {}, null); return primaryCount(r.htmlBody) > 0 ? 'charcoal_primary_on_cancelled' : null; }],
+  // --- FRA-9 visual polish: one mutation per refinement --------------------
+  ['MUTATION_RAW_MEET_URL_PRINTED', [
+    [";text-decoration:underline;\">' + EMAIL_V4_MEET_FALLBACK_LABEL + '</a></td></tr>'", ";text-decoration:underline;\">' + escapeEmailText_(meetUrl) + '</a></td></tr>'"]],
+    (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return /meet\.google\.com/.test(visibleText(r.htmlBody)) ? 'raw_meet_url_visible_again' : null; }],
+  ['MUTATION_DUPLICATE_SCHEDULE_ROWS', [["const includeSchedule = !highlight;", "const includeSchedule = true;"]],
+    (ctx) => { const r = renderWith(ctx)('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN }); return r.htmlBody.includes('>NUEVA FECHA<') && />Fecha<\/td>/.test(r.htmlBody) ? 'fecha_hora_duplicated_under_highlight' : null; }],
+  ['MUTATION_SCHEDULE_HIGHLIGHT_DROPS_TIME_ZONE', [["const scheduleValue = parts.date + ' · ' + parts.time + ' (Chile)';", "const scheduleValue = parts.date + ' · ' + parts.time;"]],
+    (ctx) => { const r = renderWith(ctx)('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN }); return !/\(Chile\)/.test(r.htmlBody) ? 'reschedule_html_lost_the_time_zone' : null; }],
+  ['MUTATION_REBOOK_BUTTON_RESTORED', [["emailV4QuietActionRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL, 8)", "emailV4SecondaryRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL, 24)"]],
+    (ctx) => { const r = renderWith(ctx)('REFUND_REQUESTED', refundRequestedRecord, {}, null); return /min-height:48px/.test(r.htmlBody) ? 'rebooking_became_a_button_again' : null; }],
+  ['MUTATION_GENERIC_GREETING_RESTORED', [["return first ? 'Hola, ' + first : '';", "return first ? 'Hola, ' + first : 'Hola,';"]],
+    (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return /(^|\n)\s*Hola,\s*(\n|$)/.test(visibleText(r.htmlBody)) ? 'bare_hola_greeting_restored' : null; }],
+  ['MUTATION_NAMED_GREETING_DROPPED', [["return first ? 'Hola, ' + first : '';", "return '';"]],
+    (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', namedRecord, { CANCEL: CANCEL_TOKEN }); return !r.htmlBody.includes('>Hola, Ana</td>') ? 'personal_greeting_lost_when_name_exists' : null; }],
   ['MUTATION_REMOTE_FONT_DEPENDENCY', [["+ emailV4Style_()\n    + '</head>'", "+ emailV4Style_()\n    + '<link href=\"https://fonts.googleapis.com/css2?family=Fraunces\" rel=\"stylesheet\">'\n    + '</head>'"]],
     (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return /fonts\.googleapis\.com|<link/i.test(r.htmlBody) ? 'remote_font_loaded' : null; }],
   ['MUTATION_LABEL_BELOW_FLOOR', [["font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.16em;", "font-size:10px;font-weight:600;line-height:1.4;letter-spacing:.16em;"]],

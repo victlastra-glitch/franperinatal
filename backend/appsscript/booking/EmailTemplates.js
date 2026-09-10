@@ -72,6 +72,10 @@ var EMAIL_V4_REFUND_COPY = 'El reembolso fue procesado al mismo medio de pago ut
 var EMAIL_V4_CANCELLED_HUMAN_COPY = 'Si necesitas apoyo o tienes dudas, puedes escribirnos. '
   + 'Estamos aquí para acompañarte cuando lo necesites.';
 
+// Re-booking label for the closed states. Sentence case on purpose: it is an
+// offer in the flow of the copy, not an instruction shouted from a button.
+var EMAIL_V4_REBOOK_LABEL = 'Agendar una nueva sesión';
+
 // Approved policy reminder. Rendered on the confirmation only, immediately under
 // the REAGENDAR / CANCELAR actions it explains. The hour count is read from the
 // canonical policy constant so the copy cannot drift from the enforced cutoff.
@@ -203,12 +207,36 @@ function emailV4RefundConfirmed_(eventType, record) {
 
 /**
  * The reservation schema stores no patient name (deliberate minimisation), so
- * the greeting degrades to "Hola," unless a name is present on the record.
+ * most sends have no name to greet. A bare "Hola," addressed nobody and spent a
+ * line of vertical space before the message, so it is no longer rendered at all:
+ * the email opens on the H1 and goes straight to the lead. When the existing
+ * template input does carry a name, the personal greeting renders as before. No
+ * name is stored or collected to satisfy this — the input is unchanged.
  */
 function emailV4Greeting_(record) {
   const raw = String(record && (record.patient_first_name || record.patient_name) || '').trim();
   const first = raw ? raw.split(/\s+/)[0].slice(0, 40) : '';
-  return first ? 'Hola, ' + first : 'Hola,';
+  return first ? 'Hola, ' + first : '';
+}
+
+/** Greeting row, or nothing at all. Never a row containing only whitespace. */
+function emailV4GreetingRow_(record) {
+  const greeting = emailV4Greeting_(record);
+  return greeting ? emailV4Body_(escapeEmailText_(greeting), 24, EMAIL_V4.charcoal) : '';
+}
+
+/**
+ * The lead absorbs the greeting's top padding when there is no greeting, so the
+ * rhythm under the H1 is identical whether or not a name was available.
+ */
+function emailV4LeadTop_(record) {
+  return emailV4Greeting_(record) ? 16 : 24;
+}
+
+/** text/plain equivalent: the greeting and its blank line appear or neither does. */
+function emailV4PushTextGreeting_(lines, record) {
+  const greeting = emailV4Greeting_(record);
+  if (greeting) lines.push(greeting, '');
 }
 
 // ---------------------------------------------------------------------------
@@ -475,6 +503,22 @@ function emailV4SecondaryRow_(href, label, top) {
 }
 
 /**
+ * Quiet action: a sentence-case text link in the flow of the copy, never a
+ * button. After a cancellation or a handled refund request the transactional
+ * outcome is the message, so re-booking has to stay reachable without reading
+ * as conversion recovery. Left-aligned with the body copy and still a 48px
+ * block target (14 + 20 + 14). Same destination, no new capability.
+ */
+function emailV4QuietActionRow_(href, label, top) {
+  if (!href || !label) return '';
+  return '<tr><td class="v4-pad" style="padding:' + (top === undefined ? 16 : top) + 'px 28px 0 28px;">'
+    + '<a href="' + escapeEmailText_(href) + '" target="_blank" style="display:block;padding:14px 0;'
+    + 'line-height:20px;font-family:' + EMAIL_V4.sans + ';font-size:16px;font-weight:500;'
+    + 'text-decoration:underline;color:' + EMAIL_V4.link + ';">'
+    + escapeEmailText_(label) + ' &#8594;</a></td></tr>';
+}
+
+/**
  * Tertiary, destructive: a text link in the cancellation accent. Visually
  * subordinate to both buttons, still a 48px block target (14 + 20 + 14).
  */
@@ -487,16 +531,23 @@ function emailV4TertiaryRow_(href, label) {
     + escapeEmailText_(label) + '</a></td></tr>';
 }
 
-/** The Meet URL is always readable as text, never only behind a button. */
+// The fallback is a named link, not a printed URL. The destination is byte-for-byte
+// the href the primary button already carries; only the visible text changes. The
+// raw meet.google.com string was a line of machine noise in an editorial email and
+// broke mid-token at 320px. text/plain keeps the full URL, because there the URL is
+// the only usable destination.
+var EMAIL_V4_MEET_FALLBACK_LEAD = 'Si el botón no funciona:';
+var EMAIL_V4_MEET_FALLBACK_LABEL = 'Abrir enlace alternativo de Google Meet';
+
 function emailV4MeetFallback_(meetUrl) {
   if (!meetUrl) return '';
   return '<tr><td class="v4-pad v4-ink3" style="padding:16px 28px 0 28px;font-family:' + EMAIL_V4.sans
     + ';font-size:16px;font-weight:400;line-height:1.55;color:' + EMAIL_V4.textMuted + ';">'
-    + 'Si el botón no funciona, entra desde este enlace:</td></tr>'
+    + EMAIL_V4_MEET_FALLBACK_LEAD + '</td></tr>'
     + '<tr><td class="v4-pad" style="padding:4px 28px 0 28px;font-family:' + EMAIL_V4.sans
-    + ';font-size:14px;line-height:1.5;">'
+    + ';font-size:16px;line-height:1.55;">'
     + '<a href="' + escapeEmailText_(meetUrl) + '" target="_blank" style="color:' + EMAIL_V4.link
-    + ';text-decoration:underline;word-break:break-all;">' + escapeEmailText_(meetUrl) + '</a></td></tr>';
+    + ';text-decoration:underline;">' + EMAIL_V4_MEET_FALLBACK_LABEL + '</a></td></tr>';
 }
 
 /** Compact footer: help line, contact links, one identification line. */
@@ -598,20 +649,21 @@ function renderLifecycleEmailHtml_(input) {
       : 'La sesión que tenías agendada fue cancelada. La hora quedó liberada.';
     const refundConfirmed = emailV4RefundConfirmed_(notification.eventType, record);
     // The cancellation leads; the approved refund copy is an information block
-    // underneath, and only on a provider-confirmed REFUNDED record. Re-booking
-    // stays one quiet outline action away, never a charcoal conversion primary.
+    // underneath, and only on a provider-confirmed REFUNDED record. Re-booking is
+    // a quiet text link after the supportive copy — never a button, and never a
+    // charcoal conversion primary. This email carries no action button at all.
     return emailV4Document_({
       title: subject,
       preheader: refundConfirmed ? EMAIL_V4_PREHEADER.cancelledRefunded : EMAIL_V4_PREHEADER.cancelled,
       rows: emailV4Header_()
         + emailV4Eyebrow_('TU SESIÓN FUE CANCELADA', EMAIL_V4.cancelBg, EMAIL_V4.cancelAccent, 'v4-cancel')
         + emailV4Headline_('Tu sesión fue cancelada.')
-        + emailV4Body_(escapeEmailText_(emailV4Greeting_(record)), 24, EMAIL_V4.charcoal)
-        + emailV4Body_(escapeEmailText_(when), 16)
+        + emailV4GreetingRow_(record)
+        + emailV4Body_(escapeEmailText_(when), emailV4LeadTop_(record))
         + emailV4Details_(cancelledRows)
         + (refundConfirmed ? emailV4InfoBlock_('REEMBOLSO', EMAIL_V4_REFUND_COPY) : '')
         + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 32)
-        + emailV4SecondaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN', 24)
+        + emailV4QuietActionRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL, 8)
         + emailV4Footer_(),
     });
   }
@@ -638,16 +690,20 @@ function renderLifecycleEmailHtml_(input) {
       band = EMAIL_V4.cream;
     }
 
-    // The highlight is the comparison; the detail table stays the record of the
-    // session (with the explicit Chile time zone), so both are kept.
+    // Where the highlight renders it is the single authoritative schedule
+    // statement, so FECHA/HORA are not repeated immediately underneath it — that
+    // was the same fact twice, once large and once small. NUEVA FECHA therefore
+    // carries the explicit Chile zone itself, so dropping the Hora row costs no
+    // information. Confirmation has no highlight and keeps its detail rows.
+    const scheduleValue = parts.date + ' · ' + parts.time + ' (Chile)';
     let highlight = '';
     if (kind === 'clinician_rescheduled' && parts.combined) {
-      highlight = emailV4ScheduleHighlight_('', parts.date + ' · ' + parts.time);
+      highlight = emailV4ScheduleHighlight_('', scheduleValue);
     } else if (kind === 'rescheduled' && previous.combined && parts.combined
       && record.original_start_at !== record.current_start_at) {
-      highlight = emailV4ScheduleHighlight_(previous.date + ' · ' + previous.time, parts.date + ' · ' + parts.time);
+      highlight = emailV4ScheduleHighlight_(previous.date + ' · ' + previous.time, scheduleValue);
     }
-    const includeSchedule = true;
+    const includeSchedule = !highlight;
 
     const actions = emailV4ScheduleActions_(kind, tokens, origin);
     const humanCopy = kind === 'confirmed' ? emailV4Body_(EMAIL_V4_SESSION_COPY, 32) : '';
@@ -661,8 +717,8 @@ function renderLifecycleEmailHtml_(input) {
       rows: emailV4Header_()
         + emailV4Eyebrow_(eyebrow, band, EMAIL_V4.charcoal)
         + emailV4Headline_(headline)
-        + emailV4Body_(escapeEmailText_(emailV4Greeting_(record)), 24, EMAIL_V4.charcoal)
-        + emailV4Body_(escapeEmailText_(lead), 16)
+        + emailV4GreetingRow_(record)
+        + emailV4Body_(escapeEmailText_(lead), emailV4LeadTop_(record))
         + highlight
         + emailV4Details_(emailV4SessionRows_(record, parts, includeSchedule))
         + emailV4PrimaryRow_(meetUrl, 'ENTRAR A LA SESIÓN')
@@ -676,8 +732,9 @@ function renderLifecycleEmailHtml_(input) {
   }
 
   if (kind === 'refund_requested') {
-    // The request is the completed job. No primary CTA, no Flow vocabulary, no
-    // internal codes, and no claim that the money has already been returned.
+    // The request is the completed job. No CTA button at all, no Flow vocabulary,
+    // no internal codes, and no claim that the money has already been returned.
+    // Re-booking is a quiet text link, subordinate to the refund outcome.
     const refundRows = [];
     if (parts.date) refundRows.push(['Fecha', parts.date]);
     if (parts.time) refundRows.push(['Hora', parts.time + ' (Chile)']);
@@ -687,11 +744,11 @@ function renderLifecycleEmailHtml_(input) {
       rows: emailV4Header_()
         + emailV4Eyebrow_('SOLICITUD DE REEMBOLSO', EMAIL_V4.cream, EMAIL_V4.charcoal)
         + emailV4Headline_('Tu solicitud de reembolso fue gestionada.')
-        + emailV4Body_(escapeEmailText_(emailV4Greeting_(record)), 24, EMAIL_V4.charcoal)
-        + emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_REQUESTED_COPY), 16)
+        + emailV4GreetingRow_(record)
+        + emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_REQUESTED_COPY), emailV4LeadTop_(record))
         + emailV4Details_(refundRows)
         + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 32)
-        + emailV4SecondaryRow_(emailV4BookingUrl_(origin), 'AGENDAR NUEVA SESIÓN', 24)
+        + emailV4QuietActionRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL, 8)
         + emailV4Footer_(),
     });
   }
@@ -704,8 +761,8 @@ function renderLifecycleEmailHtml_(input) {
     rows: emailV4Header_()
       + emailV4Eyebrow_('ACTUALIZACIÓN DE TU RESERVA', EMAIL_V4.cream, EMAIL_V4.textMuted)
       + emailV4Headline_(subject)
-      + emailV4Body_(escapeEmailText_(emailV4Greeting_(record)), 24, EMAIL_V4.charcoal)
-      + emailV4Body_('Te escribimos con una actualización operativa de tu reserva.', 16)
+      + emailV4GreetingRow_(record)
+      + emailV4Body_('Te escribimos con una actualización operativa de tu reserva.', emailV4LeadTop_(record))
       + emailV4Footer_(),
   });
 }
@@ -754,7 +811,8 @@ function renderLifecycleEmailText_(input) {
 
   if (kind === 'refund_requested') {
     const lines = emailV4TextHeader_();
-    lines.push('SOLICITUD DE REEMBOLSO', '', emailV4Greeting_(record), '');
+    lines.push('SOLICITUD DE REEMBOLSO', '');
+    emailV4PushTextGreeting_(lines, record);
     lines.push('Tu solicitud de reembolso fue gestionada.', '');
     lines.push(EMAIL_V4_REFUND_REQUESTED_COPY, '');
     if (parts.date) lines.push('Fecha: ' + parts.date);
@@ -766,7 +824,8 @@ function renderLifecycleEmailText_(input) {
 
   if (kind === 'cancelled') {
     const lines = emailV4TextHeader_();
-    lines.push('TU SESIÓN FUE CANCELADA', '', emailV4Greeting_(record), '');
+    lines.push('TU SESIÓN FUE CANCELADA', '');
+    emailV4PushTextGreeting_(lines, record);
     lines.push(parts.date && parts.time
       ? 'La sesión agendada para el ' + parts.date + ' a las ' + parts.time + ' fue cancelada. La hora quedó liberada.'
       : 'La sesión que tenías agendada fue cancelada. La hora quedó liberada.');
@@ -784,15 +843,19 @@ function renderLifecycleEmailText_(input) {
   if (kind === 'confirmed' || kind === 'rescheduled' || kind === 'clinician_rescheduled') {
     const lines = emailV4TextHeader_();
     if (kind === 'confirmed') {
-      lines.push('TU SESIÓN ESTÁ CONFIRMADA', '', emailV4Greeting_(record), '');
+      lines.push('TU SESIÓN ESTÁ CONFIRMADA', '');
+      emailV4PushTextGreeting_(lines, record);
       lines.push(parts.date && parts.time
         ? 'Te esperamos el ' + parts.date + ' a las ' + parts.time + '.'
         : 'Te esperamos en la fecha agendada.');
     } else if (kind === 'rescheduled') {
-      lines.push('TU SESIÓN FUE REAGENDADA', '', emailV4Greeting_(record), '', 'Te esperamos en tu nueva fecha.');
+      lines.push('TU SESIÓN FUE REAGENDADA', '');
+      emailV4PushTextGreeting_(lines, record);
+      lines.push('Te esperamos en tu nueva fecha.');
     } else {
-      lines.push('HUBO UN CAMBIO EN TU PRÓXIMA SESIÓN', '', emailV4Greeting_(record), '',
-        'Actualicé el horario. Revisa a continuación la nueva fecha.');
+      lines.push('HUBO UN CAMBIO EN TU PRÓXIMA SESIÓN', '');
+      emailV4PushTextGreeting_(lines, record);
+      lines.push('Actualicé el horario. Revisa a continuación la nueva fecha.');
     }
     if (kind === 'clinician_rescheduled' && parts.combined) {
       lines.push('', 'NUEVA FECHA: ' + parts.date + ' · ' + parts.time);
@@ -813,8 +876,9 @@ function renderLifecycleEmailText_(input) {
   }
 
   const lines = emailV4TextHeader_();
-  lines.push('ACTUALIZACIÓN DE TU RESERVA', '', emailV4Greeting_(record), '',
-    'Te escribimos con una actualización operativa de tu reserva.');
+  lines.push('ACTUALIZACIÓN DE TU RESERVA', '');
+  emailV4PushTextGreeting_(lines, record);
+  lines.push('Te escribimos con una actualización operativa de tu reserva.');
   return lines.concat(emailV4TextFooter_()).join('\n');
 }
 
@@ -826,6 +890,10 @@ var __EMAIL_TEMPLATE_TEST_EXPORTS__ = Object.freeze({
   EMAIL_V4_REFUND_COPY: EMAIL_V4_REFUND_COPY,
   EMAIL_V4_REFUND_REQUESTED_COPY: EMAIL_V4_REFUND_REQUESTED_COPY,
   EMAIL_V4_CANCELLED_HUMAN_COPY: EMAIL_V4_CANCELLED_HUMAN_COPY,
+  EMAIL_V4_REBOOK_LABEL: EMAIL_V4_REBOOK_LABEL,
+  EMAIL_V4_MEET_FALLBACK_LEAD: EMAIL_V4_MEET_FALLBACK_LEAD,
+  EMAIL_V4_MEET_FALLBACK_LABEL: EMAIL_V4_MEET_FALLBACK_LABEL,
+  emailV4Greeting_: emailV4Greeting_,
   EMAIL_V4_INTERNAL_DISCLAIMER: EMAIL_V4_INTERNAL_DISCLAIMER,
   emailV4ManagementPolicyCopy_: emailV4ManagementPolicyCopy_,
   emailV4RefundConfirmed_: emailV4RefundConfirmed_,
