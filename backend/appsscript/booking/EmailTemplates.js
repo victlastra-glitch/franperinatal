@@ -54,9 +54,10 @@ var EMAIL_V4_PREHEADER = Object.freeze({
 });
 
 // Approved universal human copy. Rendered on every confirmation, initial and
-// follow-up alike; it makes no claim about which session this is.
-var EMAIL_V4_SESSION_COPY = 'No necesitas preparar nada especial para la sesión. '
-  + 'Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';
+// follow-up alike; it makes no claim about which session this is. One sentence:
+// the second clause repeated the reassurance the first already gave, and a
+// transactional confirmation is not where it earns its line.
+var EMAIL_V4_SESSION_COPY = 'No necesitas preparar nada especial para la sesión.';
 
 // Approved copy for the single refund communication. It confirms that the
 // REQUEST was handled and never claims the money has settled: the provider may
@@ -181,6 +182,11 @@ function emailV4FormatClp_(amount) {
 function emailV4SessionDurationLabel_() {
   const minutes = typeof SESSION_DURATION_MINUTES === 'number' ? SESSION_DURATION_MINUTES : 0;
   return minutes ? minutes + ' minutos' : '';
+}
+
+function emailV4ModalityLabel_(record) {
+  return typeof patientFacingModalityLabel_ === 'function'
+    ? patientFacingModalityLabel_(record && record.modality) : '';
 }
 
 /**
@@ -579,18 +585,55 @@ function emailV4InternalFooter_() {
 // Per-state view models
 // ---------------------------------------------------------------------------
 
-function emailV4SessionRows_(record, parts, includeSchedule) {
+/**
+ * When the session happens. (Chile) is carried here and nowhere else on the
+ * confirmation: the H1 and the lead stay clean, and the zone is stated once,
+ * on the row that needs it.
+ */
+function emailV4ScheduleRows_(parts) {
   const rows = [];
-  if (includeSchedule && parts.date) rows.push(['Fecha', parts.date]);
-  if (includeSchedule && parts.time) rows.push(['Hora', parts.time + ' (Chile)']);
-  const modality = typeof patientFacingModalityLabel_ === 'function'
-    ? patientFacingModalityLabel_(record.modality) : '';
+  if (parts.date) rows.push(['Fecha', parts.date]);
+  if (parts.time) rows.push(['Hora', parts.time + ' (Chile)']);
+  return rows;
+}
+
+/**
+ * Modality, session length and what this booking is worth. `includeAmount` is
+ * false only where the email is not the receipt for the transaction; the
+ * text/plain view model leaves it unset and keeps every fact.
+ */
+function emailV4LogisticsRows_(record, includeAmount) {
+  const rows = [];
+  const modality = emailV4ModalityLabel_(record);
   if (modality) rows.push(['Modalidad', modality]);
   const duration = emailV4SessionDurationLabel_();
   if (duration) rows.push(['Duración', duration]);
-  const amount = emailV4AmountLabel_(record);
+  const amount = includeAmount === false ? '' : emailV4AmountLabel_(record);
   if (amount) rows.push(['Valor', amount]);
   return rows;
+}
+
+/**
+ * The reschedule states have one job — the new time and a way into the session —
+ * so modality and duration collapse from two labelled rows into one quiet line
+ * ("Online · 50 minutos"). Both halves are read from the same helpers the detail
+ * rows read; nothing here is a second source of truth and nothing is hardcoded.
+ */
+function emailV4LogisticsLine_(record) {
+  return [emailV4ModalityLabel_(record), emailV4SessionDurationLabel_()]
+    .filter(function(part) { return Boolean(part); }).join(' · ');
+}
+
+function emailV4LogisticsLineRow_(text) {
+  if (!text) return '';
+  return '<tr><td class="v4-pad v4-ink3" style="padding:12px 28px 0 28px;font-family:' + EMAIL_V4.sans
+    + ';font-size:14px;font-weight:400;line-height:1.5;color:' + EMAIL_V4.textMuted + ';">'
+    + escapeEmailText_(text) + '</td></tr>';
+}
+
+/** text/plain view model: still every fact, labelled, in one list. */
+function emailV4SessionRows_(record, parts, includeSchedule) {
+  return (includeSchedule ? emailV4ScheduleRows_(parts) : []).concat(emailV4LogisticsRows_(record));
 }
 
 /**
@@ -694,7 +737,7 @@ function renderLifecycleEmailHtml_(input) {
     // statement, so FECHA/HORA are not repeated immediately underneath it — that
     // was the same fact twice, once large and once small. NUEVA FECHA therefore
     // carries the explicit Chile zone itself, so dropping the Hora row costs no
-    // information. Confirmation has no highlight and keeps its detail rows.
+    // information. Confirmation renders no highlight and keeps FECHA/HORA rows.
     const scheduleValue = parts.date + ' · ' + parts.time + ' (Chile)';
     let highlight = '';
     if (kind === 'clinician_rescheduled' && parts.combined) {
@@ -703,7 +746,21 @@ function renderLifecycleEmailHtml_(input) {
       && record.original_start_at !== record.current_start_at) {
       highlight = emailV4ScheduleHighlight_(previous.date + ' · ' + previous.time, scheduleValue);
     }
-    const includeSchedule = !highlight;
+    // Confirmation: FECHA and HORA are the reason the email exists, so they sit
+    // directly under the lead and above the action. Reschedule states: the
+    // highlight already is that statement, and one discreet logistics line
+    // follows it instead of three more labelled rows.
+    const compact = Boolean(highlight);
+    const scheduleBlock = compact
+      ? highlight + emailV4LogisticsLineRow_(emailV4LogisticsLine_(record))
+      : emailV4Details_(emailV4ScheduleRows_(parts));
+    // Modality, duration and value are reference, not instruction, so on the
+    // confirmation they sit under the Meet action rather than above it. VALOR is
+    // the confirmation's alone: it is the receipt for the transaction, while a
+    // reschedule moves a session that is already paid and restates no amount —
+    // including on the degenerate path where no highlight could be built.
+    const detailBlock = compact ? ''
+      : emailV4Details_(emailV4LogisticsRows_(record, kind === 'confirmed'));
 
     const actions = emailV4ScheduleActions_(kind, tokens, origin);
     const humanCopy = kind === 'confirmed' ? emailV4Body_(EMAIL_V4_SESSION_COPY, 32) : '';
@@ -719,10 +776,10 @@ function renderLifecycleEmailHtml_(input) {
         + emailV4Headline_(headline)
         + emailV4GreetingRow_(record)
         + emailV4Body_(escapeEmailText_(lead), emailV4LeadTop_(record))
-        + highlight
-        + emailV4Details_(emailV4SessionRows_(record, parts, includeSchedule))
+        + scheduleBlock
         + emailV4PrimaryRow_(meetUrl, 'ENTRAR A LA SESIÓN')
         + emailV4MeetFallback_(meetUrl)
+        + detailBlock
         + (actions.reschedule ? emailV4SecondaryRow_(actions.reschedule.href, actions.reschedule.label) : '')
         + (actions.cancel ? emailV4TertiaryRow_(actions.cancel.href, actions.cancel.label) : '')
         + policyReminder
@@ -903,6 +960,8 @@ var __EMAIL_TEMPLATE_TEST_EXPORTS__ = Object.freeze({
   lifecycleNotificationSubject_: lifecycleNotificationSubject_,
   lifecycleEmailV4Kind_: lifecycleEmailV4Kind_,
   emailV4FormatClp_: emailV4FormatClp_,
+  emailV4LogisticsLine_: emailV4LogisticsLine_,
+  emailV4SessionDurationLabel_: emailV4SessionDurationLabel_,
   renderLifecycleEmailHtml_: renderLifecycleEmailHtml_,
   renderLifecycleEmailText_: renderLifecycleEmailText_,
 });

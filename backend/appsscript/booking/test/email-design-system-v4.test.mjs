@@ -68,6 +68,12 @@ const MEET_URL = 'https://meet.google.com/opaque-meet';
 const MEET_FALLBACK_LEAD = 'Si el botón no funciona:';
 const MEET_FALLBACK_LABEL = 'Abrir enlace alternativo de Google Meet';
 const REBOOK_LABEL = 'Agendar una nueva sesión';
+// FRA-9 compaction: on the reschedule states MODALIDAD and DURACIÓN collapse
+// into one discreet line. This literal is the expected *presentation* of the
+// fixture, restated independently; the values behind it must still come from
+// patientFacingModalityLabel_ and SESSION_DURATION_MINUTES, which the
+// derivation checks and MUTATION_LOGISTICS_LINE_* below enforce.
+const LOGISTICS_LINE = 'Online · 50 minutos';
 const RESCHEDULE_TOKEN = 'r'.repeat(64);
 const CANCEL_TOKEN = 'c'.repeat(64);
 const ORIGINAL_START = '2026-09-16T14:00:00.000Z'; // miércoles 16 de septiembre de 2026, 11:00 (Chile)
@@ -159,6 +165,7 @@ const primaryCount = (html) => (html.match(/background-color:#2F3236;border:1px 
 // so this is what the reader actually sees on screen. It is the oracle for "the
 // destination is unchanged but the raw URL is no longer printed".
 const visibleText = (html) => html.replace(/<[^>]*>/g, '\n');
+const countOf = (text, needle) => text.split(needle).length - 1;
 
 for (const [name, rendered] of Object.entries(allStates)) {
   const html = rendered.htmlBody;
@@ -274,22 +281,39 @@ check(!/a las \d{2}:\d{2}/.test(confirmed.subject + rescheduled.subject), 'subje
 // ---------------------------------------------------------------------------
 // CONFIRMED — information order and action hierarchy
 // ---------------------------------------------------------------------------
-const UNIVERSAL_COPY = 'No necesitas preparar nada especial para la sesión. '
-  + 'Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';
+// FRA-9 compaction: one sentence. The dropped second clause is asserted absent
+// so it cannot be reinstated silently.
+const UNIVERSAL_COPY = 'No necesitas preparar nada especial para la sesión.';
+const DROPPED_SESSION_CLAUSE = 'Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';
 const POLICY_COPY = 'Puedes reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.';
 check(T.EMAIL_V4_SESSION_COPY === UNIVERSAL_COPY, 'approved human copy is the exact string');
 check(T.emailV4ManagementPolicyCopy_() === POLICY_COPY, 'policy reminder reads the canonical 24 from the constant');
 {
   const html = confirmed.htmlBody;
+  // FECHA and HORA above the action, modality/duration/value below it: the
+  // reader gets when the session is, then how to enter it, then the reference
+  // facts. The Meet primary sits above MODALIDAD/DURACIÓN/VALOR, not below.
   const order = ['FRANCISCA BUSTOS M.', '>TU SESIÓN ESTÁ CONFIRMADA<', '>Tu sesión está confirmada.<', 'Te esperamos el miércoles 16 de septiembre de 2026 a las 11:00.',
-    '>Fecha</td>', '>ENTRAR A LA SESIÓN</a>', '>' + MEET_FALLBACK_LEAD + '</td>', '>' + MEET_FALLBACK_LABEL + '</a>',
+    '>Fecha</td>', '>Hora</td>', '>ENTRAR A LA SESIÓN</a>', '>' + MEET_FALLBACK_LEAD + '</td>', '>' + MEET_FALLBACK_LABEL + '</a>',
+    '>Modalidad</td>', '>Duración</td>', '>Valor</td>',
     '>REAGENDAR SESIÓN</a>', '>CANCELAR SESIÓN</a>', POLICY_COPY, UNIVERSAL_COPY, '¿Necesitas ayuda?'];
   let at = -1;
   for (const needle of order) { const i = html.indexOf(needle); check(i > at, 'confirmed order holds at "' + needle + '"'); at = i; }
   for (const label of ['Fecha', 'Hora', 'Modalidad', 'Duración', 'Valor']) {
     check(html.includes('>' + label + '</td>') && confirmed.body.includes(label + ': '), 'confirmed detail row ' + label + ' in html and text');
   }
+  check(html.indexOf('>Hora</td>') < html.indexOf('>ENTRAR A LA SESIÓN</a>')
+    && html.indexOf('>ENTRAR A LA SESIÓN</a>') < html.indexOf('>Modalidad</td>'),
+    'confirmed: FECHA/HORA precede the Meet CTA and the CTA precedes MODALIDAD/DURACIÓN/VALOR');
   check(html.includes('>50 minutos<') && html.includes('>$50.000<') && html.includes('>Online<'), 'confirmed facts: 50 minutos, $50.000, Online');
+  check(html.includes(UNIVERSAL_COPY) && confirmed.body.includes(UNIVERSAL_COPY), 'confirmed: the supportive copy is the approved single sentence');
+  check(!html.includes(DROPPED_SESSION_CLAUSE) && !confirmed.body.includes(DROPPED_SESSION_CLAUSE),
+    'confirmed: the retired second supportive clause is gone from html and text');
+  // (Chile) belongs to the HORA row and to nothing else on this email.
+  check(html.includes('>11:00 (Chile)<') && countOf(html, '(Chile)') === 1,
+    'confirmed: (Chile) is stated exactly once, on the HORA row');
+  check(!/Tu sesión está confirmada[^<]*\(Chile\)/.test(html) && !/Te esperamos el[^<]*\(Chile\)/.test(html),
+    'confirmed: neither the H1 nor the lead carries (Chile)');
   check(primaryCount(html) === 1 && html.includes('>ENTRAR A LA SESIÓN</a>'), 'confirmed: exactly one primary and it is ENTRAR A LA SESIÓN');
   check(html.includes(SECONDARY) && html.indexOf(SECONDARY) < html.indexOf('>REAGENDAR SESIÓN</a>')
     && (html.match(new RegExp(SECONDARY.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length === 1,
@@ -318,7 +342,7 @@ check(confirmedNoMeet.htmlBody.includes('>REAGENDAR SESIÓN</a>') && TERTIARY_CA
   check(html.includes('text-decoration:line-through;">miércoles 16 de septiembre de 2026 · 11:00</td>'), 'ANTES is muted and struck through');
   check(html.includes('font-size:20px;font-weight:600;line-height:1.4;color:#2F3236;">miércoles 16 de septiembre de 2026 · 15:00 (Chile)</td>'),
     'NUEVA FECHA carries the weight (20/600) and owns the explicit Chile zone');
-  check(html.indexOf('>ANTES<') < html.indexOf('>Modalidad</td>'), 'comparison comes before the detail block');
+  check(html.indexOf('>ANTES<') < html.indexOf(LOGISTICS_LINE), 'comparison comes before the compact logistics line');
   check(html.includes('>ENTRAR A LA SESIÓN</a>') && html.includes('>' + MEET_FALLBACK_LABEL + '</a>') && primaryCount(html) === 1,
     'rescheduled keeps the single Meet primary and its named fallback');
   check(TERTIARY_CANCEL.test(html), 'rescheduled offers CANCELAR as the tertiary link');
@@ -382,7 +406,6 @@ check(cancelled.htmlBody === cancelledRejected.htmlBody && cancelled.body === ca
 // Refund-confirmed variant, live-v20 structure: the cancellation still leads the
 // email and the approved refund copy is an information block underneath. V4 only
 // restyles it. Only ever rendered under a provider-confirmed REFUNDED record.
-const countOf = (text, needle) => text.split(needle).length - 1;
 for (const [name, rendered] of Object.entries(REFUND_CONFIRMED)) {
   const html = rendered.htmlBody; const body = rendered.body;
   check(html.includes('>TU SESIÓN FUE CANCELADA<') && html.includes('>Tu sesión fue cancelada.<'),
@@ -490,19 +513,40 @@ for (const [name, rendered] of Object.entries({ CONFIRMED: confirmed, NAMED: con
     name + ': text/plain keeps the full URL, which is its only usable destination');
 }
 
-// 2 — Reschedule states: the highlight is the single schedule statement.
+// 2 — Reschedule states: the highlight is the single schedule statement, and
+// one compact logistics line stands in for the MODALIDAD/DURACIÓN/VALOR rows.
 for (const [name, rendered] of Object.entries({ PATIENT_RESCHEDULED: rescheduled, LEAKY_TOKEN: rescheduledLeaky, CLINICIAN_RESCHEDULED: clinicianChange })) {
-  const html = rendered.htmlBody;
+  const html = rendered.htmlBody; const body = rendered.body;
   check(html.includes('>NUEVA FECHA<'), name + ': the schedule highlight is rendered');
-  check(!/>Fecha<\/td>|>Hora<\/td>/.test(html), name + ': FECHA/HORA are not repeated under the highlight');
+  check(!/>Fecha<\/td>|>Hora<\/td>/.test(html), name + ': FECHA/HORA are not repeated as rows under the highlight');
   check(html.includes('· 15:00 (Chile)</td>'), name + ': the highlight carries the explicit Chile zone it now owns');
+  check(countOf(html, 'miércoles 16 de septiembre de 2026 · 15:00') === 1,
+    name + ': the new date and time have exactly one representation in the html');
   for (const label of ['Modalidad', 'Duración', 'Valor']) {
-    check(html.includes('>' + label + '</td>'), name + ': the remaining detail row ' + label + ' is kept');
+    check(!html.includes('>' + label + '</td>'), name + ': the standalone ' + label + ' row is gone from the html');
   }
-  check(html.indexOf('>NUEVA FECHA<') < html.indexOf('>Modalidad</td>'), name + ': the highlight leads the remaining details');
-  check(rendered.body.includes('Fecha: miércoles 16 de septiembre de 2026') && rendered.body.includes('Hora: 15:00 (Chile)'),
-    name + ': text/plain still carries complete, unambiguous date and time');
+  check(!/\$50\.000|(?<!\d)50000(?!\d)/.test(html), name + ': VALOR is absent from the html of a reschedule');
+  check(countOf(html, LOGISTICS_LINE) === 1,
+    name + ': exactly one compact logistics presentation, "' + LOGISTICS_LINE + '"');
+  check(html.indexOf('>NUEVA FECHA<') < html.indexOf(LOGISTICS_LINE)
+    && html.indexOf(LOGISTICS_LINE) < html.indexOf('>ENTRAR A LA SESIÓN</a>'),
+    name + ': the logistics line sits between the highlight and the Meet primary');
+  check(countOf(html, 'href="' + MEET_URL + '"') === 2 && primaryCount(html) === 1,
+    name + ': the Meet primary and its href survive the compaction');
+  check(html.includes('open=cancel') && TERTIARY_CANCEL.test(html),
+    name + ': the cancel capability and its href survive the compaction');
+  check(body.includes('Fecha: miércoles 16 de septiembre de 2026') && body.includes('Hora: 15:00 (Chile)')
+    && body.includes('Modalidad: Online') && body.includes('Duración: 50 minutos') && body.includes('Entrar a la sesión: ' + MEET_URL),
+    name + ': text/plain still carries complete, unambiguous date, time, modality, duration and Meet URL');
 }
+// The line is composed from the inputs the detail rows already read — the record's
+// modality and the canonical session duration — not from a literal of its own.
+check(T.emailV4LogisticsLine_(movedRecord) === LOGISTICS_LINE, 'the compact line renders "' + LOGISTICS_LINE + '" for the fixture');
+check(T.emailV4LogisticsLine_({ modality: 'presencial' }) === 'presencial · ' + T.emailV4SessionDurationLabel_()
+  && T.emailV4LogisticsLine_({}) === T.emailV4SessionDurationLabel_(),
+  'the modality half is read from the record, never assumed');
+check(T.emailV4SessionDurationLabel_() === '50 minutos' && confirmed.body.includes('Duración: ' + T.emailV4SessionDurationLabel_()),
+  'the duration half is the same canonical label the detail rows use');
 // Confirmation renders no highlight, so it keeps its own FECHA/HORA rows.
 check(!confirmed.htmlBody.includes('>NUEVA FECHA<') && confirmed.htmlBody.includes('>Fecha</td>') && confirmed.htmlBody.includes('>Hora</td>'),
   'confirmation keeps FECHA and HORA: it renders no schedule highlight');
@@ -592,7 +636,9 @@ const MUTATIONS = [
   ['MUTATION_RAW_MEET_URL_PRINTED', [
     [";text-decoration:underline;\">' + EMAIL_V4_MEET_FALLBACK_LABEL + '</a></td></tr>'", ";text-decoration:underline;\">' + escapeEmailText_(meetUrl) + '</a></td></tr>'"]],
     (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return /meet\.google\.com/.test(visibleText(r.htmlBody)) ? 'raw_meet_url_visible_again' : null; }],
-  ['MUTATION_DUPLICATE_SCHEDULE_ROWS', [["const includeSchedule = !highlight;", "const includeSchedule = true;"]],
+  ['MUTATION_DUPLICATE_SCHEDULE_ROWS', [
+    ["? highlight + emailV4LogisticsLineRow_(emailV4LogisticsLine_(record))",
+      "? highlight + emailV4Details_(emailV4ScheduleRows_(parts)) + emailV4LogisticsLineRow_(emailV4LogisticsLine_(record))"]],
     (ctx) => { const r = renderWith(ctx)('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN }); return r.htmlBody.includes('>NUEVA FECHA<') && />Fecha<\/td>/.test(r.htmlBody) ? 'fecha_hora_duplicated_under_highlight' : null; }],
   ['MUTATION_SCHEDULE_HIGHLIGHT_DROPS_TIME_ZONE', [["const scheduleValue = parts.date + ' · ' + parts.time + ' (Chile)';", "const scheduleValue = parts.date + ' · ' + parts.time;"]],
     (ctx) => { const r = renderWith(ctx)('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN }); return !/\(Chile\)/.test(r.htmlBody) ? 'reschedule_html_lost_the_time_zone' : null; }],
@@ -606,6 +652,33 @@ const MUTATIONS = [
     (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return /fonts\.googleapis\.com|<link/i.test(r.htmlBody) ? 'remote_font_loaded' : null; }],
   ['MUTATION_LABEL_BELOW_FLOOR', [["font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.16em;", "font-size:10px;font-weight:600;line-height:1.4;letter-spacing:.16em;"]],
     (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return /font-size:(8|9|10|11)px/.test(r.htmlBody) ? 'label_below_12px' : null; }],
+  // --- FRA-9 content compaction: one mutation per compacted rule ------------
+  ['MUTATION_RETIRED_SUPPORTIVE_CLAUSE_RESTORED', [
+    ["var EMAIL_V4_SESSION_COPY = 'No necesitas preparar nada especial para la sesión.';",
+      "var EMAIL_V4_SESSION_COPY = 'No necesitas preparar nada especial para la sesión. "
+      + "Puedes llegar con lo que tengas hoy, aunque todavía sea difícil ponerlo en palabras.';"]],
+    (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return r.htmlBody.includes(DROPPED_SESSION_CLAUSE) || r.body.includes(DROPPED_SESSION_CLAUSE) ? 'retired_supportive_clause_restored' : null; }],
+  ['MUTATION_MEET_CTA_PUSHED_BELOW_REFERENCE_ROWS', [
+    ["+ scheduleBlock\n        + emailV4PrimaryRow_(meetUrl, 'ENTRAR A LA SESIÓN')",
+      "+ scheduleBlock\n        + detailBlock\n        + emailV4PrimaryRow_(meetUrl, 'ENTRAR A LA SESIÓN')"]],
+    (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { RESCHEDULE: RESCHEDULE_TOKEN, CANCEL: CANCEL_TOKEN }); return r.htmlBody.indexOf('>Modalidad</td>') < r.htmlBody.indexOf('>ENTRAR A LA SESIÓN</a>') ? 'meet_cta_pushed_below_the_reference_rows' : null; }],
+  ['MUTATION_SCHEDULE_ROWS_PUSHED_BELOW_THE_CTA', [
+    ["? highlight + emailV4LogisticsLineRow_(emailV4LogisticsLine_(record))\n      : emailV4Details_(emailV4ScheduleRows_(parts));",
+      "? highlight + emailV4LogisticsLineRow_(emailV4LogisticsLine_(record)) : '';"]],
+    (ctx) => { const r = renderWith(ctx)('BOOKING_CONFIRMED', baseRecord, { CANCEL: CANCEL_TOKEN }); return !/>Fecha<\/td>/.test(r.htmlBody) || r.htmlBody.indexOf('>Fecha</td>') > r.htmlBody.indexOf('>ENTRAR A LA SESIÓN</a>') ? 'confirmation_lost_fecha_hora_above_the_cta' : null; }],
+  ['MUTATION_VALOR_RESTORED_ON_RESCHEDULE', [
+    ["emailV4Details_(emailV4LogisticsRows_(record, kind === 'confirmed'));",
+      "emailV4Details_(emailV4LogisticsRows_(record, true));"],
+    ["const detailBlock = compact ? ''\n      :", "const detailBlock ="]],
+    (ctx) => { const r = renderWith(ctx)('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN }); return />Valor<\/td>/.test(r.htmlBody) || /\$50\.000/.test(r.htmlBody) ? 'valor_restored_in_reschedule_html' : null; }],
+  ['MUTATION_LOGISTICS_LINE_HARDCODED', [
+    ["return [emailV4ModalityLabel_(record), emailV4SessionDurationLabel_()]\n    .filter(function(part) { return Boolean(part); }).join(' · ');",
+      "return 'Online · 50 minutos';"]],
+    (ctx) => { const r = renderWith(ctx)('PATIENT_RESCHEDULED', Object.assign({}, movedRecord, { modality: 'presencial' }), { CANCEL: CANCEL_TOKEN }); return r.htmlBody.includes('Online · 50 minutos') ? 'logistics_line_ignored_the_record_modality' : null; }],
+  ['MUTATION_LOGISTICS_LINE_DRIFTS_FROM_CANONICAL_DURATION', [
+    ["const minutes = typeof SESSION_DURATION_MINUTES === 'number' ? SESSION_DURATION_MINUTES : 0;",
+      "const minutes = 99;"]],
+    (ctx) => { const r = renderWith(ctx)('PATIENT_RESCHEDULED', movedRecord, { CANCEL: CANCEL_TOKEN }); return r.htmlBody.includes('Online · 99 minutos') ? 'compact_line_tracks_the_canonical_duration_helper' : null; }],
 ];
 for (const [name, patches, detect] of MUTATIONS) {
   const detectedBy = detect(build({ '../EmailTemplates.js': patches }));
