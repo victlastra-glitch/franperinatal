@@ -20,10 +20,10 @@ const SHOTS = path.join(FIXTURES, 'screenshots');
 // 648 = the 600px email plus its 24px desktop outer padding on each side.
 const VIEWPORTS = [['desktop-600', 648], ['430', 430], ['390', 390], ['375', 375], ['320', 320]];
 const PATIENT_CASES = ['booking-confirmed', 'session-rescheduled', 'session-clinician-change', 'session-cancelled',
-  'session-cancelled-refunded'];
+  'session-cancelled-refunded', 'refund-requested'];
 const INTERNAL_CASE = 'internal-manual-review';
 const INTERNAL_VIEWPORTS = [['desktop-600', 648], ['390', 390]];
-const DARK_CASES = ['booking-confirmed', 'session-rescheduled', 'session-cancelled', 'session-cancelled-refunded', INTERNAL_CASE];
+const DARK_CASES = ['booking-confirmed', 'session-rescheduled', 'session-cancelled', 'session-cancelled-refunded', 'refund-requested', INTERNAL_CASE];
 const CHROME_CANDIDATES = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
   '/Applications/Chromium.app/Contents/MacOS/Chromium',

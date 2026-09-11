@@ -293,18 +293,21 @@ check(context.activeRefundPolicy_({ payment_status: 'paid', booking_status: 'con
   && context.activeRefundPolicy_({ payment_status: 'paid', booking_status: 'confirmed' }).decision === 'BUSINESS_POLICY_TBD',
   'NON_PATIENT_REFUND_PATHS_TBD_PRESERVED');
 drain();
-// The refund is provider-pending: nothing reaches the patient yet, and no
-// manual-review alert is raised because refund/create succeeded.
+// refund/create was accepted (refund_pending): the patient receives exactly the
+// one request-managed communication, no neutral cancellation email, and no
+// manual-review alert is raised because the provider accepted the request.
 check(outboxRows.filter((row) => row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 0,
   'MANUAL_REVIEW_NOTIFICATION_COUNT=0 while the refund is healthy and pending');
-check(outboxRows.filter((row) => row.event_type === 'SESSION_CANCELLED').length === 1
-  && mailed.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1
-  && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(mailed.find((item) => item.subject === 'Tu sesión fue cancelada').body),
-  'REFUND_PENDING_NEUTRAL_CANCELLATION_EMAIL_COUNT=1 with no refund claim');
+check(outboxRows.filter((row) => row.event_type === 'REFUND_REQUESTED').length === 1
+  && mailed.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada').length === 1,
+  'ACCEPTED_REFUND_REQUEST_PATIENT_EMAIL_COUNT=1');
+check(outboxRows.filter((row) => row.event_type === 'SESSION_CANCELLED').length === 0
+  && mailed.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
+  'REFUND_PENDING_NEUTRAL_CANCELLATION_EMAIL_COUNT=0');
 check(outboxRows.filter((row) => row.event_type === 'PATIENT_CANCELLED').length === 0
-  && mailed.filter((item) => /reembolso fue procesado|reembolso completado/i.test(
+  && mailed.filter((item) => /reembolso fue procesado|reembolso completado|reembolso fue confirmado/i.test(
     item.subject + item.body + (item.htmlBody || ''))).length === 0,
-  'NO_PATIENT_REFUND_EMAIL_BEFORE_PROVIDER_CONFIRMATION');
+  'NO_PATIENT_REFUND_SETTLEMENT_CLAIM_BEFORE_PROVIDER_CONFIRMATION');
 
 const lateCreate = create(3, 'followup', '14:00');
 check(lateCreate.ok, 'late-paid fixture created');
@@ -350,8 +353,9 @@ console.log('CANCEL_CAPACITY_RELEASE=PASS');
 console.log('CANCEL_PAYMENT_HISTORY_PRESERVED=PASS');
 console.log('NORMAL_CANCEL_FLOW_REFUND_CALLS=1');
 console.log('CANONICAL_REFUND_POLICY=PATIENT_CANCEL_FULL_AUTOMATIC_REFUND');
-console.log('REFUND_PENDING_PATIENT_EMAIL_COUNT=0');
-console.log('NO_PATIENT_REFUND_EMAIL_BEFORE_PROVIDER_CONFIRMATION=PASS');
+console.log('ACCEPTED_REFUND_REQUEST_PATIENT_EMAIL_COUNT=1');
+console.log('REFUND_PENDING_NEUTRAL_CANCELLATION_EMAIL_COUNT=0');
+console.log('NO_PATIENT_REFUND_SETTLEMENT_CLAIM_BEFORE_PROVIDER_CONFIRMATION=PASS');
 console.log('LATE_PAID_NO_SLOT_RECLAIM=PASS');
 console.log('LATE_PAID_SYSTEM_REFUND_ATTEMPT_COUNT=1');
 console.log('LATE_PAID_REFUND_IDEMPOTENCY=PASS');

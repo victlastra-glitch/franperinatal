@@ -283,7 +283,8 @@ check(move.ok && record().current_start_at === '2026-09-03T20:00:00.000Z', 'clin
 const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: issued.capabilityTokens.CANCEL }) } });
 check(cancel.ok && record().booking_status === 'cancellation_requested' && cancel.refund === 'requested',
   'patient cancel without draining prior outbox events requests the full refund');
-// The final patient notification only exists once the provider confirms.
+// The single refund communication already exists from the accepted request; the
+// provider confirmation adds no further patient notification.
 context.refundConfirmation_({ parameter: { token: record().refund_provider_reference } });
 check(record().refund_status === 'refunded' && record().booking_status === 'cancelled',
   'provider confirmation completes the cancellation without draining the outbox');
@@ -291,9 +292,9 @@ check(record().refund_status === 'refunded' && record().booking_status === 'canc
 const beforeWorker = outboxRows.filter((row) => row.reservation_id === record().reservation_id);
 const types = beforeWorker.map((row) => row.event_type);
 check(types.includes('BOOKING_CONFIRMED') && types.includes('PATIENT_RESCHEDULED')
-  && types.includes('CLINICIAN_RESCHEDULED') && types.includes('PATIENT_CANCELLED')
-  && types.includes('SESSION_CANCELLED'),
-  'scenario B retains confirmation, reschedule, clinician, the neutral cancellation and the refund-confirmed event before any worker run');
+  && types.includes('CLINICIAN_RESCHEDULED') && types.includes('REFUND_REQUESTED')
+  && !types.includes('SESSION_CANCELLED') && !types.includes('PATIENT_CANCELLED'),
+  'scenario B retains confirmation, reschedule, clinician, and the single refund event before any worker run');
 check(beforeWorker.every((row) => row.state === 'pending' || row.state === 'superseded'),
   'no pending event was silently overwritten off the outbox');
 
@@ -314,25 +315,23 @@ check(byType.PATIENT_RESCHEDULED.state === 'superseded' && byType.PATIENT_RESCHE
   'unsent patient reschedule is explicitly superseded after cancel');
 check(byType.CLINICIAN_RESCHEDULED.state === 'superseded' && byType.CLINICIAN_RESCHEDULED.disposition_reason === 'booking_cancelled',
   'unsent clinician reschedule is explicitly superseded after cancel');
-check(byType.SESSION_CANCELLED.state === 'sent' && byType.PATIENT_CANCELLED.state === 'sent',
-  'the neutral cancellation and the refund-confirmed email are each independently deliverable');
-check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 1
-  && !/(reembolso|devoluci[oó]n|en proceso|procesad)/i.test(mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada').body),
-  'exactly one neutral cancellation mail reaches the patient, with no refund claim');
-check(mailBodies.filter((item) => item.subject === 'Reembolso confirmado · sesión cancelada').length === 1
-  && mailBodies.some((item) => item.subject === 'Reembolso confirmado · sesión cancelada'
-    && item.body.includes('El reembolso fue procesado al mismo medio de pago utilizado.')
-    && item.body.includes('hasta 10 días hábiles')
+check(byType.REFUND_REQUESTED.state === 'sent', 'the refund communication remains independently deliverable');
+check(mailBodies.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada').length === 1
+  && mailBodies.some((item) => item.subject === 'Tu solicitud de reembolso fue gestionada'
+    && item.body.includes('El abono puede tardar hasta 10 días hábiles en verse reflejado')
+    && !/El reembolso fue procesado|reembolso fue confirmado|reembolso fue completado/i.test(item.body)
     && item.body.includes('Agendar nueva sesión: ')
     && !item.body.includes('Entrar a la sesión:') && !item.body.includes('Cancelar:')),
-  'exactly one refund-confirmed mail with the approved refund copy reaches the patient');
-assertChileTime(mailBodies.find((item) => item.subject === 'Tu sesión fue cancelada').body, '16:00', 'cancellation renders the clinician-updated Chile-local time');
+  'exactly one refund mail with the approved request copy reaches the patient');
+assertChileTime(mailBodies.find((item) => item.subject === 'Tu solicitud de reembolso fue gestionada').body, '16:00', 'the refund email renders the clinician-updated Chile-local time');
 
-check(context.enqueuePatientCancellationNotificationOnce_(sheet, schema(), record(), 'PATIENT_CANCELLED') === null
-  && context.enqueuePatientCancellationNotificationOnce_(sheet, schema(), record(), 'SESSION_CANCELLED') === null
-  && outboxRows.filter((row) => row.reservation_id === record().reservation_id
-    && ['SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'].includes(row.event_type)).length === 2,
-  'each cancellation communication is guarded to exactly one: two rows total, no further enqueue');
+context.enqueueRefundRequestedNotification_(sheet, schema(), record());
+context.enqueuePatientCancellationNotificationOnce_(sheet, schema(), record(), 'PATIENT_CANCELLED');
+context.enqueuePatientCancellationNotificationOnce_(sheet, schema(), record(), 'SESSION_CANCELLED');
+check(outboxRows.filter((row) => row.reservation_id === record().reservation_id
+  && ['SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED', 'REFUND_REQUESTED'].includes(row.event_type)).length === 1
+  && byType.REFUND_REQUESTED.state === 'sent',
+  'the single-patient-email guard blocks any further refund or cancellation enqueue');
 
 const replay = context.patientCancel_({ postData: { contents: JSON.stringify({ token: issued.capabilityTokens.CANCEL }) } });
 check(replay.ok && replay.replay === true, 'terminal cancel replay is a no-op');

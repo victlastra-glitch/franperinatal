@@ -828,13 +828,21 @@ function patientCancelTransaction_(input) {
       return { ok: false, code: 'RECONCILIATION_REQUIRED', reconciliation: reconciliationFailureSnapshot_(record, Object.assign({}, updates, {
         reconciliation_state: 'calendar_cancel_store_retry' })) };
     }
+    const refundAttempted = Boolean(refundEligible && deps.enqueueRefund);
     try {
-      if (refundEligible && deps.enqueueRefund) deps.enqueueRefund(updated);
+      if (refundAttempted) deps.enqueueRefund(updated);
     } catch (_) {
       bestEffortReconciliationUpdate_(deps, updated, { reconciliation_state: 'notification_cancel_retry', last_operation_id: operationId });
       return { ok: false, code: 'NOTIFICATION_RETRY_REQUIRED' };
     }
-    enqueueTerminalCancellationNotificationBestEffort_(deps, updated);
+    // The refund attempt persists the provider outcome — refund_pending when the
+    // provider accepted the request, refund_failed / manual_review when it did
+    // not — through the store, never on the object in hand. Patient notification
+    // eligibility is therefore decided on the persisted post-attempt record, so a
+    // synchronously rejected refund can never be announced as handled. A row that
+    // cannot be re-read earns no notification (fail closed).
+    enqueueTerminalCancellationNotificationBestEffort_(deps,
+      refundAttempted ? deps.store.loadByReservationId(String(updated.reservation_id)) : updated);
     return { ok: true, replay: false, status: refundEligible ? 'cancellation_pending' : 'cancelled',
       refund: refundEligible ? 'requested' : (lateNonRefundable ? 'not_required' : 'BUSINESS_POLICY_TBD'),
       refundPercent: refundEligible ? managementPolicy.refund_percent : PATIENT_MANAGEMENT_REFUND_PERCENT_NONE };
@@ -854,25 +862,48 @@ function manualPolicyRefundNotificationNeeded_(record) {
 }
 
 /**
- * A paid cancellation whose booking truth is durably persisted and whose slot
- * is released owes the patient a neutral cancellation confirmation — whether it
- * is already terminal (cancelled; refund NOT_REQUIRED or MANUAL_REVIEW) or still
- * cancellation_requested while a refund is in flight. Refund truth is a separate
- * communication that only the provider-confirmed path can send, so the refund
- * state is not consulted here. The consumer decides which patient/operator
- * notifications the shape actually earns.
+ * A cancellation that is ALREADY terminal at cancellation time and owes a
+ * notification. Two shapes qualify:
+ *
+ *  - refund MANUAL_REVIEW — out of policy, an operator has to look
+ *  - refund NOT_REQUIRED  — decided non-refundable inside the 24-hour cutoff
+ *
+ * A refundable cancellation is excluded on purpose: it is still
+ * cancellation_requested here and is spoken for by the provider-confirmed
+ * final email. The consumer decides which patient/operator notifications the
+ * shape actually earns.
  */
 function terminalCancellationNotificationNeeded_(record) {
   if (!record) return false;
-  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED
-    && record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLATION_REQUESTED) return false;
+  if (record.booking_status !== LIFECYCLE.BOOKING_STATUS.CANCELLED) return false;
   if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
-  return record.schedule_status === LIFECYCLE.SCHEDULE_STATUS.CANCELLED;
+  const refund = String(record.refund_status || '');
+  return refund === LIFECYCLE.REFUND_STATUS.MANUAL_REVIEW
+    || refund === LIFECYCLE.REFUND_STATUS.NOT_REQUIRED;
+}
+
+/**
+ * A paid cancellation whose refund request the provider has accepted owes the
+ * patient exactly ONE refund communication, sent now — at request time, not at
+ * provider-confirmation time. It confirms that the request was handled; it makes
+ * no claim that the money has settled.
+ *
+ * Only the persisted post-attempt state qualifies: `refund_pending` is written by
+ * refundCreateOnce_ when — and only when — refund/create returned a provider
+ * reference. `refund_requested` is the pre-attempt intent and is not enough: a
+ * rejected create persists refund_failed / manual_review instead, and a record
+ * still at refund_requested after the attempt means the outcome is unknown.
+ */
+function refundRequestedNotificationNeeded_(record) {
+  if (!record) return false;
+  if (record.payment_status !== LIFECYCLE.PAYMENT_STATUS.PAID) return false;
+  return String(record.refund_status || '') === LIFECYCLE.REFUND_STATUS.PENDING;
 }
 
 function enqueueTerminalCancellationNotificationBestEffort_(deps, record) {
   if (!deps || typeof deps.enqueueNotification !== 'function') return;
-  if (!terminalCancellationNotificationNeeded_(record)) return;
+  if (!terminalCancellationNotificationNeeded_(record)
+    && !refundRequestedNotificationNeeded_(record)) return;
   try { deps.enqueueNotification(record); } catch (_) {}
 }
 

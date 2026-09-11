@@ -302,18 +302,45 @@ release blocker rather than a silent downgrade to manual review.
 ```
 schedule_status=cancelled            (slot released immediately)
 booking_status=cancellation_requested
-refund_status=refund_requested   -> refund/create ×1 -> refund_pending
-                                 -> provider acceptance in Flow
+refund_status=refund_requested   -> refund/create ×1
+   accepted by the provider      -> refund_pending
+                                 -> ONE patient email: REFUND_REQUESTED
+                                    ("Tu solicitud de reembolso fue gestionada")
                                  -> callback REFUNDED
-                                 -> booking_status=cancelled + ONE final email
+                                 -> booking_status=cancelled, NO further patient email
+   rejected inside the request   -> refund_failed / manual_review
+                                 -> patient emails = 0
+                                 -> ONE internal REFUND_FAILED_MANUAL_REVIEW alert
 ```
 
-`REFUND_CREATE_EFFECTIVE_MAX=1` and `FINAL_PATIENT_CANCELLATION_EMAIL_MAX=1`.
-Amount is the full transaction amount bound to this reservation at order
-creation, not the catalog price, which may have moved since. No patient email claims a refund before the provider confirms; a
-refund failure parks the reservation for manual review and still claims nothing.
-A replayed cancellation, a double click and a replayed provider callback each
-add neither a refund nor a second email.
+`REFUND_CREATE_EFFECTIVE_MAX=1`, `ACCEPTED_REFUND_REQUEST_PATIENT_EMAIL_COUNT=1`,
+`SYNC_REFUND_REJECTION_PATIENT_EMAIL_COUNT=0`,
+`LATER_REFUNDED_ADDITIONAL_PATIENT_EMAIL_COUNT=0`. Amount is the full transaction
+amount bound to this reservation at order creation, not the catalog price, which
+may have moved since.
+
+The single patient refund communication is sent at request time, once the
+provider has **accepted** the refund request (`refund_pending`, written by
+`refundCreateOnce_` only when `refund/create` returned a provider reference). It
+says the request was handled and that the credit may take up to 10 business days
+depending on the bank or card issuer; it never claims the money has settled. The
+eligibility decision reads the **persisted post-attempt record**
+(`refundRequestedNotificationNeeded_` in `Lifecycle.js`, evaluated on a re-read
+of the row after the refund attempt), never the pre-attempt object, so a
+synchronously rejected `refund/create` produces no "solicitud gestionada" email:
+the reservation is parked for manual review with the internal alert and the
+patient receives nothing until a human decides.
+
+The later provider `REFUNDED` callback completes the cancellation and sends no
+routine patient email; the patient was already told once. A provider failure
+reported asynchronously **after** the accepted-request email raises the internal
+alert only — by product decision there is no automatic second patient email, and
+the manual-review step in `PRODUCTION_RC_RUNBOOK.md` requires a human to assess
+whether the patient must be contacted. A replayed cancellation, a double click
+and a replayed provider callback each add neither a refund nor a second email;
+the cancel/refund patient family (`SESSION_CANCELLED`, `PATIENT_CANCELLED`,
+`CLINICIAN_CANCELLED`, `REFUND_REQUESTED`) is capped at one non-superseded
+communication per reservation.
 
 ### `< 24h` cancellation
 
@@ -374,7 +401,19 @@ single allowed move, so the reminder would be untrue and is not rendered.
 > que no asistirás, pero de acuerdo con la política de cancelación no corresponde
 > reembolso.
 
-**Refund confirmed** (unchanged from V3):
+**Refund request managed** — the single patient refund communication, sent once
+the provider accepted `refund/create` (see `>= 24h cancellation`). Subject and
+headline `Tu solicitud de reembolso fue gestionada`, body:
+
+> El abono puede tardar hasta 10 días hábiles en verse reflejado, según tu banco
+> o emisor.
+
+It is never sent on a synchronously rejected refund, and no email follows the
+provider's `REFUNDED` confirmation.
+
+**Refund confirmed** (copy retained from V3; rendered only on a
+`PATIENT_CANCELLED` / `CLINICIAN_CANCELLED` notification whose record is already
+`refunded`, which the routine flow above no longer emits):
 
 > El reembolso fue procesado al mismo medio de pago utilizado. Dependiendo de tu
 > banco o emisor, puede tardar hasta 10 días hábiles en verse reflejado.
