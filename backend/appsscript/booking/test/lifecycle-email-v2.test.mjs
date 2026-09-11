@@ -605,8 +605,15 @@ check(outboxRows.filter((row) => row.reservation_id === byKey(22).reservation_id
   'R9 exactly one internal manual-review notification is preserved');
 mailBodies = [];
 drain();
-check(mailBodies.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'R8 REFUND_FAILED_PATIENT_EMAIL_COUNT=0');
+// Total patient communications, not one subject: the provider rejected the
+// refund inside the request, so the patient gets neither a cancellation email
+// nor a "solicitud gestionada" notice.
+const failedRefundPatientMail = mailBodies.filter((item) => !item.subject.startsWith('Acción requerida'));
+check(failedRefundPatientMail.length === 0,
+  'R8 SYNC_REFUND_REJECTION_PATIENT_EMAIL_COUNT=0 — total patient mail after a rejected refund/create');
+check(outboxRows.filter((row) => row.reservation_id === byKey(22).reservation_id
+  && ['REFUND_REQUESTED', 'SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'].includes(row.event_type)).length === 0,
+  'R8 a rejected refund/create queues no patient notification of any type');
 check(mailBodies.filter((item) => item.subject.startsWith('Acción requerida')).length === 1
   && mailBodies.some((item) => item.subject.startsWith('Acción requerida')
     && /no es confirmación de reembolso/i.test(item.body)

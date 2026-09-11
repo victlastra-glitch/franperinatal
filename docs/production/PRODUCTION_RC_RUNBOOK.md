@@ -27,7 +27,8 @@ authorize execution during the local RC mission.
 | Schema | `SCHEMA_MIGRATION_STRATEGY=APPEND_ONLY_V7_COMPATIBILITY` |
 | Refund policy | Patient management policy V2 (deployed 2026-09-04): normal patient cancel `>=24h` before the current start → full automatic refund (`PATIENT_CANCEL_FULL_AUTOMATIC_REFUND`, `REFUND_CREATE_EFFECTIVE_MAX=1`); `<24h` → cancel allowed, no refund, zero refund calls. Clinician cancellation remains `BUSINESS_POLICY_TBD`. Contract: `docs/production/CANCELLATION_RESCHEDULE_POLICY_V2.md` |
 | Late PAID after hold expiry | system-consistency refund attempt **once**; never reclaim the slot; never confirm |
-| Patient cancel email | `SESSION_CANCELLED` (neutral copy). `PATIENT_CANCELLED` only after provider-confirmed refund |
+| Patient cancel email | Non-refundable or out-of-policy cancellation: `SESSION_CANCELLED` (neutral copy, no economic vocabulary). Refundable cancellation: one `REFUND_REQUESTED` email ("Tu solicitud de reembolso fue gestionada", up to 10 business days) sent only once the provider accepted `refund/create` (`refund_pending`); the later `REFUNDED` callback sends no further patient email. A `refund/create` rejected inside the request sends the patient nothing. Contract: `CANCELLATION_RESCHEDULE_POLICY_V2.md` (`>= 24h cancellation`) |
+| Refund manual review | Any `REFUND_FAILED_MANUAL_REVIEW` alert (rejected `refund/create`, unknown outcome, or a provider `FAILED` callback after the accepted-request email) is handled by a human. No automatic retry and no automatic second patient email. The reviewer **must** assess whether the patient has to be contacted — in particular when the patient already received the request-managed email and the provider later failed the refund — and record the decision on the ticket. |
 
 Fill RC SHA at deploy time: `git rev-parse --short HEAD`
 

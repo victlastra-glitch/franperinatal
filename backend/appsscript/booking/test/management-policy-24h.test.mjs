@@ -443,8 +443,15 @@ check(['manual_review', 'refund_failed'].indexOf(clean.rowFor(8).refund_status) 
   && clean.rowFor(8).booking_status === 'cancellation_requested',
   'GE24 refund failure parks the reservation for manual review');
 clean.drain();
-check(clean.state.mail.filter((item) => item.subject === 'Tu sesión fue cancelada').length === 0,
-  'GE24 refund failure sends NO patient email claiming a refund');
+// Every communication to the patient is counted, not one subject string: the
+// provider rejected the refund synchronously, so the patient must receive
+// nothing at all — no cancellation email, no "solicitud gestionada", no claim.
+const b8PatientMail = clean.state.mail.filter((item) => item.to !== OPS_EMAIL);
+check(b8PatientMail.length === 0,
+  'SYNC_REFUND_REJECTION_PATIENT_EMAIL_COUNT=0 — a synchronously rejected refund sends the patient nothing');
+check(clean.state.outboxRows.filter((row) => row.reservation_id === clean.rowFor(8).reservation_id
+  && ['REFUND_REQUESTED', 'SESSION_CANCELLED', 'PATIENT_CANCELLED', 'CLINICIAN_CANCELLED'].includes(row.event_type)).length === 0,
+  'GE24 refund failure queues no patient notification of any type');
 check(clean.state.mail.filter((item) => item.to === OPS_EMAIL
   && /Acción requerida/.test(item.subject + item.body)).length >= 1,
   'GE24 refund failure raises the internal manual-review notice');
@@ -711,6 +718,28 @@ function probes(h) {
     h.drain();
     return h.state.mail.length === 1;
   });
+  // The provider rejects refund/create inside the cancel request itself. The
+  // sheet already says manual_review / refund_failed when the notification
+  // decision is taken, so the patient must receive nothing: the decision has to
+  // read the persisted post-attempt record, not the pre-attempt object in hand.
+  probe('endpoint_sync_rejection_zero_patient_email', () => {
+    const booking = h.paidBooking(61, '2026-09-11', '17:00', 26 * HOUR_MS);
+    const start = Date.parse(h.rowFor(61).current_start_at);
+    h.setNow(start - 25 * HOUR_MS);
+    h.state.mail.length = 0;
+    h.state.refundCreateShouldFail = true;
+    const refundsBefore = h.state.refundCreateCalls;
+    const cancel = h.context.patientCancel_({ postData: { contents: JSON.stringify({ token: booking.cancel }) } });
+    h.state.refundCreateShouldFail = false;
+    h.drain();
+    const patientMail = h.state.mail.filter((item) => item.to !== OPS_EMAIL);
+    const opsMail = h.state.mail.filter((item) => item.to === OPS_EMAIL && /Acción requerida/.test(item.subject + item.body));
+    return cancel.ok === true
+      && h.state.refundCreateCalls === refundsBefore + 1
+      && ['manual_review', 'refund_failed'].indexOf(h.rowFor(61).refund_status) !== -1
+      && patientMail.length === 0
+      && opsMail.length >= 1;
+  });
   probe('endpoint_past_session_closed', () => {
     const booking = h.paidBooking(57, '2026-09-11', '13:00', 5 * HOUR_MS);
     const start = Date.parse(h.rowFor(57).current_start_at);
@@ -793,6 +822,48 @@ const MUTATIONS = [
     mustFail: ['endpoint_single_patient_communication_guard'],
   },
   {
+    key: 'MUTATION_STALE_RECORD_REFUND_NOTICE',
+    label: 'J. decide the refund notice on the pre-attempt object instead of the persisted post-attempt record',
+    patches: {
+      'Lifecycle.js': [[
+        "refundAttempted ? deps.store.loadByReservationId(String(updated.reservation_id)) : updated);",
+        'updated);',
+      ], [
+        "return String(record.refund_status || '') === LIFECYCLE.REFUND_STATUS.PENDING;",
+        "return String(record.refund_status || '') === LIFECYCLE.REFUND_STATUS.PENDING\n"
+        + "    || String(record.refund_status || '') === LIFECYCLE.REFUND_STATUS.REQUESTED;",
+      ]],
+    },
+    mustFail: ['endpoint_sync_rejection_zero_patient_email'],
+  },
+  {
+    key: 'MUTATION_REFUND_NOTICE_SKIPS_PERSISTED_REREAD',
+    label: 'L. drop the post-attempt re-read alone — the accepted request is then never announced',
+    patches: {
+      'Lifecycle.js': [[
+        "refundAttempted ? deps.store.loadByReservationId(String(updated.reservation_id)) : updated);",
+        'updated);',
+      ]],
+    },
+    mustFail: ['endpoint_ge24_single_refund_email', 'endpoint_no_second_email_on_provider_confirmation'],
+  },
+  {
+    key: 'MUTATION_REFUND_NOTICE_ON_REQUESTED_STATE',
+    label: 'K. let the pre-attempt refund_requested state alone qualify for the patient refund notice',
+    patches: {
+      'Lifecycle.js': [[
+        "return String(record.refund_status || '') === LIFECYCLE.REFUND_STATUS.PENDING;",
+        "return String(record.refund_status || '') === LIFECYCLE.REFUND_STATUS.PENDING\n"
+        + "    || String(record.refund_status || '') === LIFECYCLE.REFUND_STATUS.REQUESTED;",
+      ]],
+      'RefundGateway.js': [[
+        "try { input.store.update(record, { refund_commerce_order: order,",
+        "try { if (false) input.store.update(record, { refund_commerce_order: order,",
+      ]],
+    },
+    mustFail: ['endpoint_sync_rejection_zero_patient_email'],
+  },
+  {
     key: 'MUTATION_NONREFUNDABLE_CALLBACK',
     label: 'G. let a callback/reconciliation refund a non-refundable cancellation',
     patches: { 'Code.js': [['if (!patientCancellationRefundAuthorized_(record)) {', 'if (false) {']] },
@@ -827,6 +898,9 @@ console.log('PAST_SESSION_POLICY=NORMAL_SELF_MANAGEMENT_CLOSED');
 console.log('GE24_REFUND_CREATE_MAX=1');
 console.log('LT24_REFUND_CREATE_COUNT=0');
 console.log('FINAL_PATIENT_CANCELLATION_EMAIL_MAX=1');
+console.log('ACCEPTED_REFUND_REQUEST_PATIENT_EMAIL_COUNT=1');
+console.log('SYNC_REFUND_REJECTION_PATIENT_EMAIL_COUNT=0');
+console.log('LATER_REFUNDED_ADDITIONAL_PATIENT_EMAIL_COUNT=0');
 console.log('DST_TRANSITIONS_COVERED=' + new Date(dstSpring).toISOString() + ',' + new Date(dstAutumn).toISOString());
 mutationReport.forEach((line) => console.log(line));
 console.log('PRODUCTION_EMAILS_SENT=0');

@@ -50,5 +50,11 @@ All 19 are PORT_COMPLETE.
   cancellation at 24 hours or more before the current session start, and
   explicitly NOT enabled inside that cutoff.
 - ⚠ *(superseded)* `PATIENT_CANCELLED` refund-success email on normal cancel —
-  now the single final email, emitted only after the provider confirms REFUNDED.
+  not emitted by the routine flow. A refundable cancellation sends exactly one
+  `REFUND_REQUESTED` patient email ("Tu solicitud de reembolso fue gestionada",
+  up to 10 business days) once the provider has accepted `refund/create`; a
+  synchronously rejected `refund/create` sends the patient nothing and raises the
+  internal manual-review alert; the later provider `REFUNDED` confirmation sends
+  no further patient email. Contract: `CANCELLATION_RESCHEDULE_POLICY_V2.md`
+  (`>= 24h cancellation`).
 - NONPROD sandbox, fixtures, 500 CLP test amount, or `fran-nonprod` namespace
