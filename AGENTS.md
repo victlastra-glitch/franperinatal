@@ -40,6 +40,7 @@ build; do not treat "it builds" as evidence.
 | Backend provenance | `backend/README.md` |
 | Runtime policy decision | `getBookingManagementPolicy_` in `backend/appsscript/booking/Lifecycle.js` |
 | Agent/skill system itself | `docs/engineering/agent-system.md` |
+| Brand identity / visual design system | `docs/brand/BRAND_DESIGN_SYSTEM.md` |
 
 `docs/booking/`, `docs/control-tower/`, `docs/deployment/` and `docs/recovery/` are
 **gitignored**: local workstation notes that do not exist in a fresh clone. Read them
@@ -105,7 +106,8 @@ Load the skill **and** read the canonical document in the same row before editin
 
 | Task | Load | Read first |
 | --- | --- | --- |
-| Add or edit a page / section / styling | `fran-frontend-web` (+ `fran-content-claims` if the copy is clinical) | the page itself |
+| Add or edit a page / section / styling | `fran-frontend-web` (+ `fran-content-claims` if the copy is clinical) | `docs/brand/BRAND_DESIGN_SYSTEM.md`, then the page itself |
+| Brand identity, logo, palette, typography, visual component or social-brand styling | `fran-frontend-web` (+ `fran-content-claims` if public copy changes) | `docs/brand/BRAND_DESIGN_SYSTEM.md` |
 | Change a form | `fran-frontend-web` + `fran-testing-contract`; add `fran-booking-lifecycle` if it is the booking form | `CANCELLATION_RESCHEDULE_POLICY_V2.md` if booking |
 | Cancellation, reschedule, cutoff, management link | `fran-booking-lifecycle` | `CANCELLATION_RESCHEDULE_POLICY_V2.md` |
 | Payment, refund, checkout return, webhook | `fran-payment-integrity` (+ `fran-worker-api-contract` for the route) | `CANCELLATION_RESCHEDULE_POLICY_V2.md` (Money) |
