@@ -164,6 +164,17 @@ var NOTIFICATION_OUTBOX_HEADERS = Object.freeze([
 ]);
 var NOTIFICATION_OUTBOX_RETRYABLE_STATES = Object.freeze(['pending', 'failed', 'claimed']);
 var NOTIFICATION_OUTBOX_TERMINAL_STATES = Object.freeze(['sent', 'superseded']);
+// Best-effort immediate delivery of a just-persisted outbox row. The durable
+// outbox and its 5-minute worker remain the delivery contract; this only tries
+// to run the first attempt now rather than on the next tick.
+//
+// This is a SOURCE-LEVEL feature flag, not a runtime switch. Nothing reads it
+// from Script Properties and no operator can flip it on a running deployment:
+// changing it means editing this line and pushing a new Apps Script version.
+// The operational rollback for the accelerator is therefore the ordinary one —
+// repoint the Web App to the previously verified permanent version, which does
+// not contain it.
+var IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED = true;
 const CREATE_FLOW_FIELDS = Object.freeze([
   'idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone',
   'patientRut', 'reason', 'message',
@@ -2100,7 +2111,7 @@ function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTo
   });
   if (capabilityTokens) notification.capabilityTokens = capabilityTokens;
   const stateField = lifecycleNotificationStateField_(notification);
-  store.append(Object.assign({
+  const appended = store.append(Object.assign({
     logical_key: notification.logicalKey,
     reservation_id: String(record.reservation_id || ''),
     event_type: type,
@@ -2128,7 +2139,76 @@ function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTo
   }
   if (record.rowNumber && schema) updateRecord_(sheet, schema, record.rowNumber, audit);
   Object.assign(record, audit);
+  // The row above is the authoritative one. Everything after this point is an
+  // accelerator and may fail without consequence for the mutation in progress.
+  dispatchLifecycleNotificationImmediateBestEffort_(sheet, schema, store, appended);
   return notification;
+}
+
+/**
+ * Near-instant delivery, without giving up the durable outbox.
+ *
+ * Delivery latency used to be bounded only by the 5-minute worker tick. This
+ * runs the first attempt for a row that was JUST created, in the same execution
+ * that created it, and then gets out of the way.
+ *
+ * It does not reimplement delivery: it calls
+ * processOneLifecycleNotificationOutbox_ on that one row, so the claim ->
+ * render -> send -> mark-sent sequence, the attempt ceiling, the supersession
+ * rules, the capability rotation and the recipient allowlist are the same ones
+ * the periodic worker applies. There is no second derivation to keep in
+ * agreement with the first.
+ *
+ * What it guarantees, and what it does not.
+ *
+ * Against ORDINARY duplicate dispatch — replay, concurrency, a second worker
+ * pass — the durable guards hold:
+ *  - only a freshly appended row is passed here. A replay of the same mutation
+ *    returns the existing row from findDurableNotificationReplay_ before ever
+ *    reaching this call, so a replay dispatches nothing;
+ *  - the claim is the same one-shot claim the worker uses; a row already `sent`
+ *    or `superseded` is refused by claimNotificationOutbox_, and both states
+ *    are terminal;
+ *  - every enqueue call site already holds the script lock, and so does the
+ *    worker, so the two cannot interleave on the same row.
+ *
+ * It is NOT exactly-once delivery, and this function does not make it so. The
+ * transport is called before the resulting `sent` state can be persisted, so an
+ * execution lost in between leaves the row `claimed` — a state the durable
+ * record cannot distinguish from an attempt that never reached Gmail at all.
+ * The worker will retry it, and the patient may receive that one message twice.
+ * That ambiguous window is a property of an external side effect without a
+ * provider-side idempotency key; it predates this function, is unchanged in
+ * width by it, and closing it would take a delivery contract GmailApp does not
+ * offer. Delivery is at-least-once; the application-level guards above are what
+ * keep ordinary operation at one message.
+ *
+ * Failure is not an error. Anything at all — missing configuration, a render
+ * fault, a Gmail throw, a rejected recipient — leaves the row retryable exactly
+ * as an ordinary failed worker attempt would, and returns null. The booking,
+ * reschedule or cancellation that triggered it never learns this ran.
+ *
+ * Ordering is the caller's guarantee, not this function's: every call site
+ * enqueues only after the authoritative state and Calendar/Meet are persisted,
+ * so nothing is announced before it is true.
+ */
+function dispatchLifecycleNotificationImmediateBestEffort_(sheet, schema, outboxStore, entry) {
+  if (!IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED) return null;
+  if (!sheet || !schema || !outboxStore || !entry || !String(entry.logical_key || '')) return null;
+  try {
+    return notificationWorkerResultSafe_(processOneLifecycleNotificationOutbox_({
+      entry: entry,
+      outboxStore: outboxStore,
+      store: sheetReservationStore_({ sheet: sheet }, schema),
+      sheet: sheet,
+      schema: schema,
+      config: readCapabilityConfig_(),
+      lockAlreadyHeld: true,
+      requireCapabilitySecret_: requireCapabilitySecret_,
+    }));
+  } catch (_) {
+    return null;
+  }
 }
 
 function syncBookingNotificationAudit_(sheet, schema, record, entry) {
@@ -2705,6 +2785,7 @@ var __NOTIFICATION_OUTBOX_TEST_EXPORTS__ = Object.freeze({
   PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES: PRODUCTION_NOTIFICATION_RETRY_INTERVAL_MINUTES,
   assertPatientEmail_: assertPatientEmail_,
   enqueueLifecycleNotification_: enqueueLifecycleNotification_,
+  dispatchLifecycleNotificationImmediateBestEffort_: dispatchLifecycleNotificationImmediateBestEffort_,
   enqueueManualPolicyRefundNotification_: enqueueManualPolicyRefundNotification_,
   enqueueSessionCancelledNotification_: enqueueSessionCancelledNotification_,
   enqueueRefundRequestedNotification_: enqueueRefundRequestedNotification_,

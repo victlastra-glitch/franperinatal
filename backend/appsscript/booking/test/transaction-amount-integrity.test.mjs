@@ -270,7 +270,13 @@ check(fMoved.ok === true, 'F: reschedule succeeds');
 check(f.rowFor(75).transaction_amount_clp === '50000', 'F: a reschedule preserves the bound amount');
 check(f.rowFor(75).patient_reschedule_count === '1', 'F: the one-move cap is consumed as before');
 f.setNow(Date.parse(f.rowFor(75).current_start_at) - 3 * DAY_MS);
-f.context.patientCancel_({ postData: { contents: JSON.stringify({ token: fBooking.cancel }) } });
+// The reschedule email rotates the CANCEL bearer, so cancel with the one the
+// patient actually holds after the move, not the retired confirmation bearer.
+f.drain();
+const fCancelToken = f.tokensFromMail('Tu sesión fue reagendada').cancel;
+check(Boolean(fCancelToken) && fCancelToken !== fBooking.cancel,
+  'F: the reschedule email carries a rotated cancel bearer');
+f.context.patientCancel_({ postData: { contents: JSON.stringify({ token: fCancelToken }) } });
 check(f.state.lastRefundPayload.amount === '50000',
   'F: the post-reschedule refund is still the originally bound 50000');
 

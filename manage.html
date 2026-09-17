@@ -649,6 +649,25 @@
     else btn.classList.remove('is-loading');
   }
 
+  // Las acciones de entrada (Reagendar / Cancelar hora) y el panel abierto son
+  // el mismo paso del flujo expresado dos veces. Con un panel abierto la fila de
+  // entrada ya no ofrece nada: el panel trae su propio título, su explicación y
+  // su propio "Volver". Se oculta mientras hay panel abierto y se restituye al
+  // cerrarlo, siempre desde las capacidades que autorizó el servidor.
+  function syncEntryActions() {
+    var actions = document.getElementById('det-actions');
+    if (!actions) return;
+    var panelOpen = document.querySelectorAll('.mg-panel.open').length > 0;
+    var showReschedule = reserva && reserva.canReschedule === true && reserva.capabilityType === 'RESCHEDULE';
+    var showCancel     = reserva && reserva.canCancel === true && reserva.capabilityType === 'CANCEL';
+    actions.style.display = (!panelOpen && (showReschedule || showCancel)) ? 'flex' : 'none';
+    // `hidden` además de display: un botón oculto no debe quedar en el orden de
+    // tabulación ni ser anunciado por un lector de pantalla.
+    actions.hidden = panelOpen;
+    document.getElementById('btn-cancel').style.display = showCancel ? '' : 'none';
+    document.getElementById('btn-reschedule').style.display = showReschedule ? '' : 'none';
+  }
+
   function openPanel(id) {
     document.querySelectorAll('.mg-panel').forEach(function(p){ p.classList.remove('open'); });
     var p = document.getElementById(id);
@@ -656,9 +675,11 @@
       p.classList.add('open');
       setTimeout(function(){ p.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 60);
     }
+    syncEntryActions();
   }
   function closePanels() {
     document.querySelectorAll('.mg-panel').forEach(function(p){ p.classList.remove('open'); });
+    syncEntryActions();
   }
 
   /* ─── Formateo ─── */
@@ -847,12 +868,9 @@
 
     // Capacidades server-side. El token presentado sigue limitando qué botón
     // puede mostrarse, pero la política del servidor es la que autoriza.
-    var showReschedule = reserva.canReschedule === true && reserva.capabilityType === 'RESCHEDULE';
-    var showCancel     = reserva.canCancel === true && reserva.capabilityType === 'CANCEL';
-
-    document.getElementById('det-actions').style.display = (showReschedule || showCancel) ? 'flex' : 'none';
-    document.getElementById('btn-cancel').style.display = showCancel ? '' : 'none';
-    document.getElementById('btn-reschedule').style.display = showReschedule ? '' : 'none';
+    // Una sola derivación, en syncEntryActions, para que abrir o cerrar un panel
+    // no pueda discrepar del render inicial.
+    syncEntryActions();
 
     // La nota explica por qué falta una acción, y debe nombrar el motivo REAL.
     // Orden deliberado, de más restrictivo a menos:

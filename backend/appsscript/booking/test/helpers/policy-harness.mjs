@@ -61,6 +61,12 @@ export function buildHarness(patches) {
     providerAmountOverride: null,
     providerCurrencyOverride: '',
     refundCreateShouldFail: false,
+    // Delivery controls. `mailShouldFail` makes GmailApp throw the way a quota
+    // or transport fault does; `onMail` fires at the instant of the send, which
+    // is how a scenario proves what was already persisted when the message left.
+    mailShouldFail: false,
+    mailAttempts: 0,
+    onMail: null,
     refundStatusOverride: 'accepted',
     lastRefundPayload: null,
     seq: 0,
@@ -228,6 +234,9 @@ export function buildHarness(patches) {
     },
     GmailApp: {
       sendEmail: (to, subject, body, options) => {
+        state.mailAttempts += 1;
+        if (typeof state.onMail === 'function') state.onMail({ to, subject, body });
+        if (state.mailShouldFail) throw new Error('smtp unavailable');
         state.mail.push({ to, subject, body, htmlBody: options && options.htmlBody });
         return true;
       },
@@ -289,8 +298,11 @@ export function buildHarness(patches) {
     if (!created.ok) throw new Error('fixture booking rejected: ' + JSON.stringify(created));
     const row = rowFor(n);
     state.flowByToken.get(row.flow_token).status = 2;
-    context.flowConfirmation_({ parameter: { token: row.flow_token } });
+    // Cleared BEFORE the confirmation, not after: the confirmation email may be
+    // delivered by the immediate attempt inside flowConfirmation_ or by the
+    // worker below, and the fixture must see exactly one either way.
     state.mail.length = 0;
+    context.flowConfirmation_({ parameter: { token: row.flow_token } });
     drain();
     const confirmations = state.mail.filter((item) => String(item.subject).startsWith('Tu sesión está confirmada'));
     if (confirmations.length !== 1) {

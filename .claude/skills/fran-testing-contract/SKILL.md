@@ -37,13 +37,13 @@ workstation clock or that needs dates bumped each week. The two policy suites sh
 | `Lifecycle.js`, policy, capabilities | `management-policy-24h`, `capability-reachability`, `lifecycle` |
 | Payment / Flow / refund | `flow-contract`, `flow-signature-charset`, `pre-transaction-contract`, `lifecycle`, `transaction-amount-integrity`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/assert-production-legacy-price-scan.mjs` |
 | `Reconciliation.js` / `CalendarGateway.js` | `calendar-metadata-reconciliation`, `lifecycle-harness`, `calendar-manifest-contract` |
-| Outbox / triggers / retries | `notification-outbox-worker`, `notification-outbox-sheet`, `sequential-notification-harness`, `no-drain-notification-harness`, `production-trigger-contract` |
+| Outbox / triggers / retries / immediate dispatch | `notification-outbox-worker`, `notification-outbox-sheet`, `sequential-notification-harness`, `no-drain-notification-harness`, `notification-immediate-dispatch`, `production-trigger-contract` |
 | Email content or templates | `email-design-system-v4`, `lifecycle-email-v2` |
 | `_worker.js` or any `/api/*` route | `scripts/assert-production-worker-structure.mjs _worker.js`, `scripts/test-production-worker-routes.mjs`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/test-manage-contract.mjs`, `preview-host-validation` |
 | Schema / properties / v7 compatibility | `v7-schema-compatibility`, `property-compatibility`, `session-duration-contract`, `production-derived-integration` |
 | Deployable fileset / clasp | `clasp-fileset-release-gate`, `clasp-staging-release-gate`, `scripts/assert-production-clasp-staging-gate.mjs` |
 | Runtime files or nonprod risk | `scripts/assert-production-contamination-firewall.mjs` |
-| `.html` / `assets/**` | contamination firewall, `test-manage-contract` if `manage.html`, plus browser verification |
+| `.html` / `assets/**` | contamination firewall, `test-manage-contract` and `test-manage-cancellation-ui` if `manage.html`, plus browser verification |
 | Agent instructions or skills | `node scripts/assert-agent-skills-parity.mjs` |
 | Release candidate | the full list in the canonical doc |
 

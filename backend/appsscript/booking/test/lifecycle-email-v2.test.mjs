@@ -385,8 +385,11 @@ check(mailBodies.length === 0, 'I duplicate confirmation does not resend email')
 
 const createdD = createBooking(5, '12:00');
 setFlowStatus(byKey(5), 2);
-context.flowConfirmation_({ parameter: { token: byKey(5).flow_token } });
+// Cleared before the callback, not after: the confirmation is attempted
+// immediately inside it. The drain that follows proves the message is not sent
+// a second time by the worker.
 mailBodies = [];
+context.flowConfirmation_({ parameter: { token: byKey(5).flow_token } });
 drain();
 check(mailBodies.length === 1, 'reschedule fixture confirmation delivered');
 const rsToken = tokenFrom(mailBodies[0].body, 'Reagendar');
@@ -404,16 +407,16 @@ check(failedMove.ok === false && byKey(5).current_start_at === byKey(5).original
 
 const createdMove = createBooking(9, '17:00');
 setFlowStatus(byKey(9), 2);
-context.flowConfirmation_({ parameter: { token: byKey(9).flow_token } });
 mailBodies = [];
+context.flowConfirmation_({ parameter: { token: byKey(9).flow_token } });
 drain();
 const rsTokenOk = tokenFrom(mailBodies[0].body, 'Reagendar');
+mailBodies = [];
 const moved = context.patientReschedule_({
   postData: { contents: JSON.stringify({ token: rsTokenOk, fecha: '2026-09-03', hora: '18:00' }) },
 });
 check(moved.ok && byKey(9).payment_status === 'paid' && String(byKey(9).notification_outbox_key).includes('PATIENT_RESCHEDULED'),
   'O successful reschedule persists first and does not charge again');
-mailBodies = [];
 drain();
 check(mailBodies.length === 1 && mailBodies[0].subject.startsWith('Tu sesión fue reagendada · '), 'O exactly one patient reschedule email');
 const duplicateMove = context.patientReschedule_({
@@ -426,11 +429,14 @@ check(mailBodies.length === 0, 'Q duplicate reschedule does not send another ema
 
 const createdE = createBooking(6, '14:00');
 setFlowStatus(byKey(6), 2);
-context.flowConfirmation_({ parameter: { token: byKey(6).flow_token } });
 mailBodies = [];
+context.flowConfirmation_({ parameter: { token: byKey(6).flow_token } });
 drain();
 const cancelTok = tokenFrom(mailBodies[0].body, 'Cancelar');
 const refundCreatesBeforeCancel = refundCreateCalls;
+// Everything the cancellation and its refund produce, from the immediate
+// attempt and from every later worker pass, is counted from here on.
+mailBodies = [];
 const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: cancelTok }) } });
 
 // CANONICAL_REFUND_POLICY=PATIENT_CANCEL_FULL_AUTOMATIC_REFUND
@@ -481,7 +487,6 @@ check(refundCreateCalls === refundCreatesBeforeReenter && reentered && reentered
   'R5 REFUND_CREATE_EFFECTIVE_MAX=1 — re-entering the refund creates no second provider refund');
 
 // A: the accepted refund request is the single patient refund communication
-mailBodies = [];
 drain();
 const requestMail = mailBodies.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada');
 check(requestMail.length === 1, 'R7 REFUND_REQUEST_PATIENT_EMAIL_COUNT=1 at request time');
@@ -531,15 +536,21 @@ mailBodies = [];
 
 const createdG = createBooking(8, '16:00');
 setFlowStatus(byKey(8), 2);
-context.flowConfirmation_({ parameter: { token: byKey(8).flow_token } });
-check(byKey(8).booking_status === 'confirmed' && byKey(8).payment_status === 'paid', 'W payment persisted before email');
+// Gmail throws for the IMMEDIATE attempt, which is the one the confirmation
+// callback now makes. Payment and booking must stand regardless, and the
+// durable row must be left exactly where the periodic worker will find it.
 mailShouldFail = true;
 mailBodies = [];
-const failedMail = drain();
+context.flowConfirmation_({ parameter: { token: byKey(8).flow_token } });
 mailShouldFail = false;
+check(byKey(8).booking_status === 'confirmed' && byKey(8).payment_status === 'paid', 'W payment persisted before email');
+check(mailBodies.length === 0
+  && outboxRows.some((row) => row.reservation_id === byKey(8).reservation_id
+    && row.event_type === 'BOOKING_CONFIRMED' && row.state === 'failed'
+    && row.attempt_count === '1'),
+  'W a failed immediate send leaves the durable row retryable for the worker');
 check(byKey(8).booking_status === 'confirmed' && byKey(8).payment_status === 'paid',
   'W email delivery failure does not roll back payment or booking');
-check(failedMail.results.some((item) => item.ok === false), 'W failed send remains retryable');
 mailBodies = [];
 drain();
 check(mailBodies.length === 1, 'X retried email job sends once after prior failure');
@@ -582,8 +593,8 @@ check(context.activeRefundPolicy_({ payment_status: 'paid', booking_status: 'con
   'canonical BUSINESS_POLICY_TBD remains ineligible for automatic refund');
 const createdTbd = createBooking(22, '12:00', '2026-09-04');
 setFlowStatus(byKey(22), 2);
-context.flowConfirmation_({ parameter: { token: byKey(22).flow_token } });
 mailBodies = [];
+context.flowConfirmation_({ parameter: { token: byKey(22).flow_token } });
 drain();
 const failCancelTok = tokenFrom(mailBodies[0].body, 'Cancelar');
 
@@ -591,6 +602,7 @@ const failCancelTok = tokenFrom(mailBodies[0].body, 'Cancelar');
 // told nothing about a refund, and the internal alert is preserved.
 refundCreateShouldFail = true;
 const refundCreatesBeforeFail = refundCreateCalls;
+mailBodies = [];
 const failCancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: failCancelTok }) } });
 refundCreateShouldFail = false;
 check(failCancel.ok && byKey(22).schedule_status === 'cancelled'
@@ -603,7 +615,6 @@ check(refundCreateCalls === refundCreatesBeforeFail + 1
 check(outboxRows.filter((row) => row.reservation_id === byKey(22).reservation_id
   && row.event_type === 'REFUND_FAILED_MANUAL_REVIEW').length === 1,
   'R9 exactly one internal manual-review notification is preserved');
-mailBodies = [];
 drain();
 // Total patient communications, not one subject: the provider rejected the
 // refund inside the request, so the patient gets neither a cancellation email
