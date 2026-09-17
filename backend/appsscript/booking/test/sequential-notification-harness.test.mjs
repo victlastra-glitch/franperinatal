@@ -246,16 +246,19 @@ const created = context.createFlowPayment_({
   }) },
 });
 check(created.ok && flowCreateCalls === 1, 'Flow create accepted');
+// Mail is captured from the mutation onwards: the durable row is written first
+// and then delivered by the immediate attempt inside the same callback, with
+// the drain below proving the worker adds nothing.
+mailBodies = [];
 const confirmed = context.flowConfirmation_({ parameter: { token: 'FLOWTOKENOPAQUE1234567890ABCD' } });
 check(confirmed.ok && record().booking_status === 'confirmed' && record().meet_url === 'https://meet.google.com/opaque-meet',
   'payment confirmed with one Meet');
-check(record().notification_patient_state === 'pending'
-  && String(record().notification_outbox_key).includes('BOOKING_CONFIRMED'), 'confirmation queued');
+check(record().notification_patient_state === 'sent'
+  && String(record().notification_outbox_key).includes('BOOKING_CONFIRMED'), 'confirmation queued and delivered');
 const confirmationKey = String(record().notification_outbox_key);
 
-mailBodies = [];
 const sentConfirmation = drainOutbox(Date.parse('2026-09-03T16:10:00.000Z'));
-check(sentConfirmation.ok && sentConfirmation.results[0].ok && mailBodies.length === 1, 'confirmation sent once');
+check(sentConfirmation.ok && sentConfirmation.processed === 0 && mailBodies.length === 1, 'confirmation sent once');
 check(mailBodies[0].subject.startsWith('Tu sesión está confirmada · ') && mailBodies[0].subject.endsWith('· 13:00'), 'confirmation subject');
 assertChileTime(mailBodies[0].body, '13:00', 'confirmation uses America/Santiago local time');
 check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
@@ -275,22 +278,22 @@ worker.enqueueLifecycleNotification_(sheet, schema(), record(), 'BOOKING_CONFIRM
 check(record().notification_patient_state === 'sent' && record().notification_outbox_key === confirmationKey,
   'same logical confirmation enqueue is a no-op after sent');
 
+mailBodies = [];
 const reschedule = context.patientReschedule_({
   postData: { contents: JSON.stringify({ token: confirmationRescheduleToken, fecha: '2026-09-03', hora: '14:00' }) },
 });
 check(reschedule.ok && record().patient_reschedule_count === '1' && record().payment_status === 'paid',
   'patient reschedule succeeds and preserves payment');
-check(record().notification_patient_state === 'pending'
+check(record().notification_patient_state === 'sent'
   && String(record().notification_outbox_key).includes('PATIENT_RESCHEDULED')
-  && String(record().notification_attempt_count) === '0'
+  && String(record().notification_attempt_count) === '1'
   && record().notification_outbox_key !== confirmationKey,
   'patient reschedule queues a new logical notification despite prior sent confirmation');
 const patientRescheduleKey = String(record().notification_outbox_key);
 check(phase.reconstructLifecycleEventType_(record()) === 'PATIENT_RESCHEDULED', 'reschedule logical key reconstructs');
 
-mailBodies = [];
 const sentReschedule = drainOutbox(Date.parse('2026-09-03T16:20:00.000Z'));
-check(sentReschedule.ok && sentReschedule.results[0].ok && mailBodies.length === 1, 'patient reschedule email sent once');
+check(sentReschedule.ok && sentReschedule.processed === 0 && mailBodies.length === 1, 'patient reschedule email sent once');
 check(mailBodies[0].subject.startsWith('Tu sesión fue reagendada · ') && mailBodies[0].subject.endsWith('· 14:00'), 'patient reschedule subject');
 assertChileTime(mailBodies[0].body, '14:00', 'patient reschedule uses Chile local time');
 check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
@@ -312,23 +315,23 @@ eventStore = Object.assign({}, eventStore, {
   start: { dateTime: '2026-09-03T20:00:00.000Z' }, end: { dateTime: '2026-09-03T21:00:00.000Z' },
   etag: 'etag-clinician', updated: '2026-09-03T17:30:00.000Z',
 });
+mailBodies = [];
 const move = reconciliation.reconcileCalendarChange_({
   store, event: eventStore,
   enqueueNotification: (updated) => worker.enqueueLifecycleNotification_(sheet, schema(), updated, 'CLINICIAN_RESCHEDULED'),
 });
 check(move.ok && move.changed && record().patient_reschedule_count === '1' && record().payment_status === 'paid',
   'clinician move preserves payment and patient quota');
-check(record().notification_patient_state === 'pending'
+check(record().notification_patient_state === 'sent'
   && String(record().notification_outbox_key).includes('CLINICIAN_RESCHEDULED')
-  && String(record().notification_attempt_count) === '0'
+  && String(record().notification_attempt_count) === '1'
   && record().notification_outbox_key !== patientRescheduleKey,
   'clinician reschedule queues despite prior sent patient-reschedule notification');
 const clinicianKey = String(record().notification_outbox_key);
 check(clinicianKey !== confirmationKey && clinicianKey !== patientRescheduleKey, 'logical keys differ across event types');
 
-mailBodies = [];
 const sentClinician = drainOutbox(Date.parse('2026-09-03T17:40:00.000Z'));
-check(sentClinician.ok && sentClinician.results[0].ok && mailBodies.length === 1, 'clinician reschedule email sent once');
+check(sentClinician.ok && sentClinician.processed === 0 && mailBodies.length === 1, 'clinician reschedule email sent once');
 check(mailBodies[0].subject === 'Hubo un cambio en tu próxima sesión', 'clinician reschedule subject');
 assertChileTime(mailBodies[0].body, '16:00', 'clinician reschedule uses Chile local time for 20:00Z');
 check(mailBodies[0].body.includes('Entrar a la sesión: https://meet.google.com/opaque-meet')
@@ -340,6 +343,7 @@ mailBodies = [];
 check(drainOutbox(Date.parse('2026-09-03T17:41:00.000Z')).processed === 0 && mailBodies.length === 0,
   'clinician reschedule replay does not resend');
 
+mailBodies = [];
 const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: clinicianCancelToken }) } });
 check(cancel.ok && record().booking_status === 'cancellation_requested' && record().schedule_status === 'cancelled',
   'patient cancel releases the slot immediately under PATIENT_CANCEL_FULL_AUTOMATIC_REFUND');
@@ -350,7 +354,6 @@ check(record().payment_status === 'paid' && record().patient_reschedule_count ==
 
 // A: the single refund communication is sent when the application accepts the
 // request, not when the provider later confirms.
-mailBodies = [];
 const sentRequest = drainOutbox(Date.parse('2026-09-03T17:49:00.000Z'));
 check(sentRequest.ok, 'refund-request notifications are processed');
 const refundMail = mailBodies.filter((item) => item.subject === 'Tu solicitud de reembolso fue gestionada');
@@ -401,8 +404,17 @@ check(drainOutbox(Date.parse('2026-09-03T17:52:00.000Z')).ok && mailBodies.lengt
   && !outboxRows.some((row) => row.reservation_id === record().reservation_id
     && row.event_type === 'PATIENT_CANCELLED'),
   'callback replay keeps FRANCISCA_PATIENT_EMAIL_COUNT_MAX=1');
-worker.enqueueLifecycleNotification_(sheet, schema(), record(), 'SESSION_CANCELLED');
-check(mailBodies.length === 0, 'same logical cancellation enqueue does not duplicate');
+// The once-only guard, not the delivery timing, is what caps a reservation at
+// one patient cancellation communication. Exercised through the guarded entry
+// point production uses: the refund communication already exists, so nothing is
+// enqueued and therefore nothing is sent, immediately or on any later tick.
+check(worker.enqueuePatientCancellationNotificationOnce_(sheet, schema(), record(), 'SESSION_CANCELLED') === null,
+  'the once-only guard refuses a second patient cancellation notification');
+mailBodies = [];
+check(drainOutbox(Date.parse('2026-09-03T17:53:00.000Z')).ok && mailBodies.length === 0
+  && !outboxRows.some((row) => row.reservation_id === record().reservation_id
+    && row.event_type === 'SESSION_CANCELLED'),
+  'same logical cancellation enqueue does not duplicate');
 
 check(!phase.verifyCapability_(clinicianCancelToken, 'CANCEL', phase.capabilityFromRecord_(record(), 'CANCEL'), {
   secret: capabilitySecret, now: Date.parse('2026-09-03T17:52:00.000Z'),

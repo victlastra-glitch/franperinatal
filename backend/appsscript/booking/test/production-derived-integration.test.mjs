@@ -259,9 +259,17 @@ const reschedule = context.patientReschedule_({
   postData: { contents: JSON.stringify({ token: rescheduleToken, fecha: '2026-09-03', hora: '12:00' }) },
 });
 check(reschedule.ok && rowFor(2).payment_status === 'paid', 'PAYMENT_PRESERVED_AFTER_RESCHEDULE');
-check(rowFor(2).notification_patient_state === 'pending'
+// Persist-before-email is now proven by what the email says rather than by the
+// email not existing yet: the move is attempted immediately, and the message it
+// delivers already carries the NEW persisted time. An email sent before the
+// store and Calendar were updated could not render 12:00.
+const rescheduleMailNow = mailed[mailed.length - 1];
+check(rowFor(2).notification_patient_state === 'sent'
   && String(rowFor(2).notification_outbox_key).includes('PATIENT_RESCHEDULED')
-  && mailed.length === mailBeforeReschedule,
+  && rowFor(2).current_start_at === '2026-09-03T16:00:00.000Z'
+  && mailed.length === mailBeforeReschedule + 1
+  && /reagend/i.test(rescheduleMailNow.subject)
+  && rescheduleMailNow.body.includes('12:00'),
   'RESCHEDULE_PERSIST_BEFORE_EMAIL');
 check([...eventsById.values()].filter((event) => event.status !== 'cancelled').length === 1,
   'DUPLICATE_CALENDAR_AFTER_RESCHEDULE=0');

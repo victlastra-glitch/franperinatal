@@ -10,6 +10,25 @@ Two time-triggered workers, both at **5 minutes**:
 Installed and verified only through
 `backend/appsscript/booking/TriggerInstallGuard.js`.
 
+## Delivery is an immediate attempt over the worker, never instead of it
+
+`enqueueLifecycleNotification_` makes **one** best-effort attempt on the row it
+just appended, via `dispatchLifecycleNotificationImmediateBestEffort_`. That
+attempt is `processOneLifecycleNotificationOutbox_` on a single row — the same
+claim, ceiling, supersession, rotation and allowlist below, not a second
+delivery implementation. `IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED` (Code.js,
+default true) turns it off.
+
+- **The row is authoritative, the attempt is not.** Any failure leaves the row
+  retryable and returns null. Nothing in the lifecycle may depend on a send: a
+  booking, payment, reschedule, cancellation or refund that already persisted
+  stands whatever the send does.
+- **Only a freshly appended row is dispatched**, and only after the state it
+  announces — including Calendar/Meet — is persisted. Both are the caller's
+  guarantee, at every enqueue call site.
+- The dispatch runs under the script lock its call site already holds, which is
+  the same lock the worker takes.
+
 ## Execution completed ≠ business outcome confirmed
 
 A worker returning cleanly means it ran. It does not mean the patient received
@@ -69,6 +88,7 @@ node backend/appsscript/booking/test/notification-outbox-worker.test.mjs
 node backend/appsscript/booking/test/notification-outbox-sheet.test.mjs
 node backend/appsscript/booking/test/sequential-notification-harness.test.mjs
 node backend/appsscript/booking/test/no-drain-notification-harness.test.mjs
+node backend/appsscript/booking/test/notification-immediate-dispatch.test.mjs
 node backend/appsscript/booking/test/production-trigger-contract.test.mjs
 ```
 

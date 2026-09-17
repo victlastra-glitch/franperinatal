@@ -215,14 +215,18 @@ const created = context.createFlowPayment_({ postData: { contents: JSON.stringif
 check(created.ok && flowCreateCalls === 1 && record().payment_status === 'pending', 'Flow create accepted for free slot');
 
 // payment callback confirmed + one Calendar event + Meet
+// Cleared first: the confirmation email is attempted immediately inside the
+// callback, once Calendar/Meet and the confirmed state are already persisted.
+mailBodies = [];
 const confirmed = context.flowConfirmation_({ parameter: { token: 'FLOWTOKENOPAQUE1234567890ABCD' } });
 check(confirmed.ok && confirmed.status === 'payment_confirmed', 'payment callback confirmed');
 check(record().booking_status === 'confirmed' && record().schedule_status === 'scheduled'
   && record().calendar_event_id === 'event-lifecycle-1'
   && record().meet_url === 'https://meet.google.com/opaque-meet'
   && record().meet_conference_id === 'meet-1', 'one Calendar event + Meet persisted');
-check(record().notification_patient_state === 'pending'
-  && String(record().notification_outbox_key).includes('BOOKING_CONFIRMED'), 'confirmation queues outbox');
+check(record().notification_patient_state === 'sent'
+  && String(record().notification_outbox_key).includes('BOOKING_CONFIRMED'),
+  'confirmation writes a durable outbox event and delivers it immediately');
 
 // initial notification with CTAs / Meet / allowlist
 const store = {
@@ -236,12 +240,12 @@ const store = {
     return current;
   },
 };
-mailBodies = [];
 const notify = worker.processLifecycleNotificationOutbox_({
   config: phase.readCapabilityConfig_(), store, resources: { sheet }, schema: { headers, columns: Object.fromEntries(headers.map((h, i) => [h, i + 1])) },
   requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-25T13:10:00.000Z'),
 });
-check(notify.ok && notify.results[0].ok && mailBodies.length === 1, 'initial notification delivered');
+check(notify.ok && notify.processed === 0 && mailBodies.length === 1,
+  'initial notification delivered exactly once, and the worker finds nothing left to send');
 check(mailBodies[0].to === allowlisted && mailBodies[0].body.includes('Entrar a la sesión:')
   && mailBodies[0].body.includes('Reagendar:') && mailBodies[0].body.includes('Cancelar:'),
   'confirmation email has Meet + Reagendar + Cancelar for allowlisted recipient');
@@ -265,10 +269,10 @@ check(reschedule.ok && record().patient_reschedule_count === '1'
   && record().calendar_event_id === 'event-lifecycle-1'
   && record().meet_url === 'https://meet.google.com/opaque-meet'
   && record().payment_status === 'paid', 'patient reschedule keeps same event/Meet/payment and count=1');
-check(record().notification_patient_state === 'pending'
+check(record().notification_patient_state === 'sent'
   && String(record().notification_outbox_key).includes('PATIENT_RESCHEDULED')
-  && String(record().notification_attempt_count) === '0',
-  'patient reschedule queues despite prior sent confirmation');
+  && String(record().notification_attempt_count) === '1',
+  'patient reschedule gets its own durable event, delivered on its first attempt');
 const secondReschedule = context.patientReschedule_({
   postData: { contents: JSON.stringify({ token: rescheduleToken, fecha: '2026-09-03', hora: '13:00' }) },
 });
@@ -285,13 +289,19 @@ const move = reconciliation.reconcileCalendarChange_({
 });
 check(move.ok && move.changed && record().patient_reschedule_count === '1' && record().payment_status === 'paid',
   'clinician move preserves payment and patient reschedule count');
-check(record().notification_patient_state === 'pending'
+check(record().notification_patient_state === 'sent'
   && String(record().notification_outbox_key).includes('CLINICIAN_RESCHEDULED')
-  && String(record().notification_attempt_count) === '0',
-  'clinician reschedule queues despite prior patient-reschedule notification');
+  && String(record().notification_attempt_count) === '1',
+  'clinician reschedule gets its own durable event, delivered on its first attempt');
 
 // cancel + capacity release
-const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: cancelToken }) } });
+// Every delivered lifecycle email rotates the capabilities it carries, so the
+// bearer that is live now is the one in the most recent email — here the
+// clinician-move notice, not the original confirmation.
+const latestCancelToken = (mailBodies[mailBodies.length - 1].body.match(/Cancelar:.*token=([A-Za-z0-9_-]{64,256})/) || [])[1];
+check(Boolean(latestCancelToken) && latestCancelToken !== cancelToken,
+  'the newest lifecycle email carries a rotated cancel bearer');
+const cancel = context.patientCancel_({ postData: { contents: JSON.stringify({ token: latestCancelToken }) } });
 // PATIENT_CANCEL_FULL_AUTOMATIC_REFUND: the booking holds at
 // cancellation_requested (CANCELLATION_PENDING_REFUND) until the provider
 // confirms, but the slot is released immediately either way.

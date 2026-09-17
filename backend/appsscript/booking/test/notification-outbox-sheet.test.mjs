@@ -196,11 +196,18 @@ const store = {
   loadByReservationId: (id) => reservationRows.find((row) => row.reservation_id === String(id)) || null,
   update: (record, fields) => Object.assign(record, fields),
 };
+// This file owns the SHEET-BACKED store contract, so it holds the worker-only
+// route: the accelerator is switched off and the durable row must be carried
+// entirely by the periodic worker. The accelerated route over the same store is
+// notification-immediate-dispatch's subject.
+context.IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED = false;
+mailCalls = 0;
 worker.enqueueLifecycleNotification_(reservationSheet, schema, booking, 'BOOKING_CONFIRMED');
 check(outboxRows.length === 1 && outboxRows[0].event_type === 'BOOKING_CONFIRMED'
   && outboxRows[0].state === 'pending' && outboxRows[0].source_operation_id
   && outboxRows[0].logical_key.includes('BOOKING_CONFIRMED'),
   'first sheet-backed enqueue writes a durable outbox row');
+check(mailCalls === 0, 'with the accelerator off, enqueue delivers nothing by itself');
 
 const sheetStore = worker.sheetNotificationOutboxStore_(outboxSheet);
 check(sheetStore.records().length === 1 && sheetStore.records()[0].logical_key === outboxRows[0].logical_key,
