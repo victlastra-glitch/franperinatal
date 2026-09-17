@@ -23,6 +23,7 @@ const PATIENT_CASES = ['booking-confirmed', 'session-rescheduled', 'session-clin
   'session-cancelled-refunded', 'refund-requested'];
 const INTERNAL_CASE = 'internal-manual-review';
 const INTERNAL_VIEWPORTS = [['desktop-600', 648], ['390', 390]];
+const MOBILE_DARK_CASES = ['booking-confirmed', 'session-rescheduled', 'session-cancelled'];
 const DARK_CASES = ['booking-confirmed', 'session-rescheduled', 'session-cancelled', 'session-cancelled-refunded', 'refund-requested', INTERNAL_CASE];
 const CHROME_CANDIDATES = [
   '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
@@ -150,6 +151,12 @@ for (const [label, width] of INTERNAL_VIEWPORTS) {
 }
 for (const base of DARK_CASES) {
   await capture(base + '-desktop-600-dark', path.join(FIXTURES, base + '.html'), 648, true);
+}
+// V4.1 review happens on the phone, so the authored dark rendering is captured at
+// the primary mobile width too. This is the email's OWN dark rules resolving; it
+// is not, and must never be reported as, Gmail iOS dark mode.
+for (const base of MOBILE_DARK_CASES) {
+  await capture(base + '-390-dark', path.join(FIXTURES, base + '.html'), 390, true);
 }
 
 socket.close();

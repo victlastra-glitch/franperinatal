@@ -486,7 +486,7 @@ check(!publicKeys.some((key) => /reason|booking_status|refund_status|schedule_st
 
 // 27/28/29 · Copy contracts.
 const templates = clean.context.__EMAIL_TEMPLATE_TEST_EXPORTS__;
-const POLICY_REMINDER = 'Puedes reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.';
+const POLICY_REMINDER = 'Puedes reagendar o cancelar hasta 24 horas antes de tu sesión.';
 check(templates.emailV4ManagementPolicyCopy_() === POLICY_REMINDER,
   'CONFIRMATION_EMAIL_POLICY_REMINDER is the approved copy and reads 24 from the policy constant');
 const confirmationRecord = Object.assign(confirmedPaid(FRIDAY_15), { service_type: 'initial', modality: 'online' });

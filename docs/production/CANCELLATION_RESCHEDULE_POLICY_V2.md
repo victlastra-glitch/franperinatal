@@ -380,7 +380,7 @@ cannot find the row, because no `refund_provider_reference` was ever stored.
 
 **Confirmation email** — under the REAGENDAR / CANCELAR actions it explains:
 
-> Puedes reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.
+> Puedes reagendar o cancelar hasta 24 horas antes de tu sesión.
 
 Confirmation only. After a patient reschedule the state machine has spent the
 single allowed move, so the reminder would be untrue and is not rendered.

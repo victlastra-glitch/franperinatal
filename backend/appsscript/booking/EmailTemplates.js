@@ -1,5 +1,6 @@
 /**
  * FRAN_EMAIL_DESIGN_SYSTEM_V4 — direction: Editorial Clinical Human.
+ * V4.1 — compact and dark-mode resilient. Same system, same contracts.
  *
  * Transactional lifecycle email: HTML + a fully equivalent text/plain body.
  * Contracts held by this file:
@@ -12,20 +13,36 @@
  * - the neutral cancellation email makes no economic claim; the refund block
  *   renders only for a provider-confirmed REFUNDED record
  * - REFUND_FAILED_MANUAL_REVIEW is an internal operator tool, never patient copy
+ *
+ * V4.1 adds three rules, all presentation:
+ * - the status word and the headline never state the same proposition twice:
+ *   the chip adds context, the H1 carries the human message
+ * - one canonical WHEN line per email. A fact the reader already has is not
+ *   repeated as a lead sentence and a labelled row underneath it
+ * - grounds are near-neutral and tinted areas are small, because a large warm
+ *   surface is what Gmail iOS dark mode turns muddy brown
  */
 
 var EMAIL_V4 = Object.freeze({
-  cream: '#FFF7F2',
-  paper: '#FFFCF9',
+  // V4.1 grounds are near-neutral: a cream page behind a cream card is a large
+  // warm surface, and a large warm surface is exactly what Gmail iOS dark mode
+  // renders muddy brown. Warmth is now carried by accents only — the sand rule,
+  // the taupe outline, the link, and the small status chips.
+  surface: '#F2F1EF',
+  paper: '#FFFFFF',
   charcoal: '#2F3236',
   textSecondary: '#5F5A55',
   textMuted: '#6A625C',
   sand: '#DCCBB9',
   taupe: '#A89E93',
-  border: '#E7DDD3',
-  successBg: '#E8EEE6',
+  border: '#E4E1DC',
+  // Status chips: small tinted areas, never a full-width band. Every foreground
+  // clears 4.5:1 on its own chip and on the card.
+  successBg: '#E6EDE6',
+  successAccent: '#3F5C45',
+  chipNeutral: '#EDEBE7',
   cancelBg: '#F6E6E6',
-  // Foreground for cancellation eyebrows and the destructive text link. The
+  // Foreground for the cancellation chip and the destructive text link. The
   // former #B46E6A failed small-text contrast on the paper ground.
   cancelAccent: '#8C4F4B',
   link: '#8C6B52',
@@ -83,8 +100,8 @@ var EMAIL_V4_REBOOK_LABEL = 'Agendar una nueva sesión';
 // It is deliberately not shown on PATIENT_RESCHEDULED: the state machine caps a
 // patient at one move, so there is no second reschedule left to offer.
 function emailV4ManagementPolicyCopy_() {
-  return 'Puedes reagendar o cancelar tu sesión hasta ' + PATIENT_MANAGEMENT_CUTOFF_HOURS
-    + ' horas antes del horario agendado.';
+  return 'Puedes reagendar o cancelar hasta ' + PATIENT_MANAGEMENT_CUTOFF_HOURS
+    + ' horas antes de tu sesión.';
 }
 
 function escapeEmailText_(value) {
@@ -127,6 +144,29 @@ function lifecycleEmailShortDate_(iso) {
     if (weekdayIndex === -1 || !(month >= 1 && month <= 12) || !(day >= 1 && day <= 31)) return '';
     return EMAIL_V4_WEEKDAYS_SHORT[weekdayIndex] + ' ' + day + ' ' + EMAIL_V4_MONTHS_SHORT[month - 1];
   } catch (_) { return ''; }
+}
+
+function emailV4CapitalizeFirst_(text) {
+  const value = String(text || '');
+  return value ? value.charAt(0).toUpperCase() + value.slice(1) : '';
+}
+
+/**
+ * The single canonical WHEN line: "Mié 16 sep · 11:00 (Chile)". It reads the
+ * same short-date helper the subject reads, so the email and its own subject
+ * cannot drift apart, and it fails over to the long patient-facing date rather
+ * than losing the day. text/plain keeps the long form, where length is free.
+ */
+function emailV4WhenLine_(parts, withZone) {
+  const source = parts || {};
+  const short = source.iso ? emailV4CapitalizeFirst_(lifecycleEmailShortDate_(source.iso)) : '';
+  const date = short || String(source.date || '');
+  const time = String(source.time || '');
+  const zone = withZone === false ? '' : ' (Chile)';
+  if (!date && !time) return '';
+  if (!time) return date;
+  if (!date) return time + zone;
+  return date + ' · ' + time + zone;
 }
 
 /** Human-first subjects. The refund claim needs a REFUNDED record, not just the event. */
@@ -228,15 +268,7 @@ function emailV4Greeting_(record) {
 /** Greeting row, or nothing at all. Never a row containing only whitespace. */
 function emailV4GreetingRow_(record) {
   const greeting = emailV4Greeting_(record);
-  return greeting ? emailV4Body_(escapeEmailText_(greeting), 24, EMAIL_V4.charcoal) : '';
-}
-
-/**
- * The lead absorbs the greeting's top padding when there is no greeting, so the
- * rhythm under the H1 is identical whether or not a name was available.
- */
-function emailV4LeadTop_(record) {
-  return emailV4Greeting_(record) ? 16 : 24;
+  return greeting ? emailV4Body_(escapeEmailText_(greeting), 16, EMAIL_V4.charcoal) : '';
 }
 
 /** text/plain equivalent: the greeting and its blank line appear or neither does. */
@@ -317,13 +349,22 @@ function emailV4Style_() {
     + '.v4-lbl{display:block !important;width:100% !important;padding:12px 0 4px 0 !important;border-bottom:0 !important;}'
     + '.v4-val{display:block !important;width:100% !important;padding:0 0 12px 0 !important;}'
     + '}'
+    // Dark mode is held by design, not by a client-specific hack: the grounds
+    // are already near-neutral, so a client that keeps them renders a neutral
+    // email and a client that inverts them has no large warm field to muddy.
+    // Each chip restates its own pair so a partial inversion cannot strand a
+    // foreground on an inverted ground.
     + '@media (prefers-color-scheme:dark){'
-    + '.v4-page{background-color:' + EMAIL_V4.cream + ' !important;}'
+    + '.v4-page{background-color:' + EMAIL_V4.surface + ' !important;}'
     + '.v4-card{background-color:' + EMAIL_V4.paper + ' !important;}'
+    + '.v4-surface{background-color:' + EMAIL_V4.surface + ' !important;}'
     + '.v4-ink{color:' + EMAIL_V4.charcoal + ' !important;}'
     + '.v4-ink2{color:' + EMAIL_V4.textSecondary + ' !important;}'
     + '.v4-ink3{color:' + EMAIL_V4.textMuted + ' !important;}'
     + '.v4-cancel{color:' + EMAIL_V4.cancelAccent + ' !important;}'
+    + '.v4-chip-ok{background-color:' + EMAIL_V4.successBg + ' !important;color:' + EMAIL_V4.successAccent + ' !important;}'
+    + '.v4-chip-neutral{background-color:' + EMAIL_V4.chipNeutral + ' !important;color:' + EMAIL_V4.charcoal + ' !important;}'
+    + '.v4-chip-cancel{background-color:' + EMAIL_V4.cancelBg + ' !important;color:' + EMAIL_V4.cancelAccent + ' !important;}'
     + '}'
     + '</style>';
 }
@@ -348,11 +389,11 @@ function emailV4Document_(options) {
     + '<!--[if mso]><style type="text/css">body,table,td,div,p,a{font-family:Arial,Helvetica,sans-serif !important;}</style><![endif]-->'
     + emailV4Style_()
     + '</head>'
-    + '<body class="v4-page" style="margin:0;padding:0;width:100%;background-color:' + EMAIL_V4.cream
+    + '<body class="v4-page" style="margin:0;padding:0;width:100%;background-color:' + EMAIL_V4.surface
     + ';color:' + EMAIL_V4.charcoal + ';">'
     + emailV4Preheader_(options.preheader)
     + '<table role="presentation" class="v4-page" width="100%" cellpadding="0" cellspacing="0" border="0"'
-    + ' bgcolor="' + EMAIL_V4.cream + '" style="width:100%;background-color:' + EMAIL_V4.cream + ';">'
+    + ' bgcolor="' + EMAIL_V4.surface + '" style="width:100%;background-color:' + EMAIL_V4.surface + ';">'
     + '<tr><td class="v4-outer" align="center" style="padding:24px;">'
     + '<table role="presentation" class="v4-card" width="600" cellpadding="0" cellspacing="0" border="0"'
     + ' bgcolor="' + EMAIL_V4.paper + '" style="width:100%;max-width:' + EMAIL_V4.maxWidth + 'px;'
@@ -367,13 +408,13 @@ function emailV4Document_(options) {
  * editorial signature. No image is needed to understand the email.
  */
 function emailV4Header_() {
-  return '<tr><td class="v4-pad v4-wordmark v4-ink" style="padding:28px 28px 0 28px;font-family:' + EMAIL_V4.display
+  return '<tr><td class="v4-pad v4-wordmark v4-ink" style="padding:24px 28px 0 28px;font-family:' + EMAIL_V4.display
     + ';font-size:22px;font-weight:500;line-height:1.15;letter-spacing:.02em;color:' + EMAIL_V4.charcoal
     + ';text-align:left;">' + EMAIL_V4_BRAND.wordmark + '</td></tr>'
     + '<tr><td class="v4-pad v4-ink3" style="padding:8px 28px 0 28px;font-family:' + EMAIL_V4.sans
     + ';font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.18em;color:' + EMAIL_V4.textMuted
     + ';text-transform:uppercase;text-align:left;">' + EMAIL_V4_BRAND.descriptor + '</td></tr>'
-    + '<tr><td class="v4-pad" style="padding:16px 28px 0 28px;">'
+    + '<tr><td class="v4-pad" style="padding:12px 28px 0 28px;">'
     + '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
     + '<td width="40" height="2" style="width:40px;height:2px;line-height:2px;font-size:0;background-color:'
     + EMAIL_V4.sand + ';">&nbsp;</td></tr></table></td></tr>';
@@ -386,17 +427,24 @@ function emailV4Rule_(top, bottom) {
     + ';">&nbsp;</td></tr></table></td></tr>';
 }
 
+/**
+ * V4.1 status chip. V4 stated the state in a full-width tinted band; that band
+ * was the single largest tinted surface in the email and the one Gmail iOS dark
+ * mode turned muddy. The state keeps its words and its colour semantics and
+ * loses the field: a small chip, sized to its own text.
+ */
 function emailV4Eyebrow_(text, background, color, cssClass) {
-  // A paper gap keeps the status band from fusing with the brand header.
-  return '<tr><td style="height:24px;line-height:24px;font-size:0;">&nbsp;</td></tr>'
-    + '<tr><td class="v4-pad' + (cssClass ? ' ' + cssClass : '') + '" bgcolor="' + background
-    + '" style="padding:12px 28px;background-color:' + background
-    + ';font-family:' + EMAIL_V4.sans + ';font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.16em;'
-    + 'text-transform:uppercase;color:' + color + ';">' + escapeEmailText_(text) + '</td></tr>';
+  return '<tr><td class="v4-pad" style="padding:24px 28px 0 28px;">'
+    + '<table role="presentation" cellpadding="0" cellspacing="0" border="0"><tr>'
+    + '<td class="' + (cssClass || 'v4-chip-neutral') + '" bgcolor="' + background
+    + '" style="padding:4px 8px;background-color:' + background + ';border-radius:2px;'
+    + 'font-family:' + EMAIL_V4.sans + ';font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.16em;'
+    + 'text-transform:uppercase;color:' + color + ';">' + escapeEmailText_(text)
+    + '</td></tr></table></td></tr>';
 }
 
 function emailV4Headline_(text) {
-  return '<tr><td class="v4-pad v4-h1 v4-ink" style="padding:28px 28px 0 28px;font-family:' + EMAIL_V4.display
+  return '<tr><td class="v4-pad v4-h1 v4-ink" style="padding:16px 28px 0 28px;font-family:' + EMAIL_V4.display
     + ';font-size:38px;font-weight:500;line-height:1.08;letter-spacing:-0.01em;color:' + EMAIL_V4.charcoal
     + ';">' + escapeEmailText_(text) + '</td></tr>';
 }
@@ -433,49 +481,55 @@ function emailV4Details_(rows, top) {
 }
 
 /**
- * Highlighted schedule block. NUEVA FECHA carries the visual weight (20/600);
- * ANTES is muted and rendered only when the record can prove the immediately
- * previous appointment time — a patient reschedule, capped at one move. A
- * clinician change after a patient move shows NUEVA FECHA alone.
+ * The WHEN line — the one authoritative schedule statement in the email. V4
+ * stated it up to three times (lead sentence, FECHA row, HORA row); V4.1 states
+ * it once. `prominent` is the arrival state's 20/600 treatment; the closed
+ * states get 16/500, because a cancelled slot is context, not an appointment.
  */
-function emailV4ScheduleHighlight_(previousValue, newValue) {
-  function label(text, color, top) {
-    return '<tr><td class="' + (color === EMAIL_V4.charcoal ? 'v4-ink' : 'v4-ink3') + '" style="padding:' + top
-      + 'px 16px 0 16px;font-family:' + EMAIL_V4.sans
-      + ';font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase;color:'
-      + color + ';">' + text + '</td></tr>';
-  }
-  let inner = '';
-  if (previousValue) {
-    inner += label('ANTES', EMAIL_V4.textMuted, 16)
-      + '<tr><td class="v4-ink3" style="padding:4px 16px 0 16px;font-family:' + EMAIL_V4.sans
-      + ';font-size:14px;font-weight:400;line-height:1.5;color:' + EMAIL_V4.textMuted
-      + ';text-decoration:line-through;">' + escapeEmailText_(previousValue) + '</td></tr>'
-      + '<tr><td style="padding:12px 16px 0 16px;font-family:' + EMAIL_V4.sans
-      + ';font-size:16px;line-height:1;color:' + EMAIL_V4.taupe + ';">&#8594;</td></tr>'
-      + label('NUEVA FECHA', EMAIL_V4.charcoal, 12);
-  } else {
-    inner += label('NUEVA FECHA', EMAIL_V4.charcoal, 16);
-  }
-  inner += '<tr><td class="v4-ink" style="padding:4px 16px 16px 16px;font-family:' + EMAIL_V4.sans
-    + ';font-size:20px;font-weight:600;line-height:1.4;color:' + EMAIL_V4.charcoal + ';">'
-    + escapeEmailText_(newValue) + '</td></tr>';
-  return '<tr><td class="v4-pad" style="padding:24px 28px 0 28px;">'
-    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="' + EMAIL_V4.cream
-    + '" style="width:100%;background-color:' + EMAIL_V4.cream + ';border:1px solid ' + EMAIL_V4.border
-    + ';border-radius:4px;">' + inner + '</table></td></tr>';
+function emailV4WhenRow_(text, prominent, top) {
+  if (!text) return '';
+  return '<tr><td class="v4-pad v4-ink" style="padding:' + (top === undefined ? 16 : top)
+    + 'px 28px 0 28px;font-family:' + EMAIL_V4.sans + ';font-size:' + (prominent ? 20 : 16)
+    + 'px;font-weight:' + (prominent ? 600 : 500) + ';line-height:1.4;color:' + EMAIL_V4.charcoal + ';">'
+    + escapeEmailText_(text) + '</td></tr>';
 }
 
-/** Quiet information block: thin border, cream ground, label eyebrow, no icon. */
+/**
+ * A WHEN line behind a small uppercase label, on one line. Used where the
+ * headline is not itself about that appointment — the superseded time on a
+ * reschedule, the session behind a refund — and a bare date would be ambiguous.
+ */
+function emailV4LabelledWhenRow_(label, text, struck, top) {
+  if (!text) return '';
+  const value = escapeEmailText_(text);
+  return '<tr><td class="v4-pad v4-ink3" style="padding:' + (top === undefined ? 16 : top)
+    + 'px 28px 0 28px;font-family:' + EMAIL_V4.sans
+    + ';font-size:14px;font-weight:400;line-height:1.5;color:' + EMAIL_V4.textMuted + ';">'
+    + emailV4Label_(label, EMAIL_V4.textMuted) + '&nbsp;&nbsp;'
+    + (struck ? '<span style="text-decoration:line-through;">' + value + '</span>' : value)
+    + '</td></tr>';
+}
+
+/**
+ * The superseded time, on one muted struck-through line. V4 spent a bordered
+ * cream card and five rows on the same comparison. Rendered only when the record
+ * can prove the immediately previous appointment — a patient reschedule, capped
+ * at one move; a clinician change shows the new time alone.
+ */
+function emailV4PreviousWhenRow_(text) {
+  return emailV4LabelledWhenRow_('ANTES', text, true, 16);
+}
+
+/** Quiet information block: thin border, neutral ground, label eyebrow, no icon. */
 function emailV4InfoBlock_(label, text) {
-  return '<tr><td class="v4-pad" style="padding:24px 28px 0 28px;">'
-    + '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="' + EMAIL_V4.cream
-    + '" style="width:100%;background-color:' + EMAIL_V4.cream + ';border:1px solid ' + EMAIL_V4.border
-    + ';border-radius:4px;">'
-    + '<tr><td class="v4-ink3" style="padding:16px 16px 0 16px;font-family:' + EMAIL_V4.sans
+  return '<tr><td class="v4-pad" style="padding:16px 28px 0 28px;">'
+    + '<table role="presentation" class="v4-surface" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="'
+    + EMAIL_V4.surface + '" style="width:100%;background-color:' + EMAIL_V4.surface + ';border:1px solid '
+    + EMAIL_V4.border + ';border-radius:4px;">'
+    + '<tr><td class="v4-ink3" style="padding:12px 16px 0 16px;font-family:' + EMAIL_V4.sans
     + ';font-size:12px;font-weight:600;line-height:1.4;letter-spacing:.12em;text-transform:uppercase;color:'
     + EMAIL_V4.textMuted + ';">' + label + '</td></tr>'
-    + '<tr><td class="v4-ink2" style="padding:8px 16px 16px 16px;font-family:' + EMAIL_V4.sans
+    + '<tr><td class="v4-ink2" style="padding:4px 16px 12px 16px;font-family:' + EMAIL_V4.sans
     + ';font-size:16px;font-weight:400;line-height:1.55;color:' + EMAIL_V4.textSecondary + ';">'
     + escapeEmailText_(text) + '</td></tr>'
     + '</table></td></tr>';
@@ -499,7 +553,7 @@ function emailV4Button_(href, label, primary) {
 function emailV4PrimaryRow_(href, label) {
   const button = emailV4Button_(href, label, true);
   if (!button) return '';
-  return '<tr><td class="v4-pad" style="padding:32px 28px 0 28px;">' + button + '</td></tr>';
+  return '<tr><td class="v4-pad" style="padding:24px 28px 0 28px;">' + button + '</td></tr>';
 }
 
 function emailV4SecondaryRow_(href, label, top) {
@@ -542,40 +596,42 @@ function emailV4TertiaryRow_(href, label) {
 // raw meet.google.com string was a line of machine noise in an editorial email and
 // broke mid-token at 320px. text/plain keeps the full URL, because there the URL is
 // the only usable destination.
-var EMAIL_V4_MEET_FALLBACK_LEAD = 'Si el botón no funciona:';
-var EMAIL_V4_MEET_FALLBACK_LABEL = 'Abrir enlace alternativo de Google Meet';
+//
+// V4.1 folds the two rows into one line. "Abrir Google Meet" — and never "haz
+// clic aquí" — remains the whole of the link text, so the destination is still
+// meaningful read out of context by a screen reader or a link list.
+var EMAIL_V4_MEET_FALLBACK_LEAD = '¿No funciona el botón?';
+var EMAIL_V4_MEET_FALLBACK_LABEL = 'Abrir Google Meet';
 
 function emailV4MeetFallback_(meetUrl) {
   if (!meetUrl) return '';
-  return '<tr><td class="v4-pad v4-ink3" style="padding:16px 28px 0 28px;font-family:' + EMAIL_V4.sans
-    + ';font-size:16px;font-weight:400;line-height:1.55;color:' + EMAIL_V4.textMuted + ';">'
-    + EMAIL_V4_MEET_FALLBACK_LEAD + '</td></tr>'
-    + '<tr><td class="v4-pad" style="padding:4px 28px 0 28px;font-family:' + EMAIL_V4.sans
-    + ';font-size:16px;line-height:1.55;">'
+  return '<tr><td class="v4-pad v4-ink3" style="padding:12px 28px 0 28px;font-family:' + EMAIL_V4.sans
+    + ';font-size:14px;font-weight:400;line-height:1.5;color:' + EMAIL_V4.textMuted + ';">'
+    + EMAIL_V4_MEET_FALLBACK_LEAD + ' '
     + '<a href="' + escapeEmailText_(meetUrl) + '" target="_blank" style="color:' + EMAIL_V4.link
     + ';text-decoration:underline;">' + EMAIL_V4_MEET_FALLBACK_LABEL + '</a></td></tr>';
 }
 
 /** Compact footer: help line, contact links, one identification line. */
 function emailV4Footer_() {
-  return emailV4Rule_(32, 0)
-    + '<tr><td class="v4-pad v4-ink" style="padding:24px 28px 0 28px;font-family:' + EMAIL_V4.sans
+  return emailV4Rule_(24, 0)
+    + '<tr><td class="v4-pad v4-ink" style="padding:16px 28px 0 28px;font-family:' + EMAIL_V4.sans
     + ';font-size:16px;font-weight:500;line-height:1.55;color:' + EMAIL_V4.charcoal + ';">¿Necesitas ayuda?</td></tr>'
-    + '<tr><td class="v4-pad" style="padding:8px 28px 0 28px;font-family:' + EMAIL_V4.sans
+    + '<tr><td class="v4-pad" style="padding:4px 28px 0 28px;font-family:' + EMAIL_V4.sans
     + ';font-size:16px;line-height:1.55;color:' + EMAIL_V4.textSecondary + ';">'
     + '<a href="' + EMAIL_V4_BRAND.whatsappUrl + '" target="_blank" style="color:' + EMAIL_V4.link
     + ';text-decoration:underline;">WhatsApp</a>'
     + '<span style="color:' + EMAIL_V4.taupe + ';"> &middot; </span>'
     + '<a href="mailto:' + EMAIL_V4_BRAND.emailAddress + '" style="color:' + EMAIL_V4.link
     + ';text-decoration:underline;">Email</a></td></tr>'
-    + '<tr><td class="v4-pad v4-ink3" style="padding:24px 28px 28px 28px;font-family:' + EMAIL_V4.sans
+    + '<tr><td class="v4-pad v4-ink3" style="padding:16px 28px 24px 28px;font-family:' + EMAIL_V4.sans
     + ';font-size:12px;font-weight:600;line-height:1.5;letter-spacing:.12em;text-transform:uppercase;color:'
     + EMAIL_V4.textMuted + ';">' + EMAIL_V4_BRAND.wordmark + ' &middot; ' + EMAIL_V4_BRAND.descriptor + '</td></tr>';
 }
 
 function emailV4InternalFooter_() {
-  return emailV4Rule_(32, 0)
-    + '<tr><td class="v4-pad v4-ink3" style="padding:24px 28px 28px 28px;font-family:' + EMAIL_V4.sans
+  return emailV4Rule_(24, 0)
+    + '<tr><td class="v4-pad v4-ink3" style="padding:16px 28px 24px 28px;font-family:' + EMAIL_V4.sans
     + ';font-size:12px;font-weight:600;line-height:1.5;letter-spacing:.12em;text-transform:uppercase;color:'
     + EMAIL_V4.textMuted + ';">' + EMAIL_V4_BRAND.wordmark + ' &middot; ' + EMAIL_V4_BRAND.descriptor
     + ' &middot; AVISO INTERNO</td></tr>';
@@ -614,19 +670,23 @@ function emailV4LogisticsRows_(record, includeAmount) {
 }
 
 /**
- * The reschedule states have one job — the new time and a way into the session —
- * so modality and duration collapse from two labelled rows into one quiet line
- * ("Online · 50 minutos"). Both halves are read from the same helpers the detail
- * rows read; nothing here is a second source of truth and nothing is hardcoded.
+ * Modality, session length and — where the email is the receipt for the
+ * transaction — what the booking is worth, on one quiet line under the WHEN
+ * line ("Online · 50 minutos · $50.000"). Every part is read from the same
+ * helper the labelled text/plain row reads; nothing here is a second source of
+ * truth and nothing is hardcoded. `includeAmount` is true only on the
+ * confirmation: a reschedule moves a session that is already paid.
  */
-function emailV4LogisticsLine_(record) {
-  return [emailV4ModalityLabel_(record), emailV4SessionDurationLabel_()]
+function emailV4LogisticsLine_(record, includeAmount) {
+  return [emailV4ModalityLabel_(record), emailV4SessionDurationLabel_(),
+    includeAmount ? emailV4AmountLabel_(record) : '']
     .filter(function(part) { return Boolean(part); }).join(' · ');
 }
 
-function emailV4LogisticsLineRow_(text) {
+function emailV4LogisticsLineRow_(text, top) {
   if (!text) return '';
-  return '<tr><td class="v4-pad v4-ink3" style="padding:12px 28px 0 28px;font-family:' + EMAIL_V4.sans
+  return '<tr><td class="v4-pad v4-ink3" style="padding:' + (top === undefined ? 4 : top)
+    + 'px 28px 0 28px;font-family:' + EMAIL_V4.sans
     + ';font-size:14px;font-weight:400;line-height:1.5;color:' + EMAIL_V4.textMuted + ';">'
     + escapeEmailText_(text) + '</td></tr>';
 }
@@ -670,7 +730,7 @@ function renderLifecycleEmailHtml_(input) {
       title: subject,
       preheader: EMAIL_V4_PREHEADER.internal,
       rows: emailV4Header_()
-        + emailV4Eyebrow_('ACCIÓN REQUERIDA', EMAIL_V4.cancelBg, EMAIL_V4.cancelAccent, 'v4-cancel')
+        + emailV4Eyebrow_('ACCIÓN REQUERIDA', EMAIL_V4.cancelBg, EMAIL_V4.cancelAccent, 'v4-chip-cancel')
         + emailV4Headline_(review.headline)
         + emailV4Body_(escapeEmailText_(EMAIL_V4_INTERNAL_DISCLAIMER), 16)
         + emailV4Details_(review.humanRows)
@@ -684,11 +744,13 @@ function renderLifecycleEmailHtml_(input) {
     // Fail-closed: no modality, duration, value, Meet, or management links. The
     // neutral variant carries no payment/refund vocabulary at all; the refund
     // block appears only for a provider-confirmed REFUNDED record.
-    const cancelledRows = [];
-    if (parts.date) cancelledRows.push(['Fecha', parts.date]);
-    if (parts.time) cancelledRows.push(['Hora', parts.time + ' (Chile)']);
-    const when = parts.date && parts.time
-      ? 'La sesión agendada para el ' + parts.date + ' a las ' + parts.time + ' fue cancelada. La hora quedó liberada.'
+    //
+    // V4.1: V4 stated the cancelled slot three times — in the lead sentence, in
+    // the FECHA row and in the HORA row. It is now stated once, on the WHEN
+    // line, and the released-slot clause stands alone. Where no date can be
+    // derived the email falls back to the sentence that needs none.
+    const when = emailV4WhenLine_(parts);
+    const released = when ? 'La hora quedó liberada.'
       : 'La sesión que tenías agendada fue cancelada. La hora quedó liberada.';
     const refundConfirmed = emailV4RefundConfirmed_(notification.eventType, record);
     // The cancellation leads; the approved refund copy is an information block
@@ -699,87 +761,78 @@ function renderLifecycleEmailHtml_(input) {
       title: subject,
       preheader: refundConfirmed ? EMAIL_V4_PREHEADER.cancelledRefunded : EMAIL_V4_PREHEADER.cancelled,
       rows: emailV4Header_()
-        + emailV4Eyebrow_('TU SESIÓN FUE CANCELADA', EMAIL_V4.cancelBg, EMAIL_V4.cancelAccent, 'v4-cancel')
+        + emailV4Eyebrow_('RESERVA CANCELADA', EMAIL_V4.cancelBg, EMAIL_V4.cancelAccent, 'v4-chip-cancel')
         + emailV4Headline_('Tu sesión fue cancelada.')
         + emailV4GreetingRow_(record)
-        + emailV4Body_(escapeEmailText_(when), emailV4LeadTop_(record))
-        + emailV4Details_(cancelledRows)
+        + emailV4WhenRow_(when, false)
+        + emailV4Body_(escapeEmailText_(released), when ? 8 : 16)
         + (refundConfirmed ? emailV4InfoBlock_('REEMBOLSO', EMAIL_V4_REFUND_COPY) : '')
-        + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 32)
+        + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 24)
         + emailV4QuietActionRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL, 8)
         + emailV4Footer_(),
     });
   }
 
   if (kind === 'confirmed' || kind === 'rescheduled' || kind === 'clinician_rescheduled') {
-    let eyebrow = 'TU SESIÓN ESTÁ CONFIRMADA';
+    // V4.1: the chip adds context, the H1 carries the human message, and neither
+    // restates the other. V4 shipped "TU SESIÓN FUE REAGENDADA" directly above
+    // "Tu sesión fue reagendada." — the same sentence twice, once shouted.
+    let eyebrow = 'RESERVA CONFIRMADA';
     let headline = 'Tu sesión está confirmada.';
-    let lead = parts.date && parts.time
-      ? 'Te esperamos el ' + parts.date + ' a las ' + parts.time + '.'
-      : 'Te esperamos en la fecha agendada.';
     let preheader = EMAIL_V4_PREHEADER.confirmed;
-    let band = EMAIL_V4.successBg;
+    let chipBackground = EMAIL_V4.successBg;
+    let chipColor = EMAIL_V4.successAccent;
+    let chipClass = 'v4-chip-ok';
     if (kind === 'rescheduled') {
-      eyebrow = 'TU SESIÓN FUE REAGENDADA';
+      eyebrow = 'NUEVA FECHA CONFIRMADA';
       headline = 'Tu sesión fue reagendada.';
-      lead = 'Te esperamos en tu nueva fecha.';
       preheader = EMAIL_V4_PREHEADER.rescheduled;
-      band = EMAIL_V4.cream;
+      chipBackground = EMAIL_V4.chipNeutral;
+      chipColor = EMAIL_V4.charcoal;
+      chipClass = 'v4-chip-neutral';
     } else if (kind === 'clinician_rescheduled') {
-      eyebrow = 'HUBO UN CAMBIO EN TU PRÓXIMA SESIÓN';
+      eyebrow = 'CAMBIO DE HORARIO';
       headline = 'Hubo un cambio en tu próxima sesión.';
-      lead = 'Actualicé el horario. Revisa a continuación la nueva fecha.';
       preheader = EMAIL_V4_PREHEADER.rescheduled;
-      band = EMAIL_V4.cream;
+      chipBackground = EMAIL_V4.chipNeutral;
+      chipColor = EMAIL_V4.charcoal;
+      chipClass = 'v4-chip-neutral';
     }
 
-    // Where the highlight renders it is the single authoritative schedule
-    // statement, so FECHA/HORA are not repeated immediately underneath it — that
-    // was the same fact twice, once large and once small. NUEVA FECHA therefore
-    // carries the explicit Chile zone itself, so dropping the Hora row costs no
-    // information. Confirmation renders no highlight and keeps FECHA/HORA rows.
-    const scheduleValue = parts.date + ' · ' + parts.time + ' (Chile)';
-    let highlight = '';
-    if (kind === 'clinician_rescheduled' && parts.combined) {
-      highlight = emailV4ScheduleHighlight_('', scheduleValue);
-    } else if (kind === 'rescheduled' && previous.combined && parts.combined
-      && record.original_start_at !== record.current_start_at) {
-      highlight = emailV4ScheduleHighlight_(previous.date + ' · ' + previous.time, scheduleValue);
-    }
-    // Confirmation: FECHA and HORA are the reason the email exists, so they sit
-    // directly under the lead and above the action. Reschedule states: the
-    // highlight already is that statement, and one discreet logistics line
-    // follows it instead of three more labelled rows.
-    const compact = Boolean(highlight);
-    const scheduleBlock = compact
-      ? highlight + emailV4LogisticsLineRow_(emailV4LogisticsLine_(record))
-      : emailV4Details_(emailV4ScheduleRows_(parts));
-    // Modality, duration and value are reference, not instruction, so on the
-    // confirmation they sit under the Meet action rather than above it. VALOR is
-    // the confirmation's alone: it is the receipt for the transaction, while a
-    // reschedule moves a session that is already paid and restates no amount —
-    // including on the degenerate path where no highlight could be built.
-    const detailBlock = compact ? ''
-      : emailV4Details_(emailV4LogisticsRows_(record, kind === 'confirmed'));
+    // One WHEN line, once. V4 stated the appointment in a lead sentence, then
+    // again in a FECHA row and a HORA row (confirmation), or in a five-row
+    // bordered comparison card (reschedule). V4.1 states it on a single line
+    // that owns the explicit Chile zone, with the superseded time above it only
+    // where the record proves a patient move actually happened.
+    const showsPrevious = kind === 'rescheduled' && previous.combined && parts.combined
+      && record.original_start_at !== record.current_start_at;
+    const previousRow = showsPrevious ? emailV4PreviousWhenRow_(emailV4WhenLine_(previous, false)) : '';
+    const whenRow = emailV4WhenRow_(emailV4WhenLine_(parts), true, previousRow ? 4 : 16);
+    // Modality, duration and — on the confirmation only — what this booking is
+    // worth, on one quiet line under the WHEN line. VALOR is the confirmation's
+    // alone: it is the receipt for the transaction, while a reschedule moves a
+    // session that is already paid and restates no amount.
+    const logisticsRow = emailV4LogisticsLineRow_(emailV4LogisticsLine_(record, kind === 'confirmed'));
 
     const actions = emailV4ScheduleActions_(kind, tokens, origin);
-    const humanCopy = kind === 'confirmed' ? emailV4Body_(EMAIL_V4_SESSION_COPY, 32) : '';
+    const humanCopy = kind === 'confirmed' ? emailV4Body_(EMAIL_V4_SESSION_COPY, 24) : '';
     // Muted caption directly under the management actions it explains.
     const policyReminder = kind === 'confirmed'
-      ? emailV4Body_(escapeEmailText_(emailV4ManagementPolicyCopy_()), 16, EMAIL_V4.textMuted) : '';
+      ? emailV4Body_(escapeEmailText_(emailV4ManagementPolicyCopy_()), 12, EMAIL_V4.textMuted) : '';
 
+    // STATE -> WHEN -> JOIN -> MANAGE -> HELP.
     return emailV4Document_({
       title: subject,
       preheader: preheader,
       rows: emailV4Header_()
-        + emailV4Eyebrow_(eyebrow, band, EMAIL_V4.charcoal)
+        + emailV4Eyebrow_(eyebrow, chipBackground, chipColor, chipClass)
         + emailV4Headline_(headline)
         + emailV4GreetingRow_(record)
-        + emailV4Body_(escapeEmailText_(lead), emailV4LeadTop_(record))
-        + scheduleBlock
+        + previousRow
+        + whenRow
+        + logisticsRow
         + emailV4PrimaryRow_(meetUrl, 'ENTRAR A LA SESIÓN')
         + emailV4MeetFallback_(meetUrl)
-        + detailBlock
         + (actions.reschedule ? emailV4SecondaryRow_(actions.reschedule.href, actions.reschedule.label) : '')
         + (actions.cancel ? emailV4TertiaryRow_(actions.cancel.href, actions.cancel.label) : '')
         + policyReminder
@@ -792,34 +845,35 @@ function renderLifecycleEmailHtml_(input) {
     // The request is the completed job. No CTA button at all, no Flow vocabulary,
     // no internal codes, and no claim that the money has already been returned.
     // Re-booking is a quiet text link, subordinate to the refund outcome.
-    const refundRows = [];
-    if (parts.date) refundRows.push(['Fecha', parts.date]);
-    if (parts.time) refundRows.push(['Hora', parts.time + ' (Chile)']);
+    // The headline here is about the refund, not the appointment, so the session
+    // keeps a label: a bare date under this H1 would be ambiguous.
     return emailV4Document_({
       title: subject,
       preheader: EMAIL_V4_PREHEADER.refundRequested,
       rows: emailV4Header_()
-        + emailV4Eyebrow_('SOLICITUD DE REEMBOLSO', EMAIL_V4.cream, EMAIL_V4.charcoal)
+        + emailV4Eyebrow_('SOLICITUD DE REEMBOLSO', EMAIL_V4.chipNeutral, EMAIL_V4.charcoal, 'v4-chip-neutral')
         + emailV4Headline_('Tu solicitud de reembolso fue gestionada.')
         + emailV4GreetingRow_(record)
-        + emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_REQUESTED_COPY), emailV4LeadTop_(record))
-        + emailV4Details_(refundRows)
-        + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 32)
+        + emailV4Body_(escapeEmailText_(EMAIL_V4_REFUND_REQUESTED_COPY), 16)
+        + emailV4LabelledWhenRow_('SESIÓN', emailV4WhenLine_(parts), false, 16)
+        + emailV4Body_(escapeEmailText_(EMAIL_V4_CANCELLED_HUMAN_COPY), 24)
         + emailV4QuietActionRow_(emailV4BookingUrl_(origin), EMAIL_V4_REBOOK_LABEL, 8)
         + emailV4Footer_(),
     });
   }
 
   // Dormant operational states (REFUND_COMPLETED / unknown).
-  // V4 chrome, existing copy, no invented policy language, no CTA.
+  // V4 chrome, existing copy, no invented policy language, no CTA. The chip says
+  // what kind of message this is; the H1 says what happened, so the generic
+  // state no longer prints "ACTUALIZACIÓN DE TU RESERVA" above the same words.
   return emailV4Document_({
     title: subject,
     preheader: EMAIL_V4_PREHEADER.generic,
     rows: emailV4Header_()
-      + emailV4Eyebrow_('ACTUALIZACIÓN DE TU RESERVA', EMAIL_V4.cream, EMAIL_V4.textMuted)
+      + emailV4Eyebrow_('AVISO OPERATIVO', EMAIL_V4.chipNeutral, EMAIL_V4.charcoal, 'v4-chip-neutral')
       + emailV4Headline_(subject)
       + emailV4GreetingRow_(record)
-      + emailV4Body_('Te escribimos con una actualización operativa de tu reserva.', emailV4LeadTop_(record))
+      + emailV4Body_('Te escribimos con una actualización operativa de tu reserva.', 16)
       + emailV4Footer_(),
   });
 }
@@ -881,14 +935,13 @@ function renderLifecycleEmailText_(input) {
 
   if (kind === 'cancelled') {
     const lines = emailV4TextHeader_();
-    lines.push('TU SESIÓN FUE CANCELADA', '');
+    lines.push('RESERVA CANCELADA', '');
     emailV4PushTextGreeting_(lines, record);
-    lines.push(parts.date && parts.time
-      ? 'La sesión agendada para el ' + parts.date + ' a las ' + parts.time + ' fue cancelada. La hora quedó liberada.'
-      : 'La sesión que tenías agendada fue cancelada. La hora quedó liberada.');
-    lines.push('');
+    lines.push('Tu sesión fue cancelada.', '');
     if (parts.date) lines.push('Fecha: ' + parts.date);
     if (parts.time) lines.push('Hora: ' + parts.time + ' (Chile)');
+    lines.push('', parts.date && parts.time ? 'La hora quedó liberada.'
+      : 'La sesión que tenías agendada fue cancelada. La hora quedó liberada.');
     if (emailV4RefundConfirmed_(notification.eventType, record)) {
       lines.push('', 'REEMBOLSO', EMAIL_V4_REFUND_COPY);
     }
@@ -899,20 +952,21 @@ function renderLifecycleEmailText_(input) {
 
   if (kind === 'confirmed' || kind === 'rescheduled' || kind === 'clinician_rescheduled') {
     const lines = emailV4TextHeader_();
+    // text/plain mirrors the V4.1 status word and headline; the lead sentence
+    // that restated the date is gone from both views. The labelled rows below
+    // keep the long, unambiguous date that the compact HTML line abbreviates.
     if (kind === 'confirmed') {
-      lines.push('TU SESIÓN ESTÁ CONFIRMADA', '');
+      lines.push('RESERVA CONFIRMADA', '');
       emailV4PushTextGreeting_(lines, record);
-      lines.push(parts.date && parts.time
-        ? 'Te esperamos el ' + parts.date + ' a las ' + parts.time + '.'
-        : 'Te esperamos en la fecha agendada.');
+      lines.push('Tu sesión está confirmada.');
     } else if (kind === 'rescheduled') {
-      lines.push('TU SESIÓN FUE REAGENDADA', '');
+      lines.push('NUEVA FECHA CONFIRMADA', '');
       emailV4PushTextGreeting_(lines, record);
-      lines.push('Te esperamos en tu nueva fecha.');
+      lines.push('Tu sesión fue reagendada.');
     } else {
-      lines.push('HUBO UN CAMBIO EN TU PRÓXIMA SESIÓN', '');
+      lines.push('CAMBIO DE HORARIO', '');
       emailV4PushTextGreeting_(lines, record);
-      lines.push('Actualicé el horario. Revisa a continuación la nueva fecha.');
+      lines.push('Hubo un cambio en tu próxima sesión.');
     }
     if (kind === 'clinician_rescheduled' && parts.combined) {
       lines.push('', 'NUEVA FECHA: ' + parts.date + ' · ' + parts.time);
@@ -933,8 +987,9 @@ function renderLifecycleEmailText_(input) {
   }
 
   const lines = emailV4TextHeader_();
-  lines.push('ACTUALIZACIÓN DE TU RESERVA', '');
+  lines.push('AVISO OPERATIVO', '');
   emailV4PushTextGreeting_(lines, record);
+  lines.push(lifecycleNotificationSubject_(notification.eventType, parts), '');
   lines.push('Te escribimos con una actualización operativa de tu reserva.');
   return lines.concat(emailV4TextFooter_()).join('\n');
 }
@@ -957,6 +1012,7 @@ var __EMAIL_TEMPLATE_TEST_EXPORTS__ = Object.freeze({
   emailV4InternalReview_: emailV4InternalReview_,
   lifecycleEmailDateParts_: lifecycleEmailDateParts_,
   lifecycleEmailShortDate_: lifecycleEmailShortDate_,
+  emailV4WhenLine_: emailV4WhenLine_,
   lifecycleNotificationSubject_: lifecycleNotificationSubject_,
   lifecycleEmailV4Kind_: lifecycleEmailV4Kind_,
   emailV4FormatClp_: emailV4FormatClp_,

@@ -1,9 +1,9 @@
 FRANCISCA BUSTOS M.
 PSICOLOGÍA PERINATAL
 
-TU SESIÓN ESTÁ CONFIRMADA
+RESERVA CONFIRMADA
 
-Te esperamos el miércoles 16 de septiembre de 2026 a las 11:00.
+Tu sesión está confirmada.
 
 Fecha: miércoles 16 de septiembre de 2026
 Hora: 11:00 (Chile)
@@ -16,7 +16,7 @@ Entrar a la sesión: https://meet.google.com/opaque-meet
 Reagendar: https://franciscabustos.cl/manage.html?token=rrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrrr&open=reschedule
 Cancelar: https://franciscabustos.cl/manage.html?token=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc&open=cancel
 
-Puedes reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.
+Puedes reagendar o cancelar hasta 24 horas antes de tu sesión.
 
 No necesitas preparar nada especial para la sesión.
 
