@@ -290,7 +290,7 @@ const openPanels = (dom) => dom.order.filter((node) => node.classList.contains('
   check(page.el('cancelled-copy').textContent.startsWith('Tu sesión fue cancelada y el horario quedó disponible. El reembolso está en proceso'),
     'the refunded-pending copy comes from data.refund, not from a client guess');
   check(page.requests.filter((href) => href === '/api/manage-cancel').length === 1,
-    'confirming cancels exactly once, through the same-origin Worker route');
+    'confirming issues a single /api/manage-cancel request, through the same-origin Worker route');
 }
 
 // A non-refundable outcome reported by the server gets the other approved copy.

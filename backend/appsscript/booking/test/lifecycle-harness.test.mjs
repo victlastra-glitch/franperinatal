@@ -245,7 +245,7 @@ const notify = worker.processLifecycleNotificationOutbox_({
   requireCapabilitySecret_: () => capabilitySecret, now: Date.parse('2026-08-25T13:10:00.000Z'),
 });
 check(notify.ok && notify.processed === 0 && mailBodies.length === 1,
-  'initial notification delivered exactly once, and the worker finds nothing left to send');
+  'initial notification delivered, and the worker finds nothing left to send');
 check(mailBodies[0].to === allowlisted && mailBodies[0].body.includes('Entrar a la sesión:')
   && mailBodies[0].body.includes('Reagendar:') && mailBodies[0].body.includes('Cancelar:'),
   'confirmation email has Meet + Reagendar + Cancelar for allowlisted recipient');

@@ -166,9 +166,14 @@ var NOTIFICATION_OUTBOX_RETRYABLE_STATES = Object.freeze(['pending', 'failed', '
 var NOTIFICATION_OUTBOX_TERMINAL_STATES = Object.freeze(['sent', 'superseded']);
 // Best-effort immediate delivery of a just-persisted outbox row. The durable
 // outbox and its 5-minute worker remain the delivery contract; this only tries
-// to run the first attempt now rather than on the next tick. Setting it false
-// is the operational kill switch: every message then waits for the worker,
-// which is exactly the behaviour that shipped before.
+// to run the first attempt now rather than on the next tick.
+//
+// This is a SOURCE-LEVEL feature flag, not a runtime switch. Nothing reads it
+// from Script Properties and no operator can flip it on a running deployment:
+// changing it means editing this line and pushing a new Apps Script version.
+// The operational rollback for the accelerator is therefore the ordinary one —
+// repoint the Web App to the previously verified permanent version, which does
+// not contain it.
 var IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED = true;
 const CREATE_FLOW_FIELDS = Object.freeze([
   'idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone',
@@ -2154,15 +2159,29 @@ function enqueueLifecycleNotification_(sheet, schema, record, type, capabilityTo
  * the periodic worker applies. There is no second derivation to keep in
  * agreement with the first.
  *
- * Why it cannot duplicate an email:
+ * What it guarantees, and what it does not.
+ *
+ * Against ORDINARY duplicate dispatch — replay, concurrency, a second worker
+ * pass — the durable guards hold:
  *  - only a freshly appended row is passed here. A replay of the same mutation
  *    returns the existing row from findDurableNotificationReplay_ before ever
  *    reaching this call, so a replay dispatches nothing;
  *  - the claim is the same one-shot claim the worker uses; a row already `sent`
- *    or `superseded` is refused by claimNotificationOutbox_;
- *  - success persists `sent`, which is terminal, so the worker skips the row;
+ *    or `superseded` is refused by claimNotificationOutbox_, and both states
+ *    are terminal;
  *  - every enqueue call site already holds the script lock, and so does the
- *    worker, so the two can never interleave on the same row.
+ *    worker, so the two cannot interleave on the same row.
+ *
+ * It is NOT exactly-once delivery, and this function does not make it so. The
+ * transport is called before the resulting `sent` state can be persisted, so an
+ * execution lost in between leaves the row `claimed` — a state the durable
+ * record cannot distinguish from an attempt that never reached Gmail at all.
+ * The worker will retry it, and the patient may receive that one message twice.
+ * That ambiguous window is a property of an external side effect without a
+ * provider-side idempotency key; it predates this function, is unchanged in
+ * width by it, and closing it would take a delivery contract GmailApp does not
+ * offer. Delivery is at-least-once; the application-level guards above are what
+ * keep ordinary operation at one message.
  *
  * Failure is not an error. Anything at all — missing configuration, a render
  * fault, a Gmail throw, a rejected recipient — leaves the row retryable exactly

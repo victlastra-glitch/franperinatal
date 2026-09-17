@@ -8,15 +8,22 @@
  *
  * The properties that matter are not "it is fast". They are:
  *
- *   1. the patient can never receive the same message twice;
+ *   1. ordinary duplicate dispatch — replay, concurrency, a second worker pass —
+ *      is refused by the durable guards, so ordinary operation is one message;
  *   2. an immediate attempt that fails leaves the row exactly where the
- *      periodic worker expects it, and the worker then delivers it once;
+ *      periodic worker expects it, and the worker then delivers it;
  *   3. no part of the booking, payment, reschedule, cancellation or refund
  *      lifecycle depends on a send succeeding;
  *   4. nothing is announced before it is true — Calendar/Meet, the moved
  *      schedule and the cancellation are all persisted before the message
  *      leaves, which is checked at the instant of the send, not afterwards;
  *   5. the refund communication policy is untouched.
+ *
+ * Delivery is NOT exactly-once and this suite does not pretend otherwise. The
+ * last section characterises the ambiguous window between Gmail accepting a
+ * message and the durable `sent` state being written, in which the record
+ * cannot say whether the patient was reached. That is a failure mode being
+ * documented, not an invariant being asked for.
  *
  * Synthetic fixtures only: no network, no Google service, no Flow, no email.
  */
@@ -104,7 +111,7 @@ const ctaToken = (body, label) => {
   check(confirmations[0].body.includes(row.meet_url) && row.meet_url.startsWith('https://meet.google.com/'),
     'the delivered confirmation carries the Meet link the Calendar insert produced');
 
-  // Exactly once: the periodic worker must find nothing to do.
+  // The periodic worker must find nothing to do with a row already marked sent.
   const after = h.drain();
   check(after.ok && after.processed === 0 && withSubject(h, CONFIRMED).length === 1,
     'FALLBACK_WORKER_DOES_NOT_RESEND — the worker skips a row the immediate attempt sent');
@@ -172,7 +179,7 @@ const ctaToken = (body, label) => {
   const recovered = h.drain();
   check(recovered.ok && recovered.processed === 1 && withSubject(h, CONFIRMED).length === 1
     && outboxFor(h, row33.reservation_id)[0].state === 'sent',
-    'FALLBACK_WORKER_EMAIL_COUNT=1 — the worker recovers the failed immediate attempt exactly once');
+    'FALLBACK_WORKER_EMAIL_COUNT=1 — the worker recovers the failed immediate attempt, delivering one message');
   h.drain();
   check(withSubject(h, CONFIRMED).length === 1, 'and never sends it a second time');
 
@@ -193,7 +200,7 @@ const ctaToken = (body, label) => {
   check(Boolean(rescheduleRow) && rescheduleRow.state === 'failed' && h.state.mail.length === 0,
     'the reschedule notice is left for the worker');
   h.drain();
-  check(withSubject(h, RESCHEDULED).length === 1, 'the worker delivers the reschedule notice exactly once');
+  check(withSubject(h, RESCHEDULED).length === 1, 'the worker delivers one reschedule notice');
 
   // The reschedule email cannot predate the move it announces.
   check(withSubject(h, RESCHEDULED)[0].body.includes('15:00')
@@ -382,6 +389,75 @@ mutation('MUTATION_LIFECYCLE_COUPLED_TO_IMMEDIATE_SEND', {
   assert.equal(h.rowFor(39).booking_status, 'confirmed', 'the booking must be confirmed regardless');
 });
 
+// ===========================================================================
+// 7. FAILURE-MODE CHARACTERIZATION — the ambiguous external-send window.
+//
+// This is not an invariant anyone wants. It is the honest boundary of the
+// guarantee, pinned so no future reader can quietly upgrade "ordinary operation
+// sends one message" into "exactly-once delivery".
+//
+// The transport is called before the resulting `sent` state can be persisted.
+// Two executions are simulated at that seam, differing ONLY in whether Gmail
+// was reached before the execution was lost. If the durable record cannot tell
+// them apart, then no amount of application-level logic can decide whether a
+// retry would be a recovery or a duplicate.
+// ===========================================================================
+const CLAIM_COMPLETE = '  completeNotificationOutbox_(claimView, { ok: delivered });';
+const RENDER_ORIGIN = '  const previewOrigin = previewOriginFromConfig_(deps.config);';
+// Lost immediately AFTER Gmail accepted, before the `sent` state is written.
+const LOST_AFTER_DELIVERY = {
+  'Code.js': [[
+    CLAIM_COMPLETE,
+    CLAIM_COMPLETE + "\n  if (delivered) { throw new Error('EXECUTION_LOST_AFTER_DELIVERY'); }",
+  ]],
+};
+// Lost at the same seam but BEFORE the transport is reached.
+const LOST_BEFORE_DELIVERY = {
+  'Code.js': [[
+    RENDER_ORIGIN,
+    "  throw new Error('EXECUTION_LOST_BEFORE_DELIVERY');\n" + RENDER_ORIGIN,
+  ]],
+};
+// The durable columns an operator or a recovery pass could actually consult.
+const durableView = (row) => JSON.stringify({
+  state: row.state, attempt_count: row.attempt_count,
+  last_result: row.last_result, disposition_reason: row.disposition_reason,
+});
+
+const lostAfter = buildHarness(LOST_AFTER_DELIVERY);
+const afterResult = confirmBooking(lostAfter, 40, '2026-09-24', '11:00', 10 * DAY_MS);
+const afterRow = outboxFor(lostAfter, lostAfter.rowFor(40).reservation_id)[0];
+check(afterResult.confirmed.ok && lostAfter.rowFor(40).booking_status === 'confirmed'
+  && lostAfter.rowFor(40).payment_status === 'paid',
+  'an execution lost after delivery still leaves the lifecycle committed');
+check(lostAfter.state.mail.length === 1,
+  'the external side effect HAPPENED — the patient has the message');
+check(afterRow.state === 'claimed',
+  'but the durable row was never advanced to sent; it is still claimed and retryable');
+
+const lostBefore = buildHarness(LOST_BEFORE_DELIVERY);
+confirmBooking(lostBefore, 41, '2026-09-24', '11:00', 10 * DAY_MS);
+const beforeRow = outboxFor(lostBefore, lostBefore.rowFor(41).reservation_id)[0];
+check(lostBefore.state.mailAttempts === 0 && lostBefore.state.mail.length === 0,
+  'the comparison execution never reached the transport at all');
+
+// The whole point, in one assertion.
+check(durableView(afterRow) === durableView(beforeRow),
+  'AMBIGUOUS_EXTERNAL_SEND_WINDOW — delivered-then-lost and never-delivered leave'
+  + ' an IDENTICAL durable row, so persisted state cannot decide whether the patient was reached');
+
+// And therefore the recovery path, doing the only correct thing available to
+// it, re-sends a message that may already have arrived.
+lostAfter.drain();
+check(lostAfter.state.mail.length === 2,
+  'the worker recovers the indistinguishable row and the patient may receive it twice');
+// Contrast: with no execution lost, the same scenario ends at one message.
+const intact = buildHarness(null);
+confirmBooking(intact, 42, '2026-09-24', '11:00', 10 * DAY_MS);
+intact.drain();
+check(intact.state.mail.length === 1,
+  'ORDINARY_OPERATION_EMAIL_COUNT=1 — the window is reached only by a lost execution');
+
 console.log(`IMMEDIATE_DISPATCH_TESTS=PASS assertions=${assertions}`);
 detected.forEach((name) => console.log(`${name}=DETECTED`));
 console.log('IMMEDIATE_SUCCESS_EMAIL_COUNT=1');
@@ -391,6 +467,9 @@ console.log('FALLBACK_WORKER_EMAIL_COUNT=1');
 console.log('SYNC_REFUND_REJECTION_PATIENT_EMAIL_COUNT=0');
 console.log('LATER_REFUNDED_ADDITIONAL_PATIENT_EMAIL_COUNT=0');
 console.log('LT24_REFUND_CREATE_COUNT=0');
+console.log('ORDINARY_OPERATION_EMAIL_COUNT=1');
+console.log('DELIVERY_GUARANTEE=AT_LEAST_ONCE');
+console.log('AMBIGUOUS_EXTERNAL_SEND_WINDOW=EXISTS');
 console.log('PRODUCTION_EMAILS_SENT=0');
 console.log('REAL_FLOW_CALLS=0');
 console.log('REAL_NETWORK_SIDE_EFFECTS=0');
