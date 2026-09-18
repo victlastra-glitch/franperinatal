@@ -3,9 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta name="color-scheme" content="light" />
 <title>10 señales de que necesitas apoyo en el posparto · Guía clínica · Francisca Bustos</title>
 <meta name="description" content="Guía clínica gratuita de 8 páginas: 10 señales que indican que es momento de pedir apoyo profesional en el posparto. Por Francisca Bustos, psicóloga perinatal." />
 <link rel="canonical" href="https://franciscabustos.cl/guia/10-senales" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='20'%20fill='%238A5A6B'/%3E%3Ctext%20x='50'%20y='69'%20text-anchor='middle'%20font-family='Fraunces,Georgia,serif'%20font-style='italic'%20font-size='54'%20fill='%23FAF6F0'%3Efb%3C/text%3E%3C/svg%3E" />
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='20'%20fill='%238A5A6B'/%3E%3Ctext%20x='50'%20y='69'%20text-anchor='middle'%20font-family='Fraunces,Georgia,serif'%20font-style='italic'%20font-size='54'%20fill='%23FAF6F0'%3Efb%3C/text%3E%3C/svg%3E" />
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -53,26 +56,35 @@
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 <style>
+html { color-scheme: light; }
 :root{
   --ink:#231F1C;
   --ink-2:#5A534D;
-  --ink-3:#8A8178;
+  --ink-3:#756C63;
   --bg:#FAF6F0;
   --paper:#FDFBF7;
   --bg-2:#EFE7DB;
   --bg-3:#E2D8C9;
   --accent:#8A5A6B;
   --accent-soft:#E4D2D8;
-  --accent-deep:#6B3F4F;
+  --accent-deep:#6D4454;
   --urgent:#8C2B2B;
   --urgent-soft:#F3E4E4;
+  --focus:#6D4454;
+  --danger:#8C4F4B;
+  --danger-soft:#F6E6E6;
   --line:#E5DED1;
   --line-strong:#C9C0B0;
-  --serif:'Fraunces', Georgia, serif;
+  --serif:'Fraunces', Georgia, 'Times New Roman', serif;
   --sans:'Inter', -apple-system, sans-serif;
 }
 
 *{box-sizing:border-box;margin:0;padding:0}
+
+/* Foco global: mismo tratamiento que el resto del sistema, nunca sólo color */
+a:focus-visible,button:focus-visible,summary:focus-visible,[tabindex]:focus-visible{
+  outline:2px solid var(--focus);outline-offset:3px;border-radius:3px;
+}
 
 html,body{
   background:#D9D1C3;
@@ -171,12 +183,12 @@ html,body{
   display:flex;justify-content:space-between;align-items:flex-start;
 }
 .cover .brand{
-  font-family:var(--serif);font-style:italic;font-weight:400;
-  font-size:18px;letter-spacing:.01em;color:var(--ink);
+  font-family:var(--serif);font-style:normal;font-weight:400;
+  font-size:20px;line-height:1.05;letter-spacing:-.018em;color:var(--ink);
 }
 .cover .brand-sub{
-  font-size:10px;letter-spacing:.22em;text-transform:uppercase;
-  color:var(--ink-3);margin-top:4px;
+  font-size:11px;letter-spacing:.18em;text-transform:uppercase;
+  color:var(--ink-2);margin-top:5px;
 }
 .cover .edition{
   font-size:10px;letter-spacing:.22em;text-transform:uppercase;
@@ -238,7 +250,7 @@ html,body{
   font-family:var(--serif);color:var(--accent-deep);text-align:center;
   transform:rotate(-6deg);
 }
-.cover .stamp .fb{
+.cover .stamp .seal{
   font-size:26px;font-weight:400;font-style:italic;line-height:1;
 }
 .cover .stamp .cred{font-size:8px;letter-spacing:.18em;text-transform:uppercase;margin-top:4px}
@@ -344,6 +356,8 @@ html,body{
 }
 .signals-page .chapter-head{
   display:flex;align-items:baseline;justify-content:space-between;
+  /* Ambos hijos son nowrap: sin flex-wrap el cintillo se pasaba 2px a 320. */
+  flex-wrap:wrap;gap:4px 12px;
   padding-bottom:16px;margin-top:24px;margin-bottom:28px;
   border-bottom:1px solid var(--line);
 }
@@ -355,7 +369,7 @@ html,body{
 .signals-page .chapter-head .range{
   font-family:var(--serif);font-weight:400;font-style:italic;
   font-size:15px;color:var(--ink-3);
-  white-space:nowrap;padding-left:16px;
+  white-space:nowrap;padding-left:0;
 }
 
 .signal{
@@ -596,14 +610,17 @@ html,body{
 </head>
 <body>
 
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+
 <div class="toolbar">
-  <a class="home-link" href="/">← Francisca Bustos</a>
+  <a class="home-link" href="/">← Francisca Bustos M.</a>
   <div class="title">10 señales · Guía clínica · 8 páginas</div>
   <div style="display:flex;gap:8px;flex-wrap:wrap">
     <button class="primary" onclick="window.print()">⤓ Descargar PDF</button>
   </div>
 </div>
 
+<main id="contenido">
 <div class="book">
 
 <!-- ================ PAGE 1 — COVER ================ -->
@@ -612,8 +629,8 @@ html,body{
   <div class="cover-inner">
     <div class="cover-top">
       <div>
-        <div class="brand">Francisca Bustos</div>
-        <div class="brand-sub">Psicología clínica perinatal</div>
+        <div class="brand">Francisca Bustos M.</div>
+        <div class="brand-sub">Psicóloga Clínica · Perinatal</div>
       </div>
       <div class="edition">
         <strong>Guía clínica</strong>
@@ -633,10 +650,10 @@ html,body{
       <div class="by">
         <span class="author">Francisca Bustos</span>
         <span class="cred">Psicóloga clínica perinatal</span><br/>
-        <span class="cred">Atención online para personas en Chile</span>
+        <span class="cred">Atención online por videollamada</span>
       </div>
       <div class="stamp">
-        <div class="fb">fb</div>
+        <div class="seal">Guía</div>
         <div class="cred">Clínica<br/>perinatal</div>
       </div>
     </div>
@@ -647,7 +664,7 @@ html,body{
 <article class="page preface">
   <div class="rail-top">
     <span class="mark">10 señales</span>
-    <span>fb · guía clínica</span>
+    <span>Francisca Bustos M. · guía clínica</span>
   </div>
 
   <h2>Antes de <em>empezar</em>.</h2>
@@ -681,7 +698,7 @@ html,body{
 <article class="page toc">
   <div class="rail-top">
     <span class="mark">diez señales</span>
-    <span>fb · guía clínica</span>
+    <span>Francisca Bustos M. · guía clínica</span>
   </div>
 
   <h2>Las diez <em>señales</em>.</h2>
@@ -706,7 +723,7 @@ html,body{
 
   <div class="foot">
     <span>Francisca Bustos · 2026</span>
-    <span class="center">Atención online · Chile</span>
+    <span class="center">Atención online</span>
     <span>Edición digital</span>
   </div>
 
@@ -720,7 +737,7 @@ html,body{
 <article class="page signals-page">
   <div class="rail-top">
     <span class="mark">Señales · 1 a 3</span>
-    <span>fb · guía clínica</span>
+    <span>Francisca Bustos M. · guía clínica</span>
   </div>
 
   <div class="chapter-head">
@@ -780,7 +797,7 @@ html,body{
 <article class="page signals-page">
   <div class="rail-top">
     <span class="mark">Señales · 4 a 6</span>
-    <span>fb · guía clínica</span>
+    <span>Francisca Bustos M. · guía clínica</span>
   </div>
 
   <div class="chapter-head">
@@ -840,7 +857,7 @@ html,body{
 <article class="page signals-page">
   <div class="rail-top">
     <span class="mark">Señales · 7 a 9</span>
-    <span>fb · guía clínica</span>
+    <span>Francisca Bustos M. · guía clínica</span>
   </div>
 
   <div class="chapter-head">
@@ -900,7 +917,7 @@ html,body{
 <article class="page urgent-page">
   <div class="rail-top">
     <span class="mark">atención inmediata</span>
-    <span>fb · guía clínica</span>
+    <span>Francisca Bustos M. · guía clínica</span>
   </div>
 
   <div class="urgent-signal">
@@ -920,7 +937,7 @@ html,body{
   <div class="emergency">
     <div class="tag">Si estás teniendo estos pensamientos ahora</div>
     <h4>Pide ayuda. Hoy.</h4>
-    <p>Llama a alguno de estos números, o escríbeme directo por WhatsApp para coordinar una atención prioritaria. No estás sola en esto.</p>
+    <p>Llama a alguno de estos números ahora. Son gratuitos y atienden en Chile. No estás sola en esto.</p>
 
     <div class="phone">
       <div class="name">Salud Responde<small>24 horas · gratuito en Chile</small></div>
@@ -934,10 +951,6 @@ html,body{
       <div class="name">Urgencias SAMU<small>Emergencia médica</small></div>
       <div class="nr">131</div>
     </div>
-    <div class="phone">
-      <div class="name">Francisca · WhatsApp<small>Respuesta prioritaria</small></div>
-      <div class="nr">+56 9 5766 3038</div>
-    </div>
   </div>
 
   <div class="rail-bottom">
@@ -950,7 +963,7 @@ html,body{
 <article class="page outro">
   <div class="rail-top">
     <span class="mark">Si algo resonó</span>
-    <span>fb · guía clínica</span>
+    <span>Francisca Bustos M. · guía clínica</span>
   </div>
 
   <h2>Si algo <em>resonó</em>.</h2>
@@ -961,31 +974,27 @@ html,body{
 
   <div class="cta-block">
     <div class="txt">¿Quieres que <em>conversemos</em>? Reserva una primera sesión en línea.</div>
-    <a class="cta" href="/reserva">Reservar →</a>
+    <a class="cta" href="/reserva">Reservar sesión →</a>
   </div>
 
   <div class="contact">
     <div class="row">
       <span class="lbl">Consulta</span>
-      <span class="val">Atención online · Chile</span>
+      <span class="val">Atención online</span>
     </div>
     <div class="row">
-      <span class="lbl">Online</span>
-      <span class="val">Todo Chile</span>
+      <span class="lbl">Modalidad</span>
+      <span class="val">Videollamada</span>
     </div>
     <div class="row">
       <span class="lbl">Contacto</span>
       <span class="val">hola@franciscabustos.cl</span>
     </div>
-    <div class="row">
-      <span class="lbl">WhatsApp</span>
-      <span class="val">+56 9 5766 3038</span>
-    </div>
   </div>
 
   <div class="disclaimer">
     <strong>Aviso clínico y legal</strong>
-    Esta guía tiene fines educativos y orientativos. <em>No constituye diagnóstico, tratamiento ni reemplaza una evaluación clínica profesional</em>. Los contenidos fueron elaborados por Francisca Bustos Maldonado (Psicóloga Clínica, Reg. Col. Psicólogos de Chile 12.847; Reg. Superint. Salud Nº 598177) con base en literatura científica vigente, y no sustituyen el juicio clínico de un profesional que te conozca directamente. Si presentas pensamientos de hacerte daño, de no querer estar o de hacer daño a otra persona, contacta de inmediato a <strong style="display:inline">Salud Responde 600 360 7777</strong> (24/7, gratuito),
+    Esta guía tiene fines educativos y orientativos. <em>No constituye diagnóstico, tratamiento ni reemplaza una evaluación clínica profesional</em>. Los contenidos fueron elaborados por Francisca Bustos Maldonado (Psicóloga Clínica, Reg. Colegio de Psicólogos CL · Registro 12.847; Superintendencia de Salud · Registro 598177) con base en literatura científica vigente, y no sustituyen el juicio clínico de un profesional que te conozca directamente. Si presentas pensamientos de hacerte daño, de no querer estar o de hacer daño a otra persona, contacta de inmediato a <strong style="display:inline">Salud Responde 600 360 7777</strong> (24/7, gratuito),
     <strong style="display:inline">la Línea de Prevención del Suicidio *4141 desde tu celular</strong> o acude al servicio de urgencias más cercano. Los pensamientos suicidas son un síntoma tratable y hay ayuda disponible las 24 horas. Los datos que compartas al descargar esta guía son tratados conforme a la Ley 19.628 sobre protección de la vida privada y bajo el deber de secreto profesional del Código de Ética del Colegio de Psicólogos de Chile.
   </div>
 
@@ -1002,6 +1011,7 @@ html,body{
 </article>
 
 </div>
+</main>
 
 </body>
 </html>

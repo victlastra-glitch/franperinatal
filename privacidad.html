@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
 <meta name="theme-color" content="#FAF6F0" />
 <title>Aviso de privacidad · Francisca Bustos</title>
 <meta name="description" content="Cómo trato tus datos personales y tu información clínica. Ley 19.628 y Código de Ética del Colegio de Psicólogos de Chile." />
 <link rel="canonical" href="https://franciscabustos.cl/privacidad" />
 <meta name="robots" content="index,follow" />
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='20'%20fill='%238A5A6B'/%3E%3Ctext%20x='50'%20y='69'%20text-anchor='middle'%20font-family='Fraunces,Georgia,serif'%20font-style='italic'%20font-size='54'%20fill='%23FAF6F0'%3Efb%3C/text%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
@@ -37,8 +38,9 @@
   .legal .callout strong{display:block;font-family:var(--sans);font-size:11px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-deep);margin-bottom:10px}
   .legal .disclaimer{margin-top:56px;padding:22px 24px;background:color-mix(in oklab, var(--ink) 4%, var(--paper));border-left:3px solid var(--ink-2);border-radius:0 10px 10px 0}
   .legal .disclaimer p{font-size:13.5px;color:var(--ink-3);line-height:1.6;margin:0}
-  .legal .rights{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px;margin:20px 0 28px}
-  .legal .rights-card{background:white;border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  /* v3.2 — rights are a ledger of facts, not objects with a boundary. */
+  .legal .rights{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(240px,100%),1fr));column-gap:clamp(24px,4vw,56px);row-gap:0;margin:24px 0 32px;border-top:1px solid var(--line)}
+  .legal .rights-card{background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:18px 0}
   .legal .rights-card strong{display:block;font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent-deep);margin-bottom:8px}
   .legal .rights-card p{font-size:14px;margin:0;color:var(--ink-2)}
   @media (max-width:640px){
@@ -49,9 +51,11 @@
 </head>
 <body>
 
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+
 <header class="nav">
   <div class="nav-inner">
-    <a class="brand" href="/"><span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span></a>
+    <a class="brand" href="/"><span class="brand-name"><span class="brand-line">Francisca</span> <span class="brand-line">Bustos M.</span><small>Psicóloga Clínica · Perinatal</small></span></a>
     <nav class="nav-links">
       <a class="nav-link" href="/">Inicio</a>
       <a class="nav-link" href="/sobre-mi">Sobre mí</a>
@@ -60,19 +64,22 @@
       <a class="nav-link" href="/contacto">Contacto</a>
     </nav>
     <div class="nav-actions">
-      <a href="/reserva" class="btn btn-primary">Reservar hora <span class="arrow">→</span></a>
+      <a href="/reserva" class="btn btn-primary">Reservar sesión <span class="arrow">→</span></a>
       <button class="nav-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-panel"><svg viewBox="0 0 24 24"><path d="M3 7h18M3 12h18M3 17h18"/></svg></button>
     </div>
   </div>
-  <div class="nav-panel" id="nav-panel" role="menu">
-    <a href="/" role="menuitem">Inicio</a>
-    <a href="/sobre-mi" role="menuitem">Sobre mí</a>
-    <a href="/servicios" role="menuitem">Servicios</a>
-    <a href="/faq" role="menuitem">Preguntas</a>
-    <a href="/contacto" role="menuitem">Contacto</a>
-    <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión →</a>
+  <div class="nav-panel" id="nav-panel" aria-label="Menú">
+    <a href="/">Inicio</a>
+    <a href="/sobre-mi">Sobre mí</a>
+    <a href="/servicios">Servicios</a>
+    <a href="/faq">Preguntas</a>
+    <a href="/contacto">Contacto</a>
+    <a href="/reserva" class="btn btn-primary btn-lg">Reservar sesión →</a>
   </div>
 </header>
+
+<main id="contenido">
+
 
 <section class="legal">
   <div class="container legal-wrap">
@@ -83,13 +90,13 @@
 
     <div class="meta">
       <div><strong>Responsable</strong>Francisca Bustos Maldonado</div>
-      <div><strong>Registro</strong>Col. Psicólogos Chile · 12.847</div>
-      <div><strong>Reg. SSS</strong>598177</div>
+      <div><strong>Registro</strong>Colegio de Psicólogos CL · Registro 12.847</div>
+      <div><strong>Superintendencia de Salud</strong>Registro 598177</div>
       <div><strong>Vigente desde</strong>1 enero 2026</div>
     </div>
 
     <h2><span class="num">01</span> Quién trata tus datos</h2>
-    <p>La responsable del tratamiento de datos personales de este sitio es <strong>Francisca Bustos Maldonado</strong>, Psicóloga Clínica (Col. Psicólogos de Chile Nº 12.847; Reg. Superint. Salud Nº 598177), con domicilio profesional en Av. Las Condes 7700, Las Condes, Santiago, Chile. Para cualquier asunto relativo a esta política puedes escribir a <a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a>.</p>
+    <p>La responsable del tratamiento de datos personales de este sitio es <strong>Francisca Bustos Maldonado</strong>, Psicóloga Clínica (Colegio de Psicólogos CL · Registro 12.847; Superintendencia de Salud · Registro 598177), con domicilio profesional en Av. Las Condes 7700, Las Condes, Santiago, Chile. Para cualquier asunto relativo a esta política puedes escribir a <a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a>.</p>
 
     <h2><span class="num">02</span> Qué datos recojo y para qué</h2>
     <p>Sólo recojo los datos que necesito para responderte, agendar tu sesión o enviarte el material que solicitas. Nunca pido más de lo necesario.</p>
@@ -139,8 +146,9 @@
     <p>Tu información se almacena en servicios con cifrado TLS. Las fichas clínicas se mantienen bajo llave digital con acceso restringido únicamente a la profesional tratante. Las sesiones online se realizan por plataformas con cifrado de extremo a extremo.</p>
 
     <h2><span class="num">09</span> Cookies y análisis</h2>
-    <p>Este sitio usa <strong>Google Analytics 4</strong> (GA4) para entender cómo los visitantes interactúan con el contenido de forma anónima y agregada. GA4 solo se activa si aceptas las cookies de analítica en el aviso que aparece al ingresar al sitio. Si rechazas o no respondes el aviso, GA4 no carga ninguna cookie ni recopila datos.</p>
-    <p>Cuando GA4 está activo, recopila información como páginas visitadas, tiempo en el sitio y tipo de dispositivo, siempre con IP anonimizada. No se recopilan datos clínicos, de salud ni datos personales identificables por esta vía. Puedes revocar tu consentimiento en cualquier momento limpiando las cookies del sitio en la configuración de tu navegador.</p>
+    <p>Este sitio usa cookies esenciales para funcionar. Además puede usar dos herramientas de medición opcionales: <strong>Google Analytics 4</strong> (GA4), para entender de forma agregada qué contenido resulta útil, y la etiqueta de <strong>Google Ads</strong>, para medir el resultado de campañas.</p>
+    <p>Ninguna de las dos se carga por sí sola. Sólo se activan si eliges «Aceptar medición» en el aviso que aparece al ingresar. Mientras no elijas, o si eliges «Solo esenciales», no se descarga ninguna etiqueta de medición ni se instala ninguna cookie de analítica o publicidad.</p>
+    <p>Cuando la medición está activa, se recopila información como páginas visitadas, tiempo en el sitio, tipo de dispositivo y origen de campaña, con la IP anonimizada por GA4. No se envían por esta vía tu nombre, RUT, correo, teléfono ni ningún dato clínico o de salud. No afirmamos que esta medición sea anónima: GA4 genera un identificador propio de navegador, y por eso es opcional. Puedes revocar tu elección en cualquier momento limpiando los datos del sitio en la configuración de tu navegador.</p>
     <p><strong>Meta Pixel (Facebook/Instagram):</strong> este sitio actualmente <strong>no usa Meta Pixel</strong>. Si en el futuro se activara para campañas publicitarias, se actualizará este aviso y se requerirá consentimiento explícito previo.</p>
     <p style="font-size:13px;color:var(--ink-3);font-style:italic;">⚠️ Esta sección está pendiente de revisión por asesoría legal/privacidad antes de su implementación definitiva.</p>
 
@@ -156,34 +164,56 @@
 
   </div>
 </section>
+</main>
 
 <footer class="footer">
   <div class="container">
     <div class="footer-grid">
-      <div><div class="footer-brand-name">Francisca Bustos</div><p class="footer-brand-desc">Psicología clínica especializada en salud mental perinatal, depresión posparto y acompañamiento emocional en la maternidad.</p></div>
-      <div class="footer-col"><h5>Navegación</h5><ul>
-        <li><a href="/">Inicio</a></li><li><a href="/sobre-mi">Sobre mí</a></li>
-        <li><a href="/servicios">Servicios</a></li><li><a href="/reserva">Reservar sesión</a></li>
-        <li><a href="/faq">Preguntas frecuentes</a></li><li><a href="/contacto">Contacto</a></li>
-      </ul></div>
-      <div class="footer-col"><h5>Contacto</h5><ul>
-        <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
-        <li><a href="https://wa.me/56957663038">+56 9 5766 3038</a></li>
-        <li>Av. Las Condes 7700</li><li>Las Condes · Santiago</li>
-      </ul></div>
-      <div class="footer-col"><h5>Respaldo</h5><ul>
-        <li>Col. Psicólogos Chile · 12.847</li><li>Reg. Superint. Salud · 598177</li>
-        <li>Univ. Zaragoza</li><li><a href="/privacidad" aria-current="page">Aviso de privacidad</a></li>
-      </ul></div>
+      <div>
+        <div class="footer-brand-name">Francisca Bustos M.</div>
+        <p class="footer-brand-desc">
+          Psicología clínica especializada en salud mental perinatal: embarazo,
+          posparto y matrescencia, y duelo gestacional y perinatal.
+        </p>
+      </div>
+      <nav class="footer-col" aria-labelledby="ft-seguir">
+        <p class="footer-col-title" id="ft-seguir">Continuar</p>
+        <ul>
+          <li><a href="/sobre-mi">Sobre mí</a></li>
+          <li><a href="/servicios">Servicios</a></li>
+          <li><a href="/blog">Blog</a></li>
+          <li><a href="/faq">Preguntas</a></li>
+          <li><a href="/recursos/test-edimburgo">Test de Edimburgo</a></li>
+          <li><a href="/guia/10-senales">Guía 10 señales</a></li>
+        </ul>
+      </nav>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-contacto">Contacto</p>
+        <ul aria-labelledby="ft-contacto">
+          <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
+          <li><a href="/contacto">Formulario de contacto</a></li>
+          <li>Atención online por videollamada</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-respaldo">Respaldo</p>
+        <ul class="footer-creds" aria-labelledby="ft-respaldo">
+          <li><span class="cred-name">Univ. Zaragoza</span></li>
+          <li><span class="cred-name">Superintendencia de Salud</span><span class="cred-reg">Registro 598177</span></li>
+          <li><span class="cred-name">Colegio de Psicólogos CL</span><span class="cred-reg">Registro 12.847</span></li>
+        </ul>
+      </div>
     </div>
     <div class="footer-bottom">
-      <span>© 2026 Francisca Bustos · Todos los derechos reservados</span>
-      <span>Consulta confidencial · Secreto profesional garantizado</span>
+      <small>© <span id="yr">2026</span> Francisca Bustos M.</small>
+      <small>Consulta confidencial · Secreto profesional</small>
+      <small><a href="/privacidad">Aviso de privacidad</a></small>
     </div>
   </div>
 </footer>
 
-<script src="assets/app.js?v=5" defer></script>
-<script src="assets/tweaks.js?v=2"></script>
+<script src="assets/app.js?v=6" defer></script>
+<script src="assets/analytics.js?v=3" defer></script>
+<script src="assets/consent.js?v=1" defer></script>
 </body>
 </html>

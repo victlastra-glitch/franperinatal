@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// BOOKING FLOW — 7 steps, state machine with live summary
+// BOOKING FLOW — 6 steps, state machine with live summary
 // v19 PRODUCTION (Web 04.9 cutover): Flow API integration.
 // Promoted from the Web 04.x preview track; all preview URLs scrubbed.
 // ============================================================
@@ -12,10 +12,15 @@
     createFlowPayment: '/api/create-flow-payment',
   });
 
+  // La única modalidad publicada es online. Dejó de ser un paso del asistente
+  // (era una sola opción ya marcada que aun así pedía "Continuar"); sigue
+  // siendo el mismo valor en el payload de /api/create-flow-payment.
+  const MODALITY_ONLINE = Object.freeze({ value: "online", label: "Online" });
+
   const state = {
     step: 1,
     service: null,
-    modality: { value: "online", label: "Online" },
+    modality: MODALITY_ONLINE,
     date: null,       // Date object
     time: null,       // "10:00"
     form: {},
@@ -79,16 +84,16 @@
           bookedSlots = slots;
           slotsLoaded = true;
           overviewFailed = false;
-          if (state.step === 3) renderCalendar();
-          if (state.step === 4) renderSlots();
+          if (state.step === 2) renderCalendar();
+          if (state.step === 3) renderSlots();
           return;
         }
       }
     } catch (_) {}
     overviewFailed = true;
     slotsLoaded = true;
-    if (state.step === 3) renderCalendar();
-    if (state.step === 4) renderSlots();
+    if (state.step === 2) renderCalendar();
+    if (state.step === 3) renderSlots();
   }
 
   /**
@@ -118,7 +123,7 @@
     } catch (_) {}
     if (!ok) confirmedDates.delete(iso);
     pendingDates.delete(iso);
-    if (state.step === 4) renderSlots();
+    if (state.step === 3) renderSlots();
     return ok;
   }
   fetchOverview();
@@ -160,14 +165,36 @@
   }
 
   // ------- Step 1: Service -------
-  // Usamos pointerdown en el label contenedor porque ese evento dispara ANTES que change.
-  // click en el input llega DESPUÉS del change cuando el input está dentro de un label.
-  let serviceClickedByPointer = false;
+  // El paso consiste en UNA elección sin ambigüedad, así que elegir es avanzar:
+  // no hay un "Continuar" que confirme lo que la persona ya dijo.
+  //
+  // Puntero: usamos pointerdown en el label contenedor porque ese evento dispara
+  // ANTES que change (click en el input llega DESPUÉS del change cuando el input
+  // vive dentro de un label).
+  //
+  // Teclado: las flechas recorren el radiogroup SIN avanzar —hace falta poder
+  // mirar las dos opciones— y Enter/Espacio confirman y avanzan, que es el
+  // equivalente exacto del clic.
+  let serviceChosenByGesture = false;
 
   stage.querySelectorAll('input[name="service"]').forEach(inp => {
     const labelService = inp.closest('label') || inp.parentElement;
     labelService.addEventListener("pointerdown", () => {
-      serviceClickedByPointer = true;
+      serviceChosenByGesture = true;
+    });
+    inp.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") return;
+      event.preventDefault();
+      serviceChosenByGesture = true;
+      if (inp.checked) {
+        // Espacio sobre un radio ya marcado no emite change: avanzamos igual.
+        updateSummary();
+        serviceChosenByGesture = false;
+        scheduleAdvance(2);
+        return;
+      }
+      inp.checked = true;
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
     });
     inp.addEventListener("change", () => {
       state.service = {
@@ -176,41 +203,13 @@
         duration: inp.dataset.duration,
         price: inp.dataset.price,
       };
-      enableNext(1);
       updateSummary();
-      if (serviceClickedByPointer) {
-        serviceClickedByPointer = false;
+      if (serviceChosenByGesture) {
+        serviceChosenByGesture = false;
         scheduleAdvance(2);
       }
     });
   });
-
-  // ------- Step 2: modalidad online -------
-  let modalityClickedByPointer = false;
-
-  stage.querySelectorAll('input[name="modality"]').forEach(inp => {
-    const labelModality = inp.closest('label') || inp.parentElement;
-    labelModality.addEventListener("pointerdown", () => {
-      modalityClickedByPointer = true;
-    });
-    inp.addEventListener("change", () => {
-      const previousValue = state.modality && state.modality.value;
-      state.modality = { value: inp.value, label: inp.dataset.label };
-      if (previousValue && previousValue !== inp.value) {
-        state.date = null;
-        state.time = null;
-      }
-      enableNext(2);
-      updateSummary();
-      if (modalityClickedByPointer) {
-        modalityClickedByPointer = false;
-        scheduleAdvance(3);
-      }
-    });
-  });
-  // La única modalidad publicada es online, por lo que el paso queda listo
-  // sin requerir una interacción adicional de la persona usuaria.
-  enableNext(2);
 
   // ------- Web 04.11: helpers para RUT chileno (validación módulo 11) -------
   function cleanRut(rut) {
@@ -380,9 +379,8 @@
         // el paso de hora la muestre. La vista general sólo atenúa el calendario.
         fetchDate(iso, false);
         renderCalendar();
-        enableNext(3);
         updateSummary();
-        scheduleAdvance(4); // autoavance al paso de horario
+        scheduleAdvance(3); // elegir el día avanza al paso de horario
       });
       grid.appendChild(btn);
     }
@@ -405,7 +403,6 @@
     // el servidor va a rechazar.
     if (!confirmedDates.has(isoForGuard)) {
       state.time = null;
-      enableNext(4, false);
       const pending = document.createElement("p");
       pending.className = "bk-slot-msg";
       pending.style.cssText = "font-size:14px;color:var(--ink-2,#5A534D);line-height:1.6;padding:16px 18px;background:#FAF6F0;border:1px solid var(--line,#E5DED1);border-radius:8px;margin:0;";
@@ -445,9 +442,8 @@
       btn.addEventListener("click", () => {
         state.time = s;
         renderSlots();
-        enableNext(4);
         updateSummary();
-        scheduleAdvance(5); // autoavance al formulario de datos
+        scheduleAdvance(4); // elegir la hora avanza al formulario de datos
       });
       host.appendChild(btn);
     });
@@ -525,7 +521,7 @@
       document.getElementById("bk-form").reportValidity();
       return false;
     }
-    go(6);
+    go(5);
     return true;
   }
 
@@ -543,8 +539,12 @@
       } else if (a === "confirm") {
         await confirmReservation(btn);
       } else if (a === "restart") {
-        Object.assign(state, { step: 1, service: null, modality: null, date: null, time: null, form: {}, reservationId: null, confirmation: null, idempotencyKey: null });
-        document.querySelectorAll('input[name="service"], input[name="modality"]').forEach(i => i.checked = false);
+        // modality vuelve a su constante, no a null: fillReview() y fillSuccess()
+        // leen state.modality.label y un null los rompía en la segunda reserva.
+        Object.assign(state, { step: 1, service: null, modality: MODALITY_ONLINE, date: null, time: null, form: {}, reservationId: null, confirmation: null, idempotencyKey: null });
+        document.querySelectorAll('input[name="service"]').forEach(i => { i.checked = false; });
+        const step1Actions = stage.querySelector('[data-step1-actions]');
+        if (step1Actions) step1Actions.hidden = true;
         document.getElementById("bk-form").reset();
         go(1);
       }
@@ -634,7 +634,7 @@
         else if (code === 'INVALID_DATETIME') msg = 'Fecha u hora inválida. Vuelve a elegir.';
         else if (code === 'MISSING_REQUIRED') msg = result.message || 'Completa nombre y correo.';
         else if (code === 'FLOW_CREATE_FAILED') msg = 'No pudimos iniciar el pago en Flow. Revisa tus datos o intenta nuevamente en unos minutos.';
-        else if (code === 'CONFIG_MISSING') msg = 'Configuración pendiente. Contáctanos por WhatsApp.';
+        else if (code === 'CONFIG_MISSING') msg = 'Configuración pendiente. Escríbenos a hola@franciscabustos.cl.';
         else if (code === 'SERVER_ERROR')   msg = 'Tuvimos un problema en el servidor. Intenta nuevamente o escríbenos.';
         else msg = result.message || result.error || 'No pudimos iniciar el pago. Intenta nuevamente.';
 
@@ -653,13 +653,12 @@
           const isoTaken = state.date ? dateKeyFromDate(state.date) : '';
           state.time = null;
           confirmedDates.delete(isoTaken);
-          enableNext(4, false);
           updateSummary();
           fetchDate(isoTaken, true);
-          setTimeout(() => go(4), 1500);
+          setTimeout(() => go(3), 1500);
         } else if (code === 'PATIENT_RUT_REQUIRED' || code === 'INVALID_PATIENT_RUT' || code === 'PHONE_REQUIRED') {
           // Volver al formulario de datos
-          setTimeout(() => go(5), 1200);
+          setTimeout(() => go(4), 1200);
         }
         return;
       }
@@ -689,32 +688,31 @@
     }
   }
 
-  function enableNext(stepNum, enabled) {
-    const btn = stage.querySelector(`.bk-step[data-step="${stepNum}"] [data-action="next"]`);
-    if (btn) btn.disabled = enabled === false;
-  }
-
   function go(n) {
     cancelScheduledAdvance(); // cancelar timers al navegar manualmente
-    if (n < 1 || n > 7) return;
+    if (n < 1 || n > 6) return;
     state.step = n;
     stage.querySelectorAll(".bk-step").forEach(sec => {
       sec.hidden = Number(sec.dataset.step) !== n;
     });
-    if (n === 3) renderCalendar();
-    if (n === 4) renderSlots();
-    if (n === 6) fillReview();
-    if (n === 7) fillSuccess();
-    // Ocultar resumen en paso 7
-    summary.style.display = n === 7 ? "none" : "";
+    if (n === 2) renderCalendar();
+    if (n === 3) renderSlots();
+    if (n === 5) fillReview();
+    if (n === 6) fillSuccess();
+    // Ocultar resumen en el paso final
+    summary.style.display = n === 6 ? "none" : "";
     // Scroll suave al inicio del formulario
     stage.scrollIntoView ? window.scrollTo({ top: stage.offsetTop - 120, behavior: "smooth" }) : null;
-    // Mover el foco al primer control interactivo del paso (accesibilidad)
-    // No enfocamos <h2> para evitar el focus-ring visual que parece "texto seleccionado"
+    // El foco va al encabezado del paso, no al primer control: quien llega por
+    // teclado o lector de pantalla necesita oír PRIMERO en qué paso está. El
+    // anillo de foco no se dibuja porque :focus-visible no se activa en un
+    // enfoque programático sobre un contenedor.
     const currentStep = stage.querySelector(`.bk-step[data-step="${n}"]`);
     if (currentStep) {
-      const focusTarget = currentStep.querySelector('input, button, select, textarea');
+      const heading = currentStep.querySelector('.bk-step-head h2, h2');
+      const focusTarget = heading || currentStep.querySelector('input, button, select, textarea');
       if (focusTarget) {
+        if (heading && !heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
         window.setTimeout(() => focusTarget.focus(), 0);
       }
     }
@@ -785,7 +783,7 @@
     if (emailMessageEl) {
       emailMessageEl.textContent = emailPatientSent
         ? 'Te envié un email con los detalles de tu reserva, el '
-        : 'Tu reserva quedó agendada, pero hubo un problema al enviar el email. Si no lo recibes, escríbenos por WhatsApp o a hola@franciscabustos.cl para reenviarlo. Allí encontrarás el ';
+        : 'Tu reserva quedó agendada, pero hubo un problema al enviar el email. Si no lo recibes, escríbenos a hola@franciscabustos.cl para reenviarlo. Allí encontrarás el ';
     }
 
     // Email mock
@@ -805,13 +803,47 @@
   };
 
   // Pre-fill servicio desde query param (?servicio=...)
+  //
+  // El producto de reserva expone exactamente dos tipos de sesion: "primera" y
+  // "seguimiento" (serviceType 'initial' / 'followup' en el servidor). Los
+  // enlaces tematicos del sitio (duelo, vinculo, ansiedad...) NO son tipos de
+  // sesion: son puertas de entrada, y todas inician una primera sesion.
+  // Antes, 'duelo' y 'vinculo' apuntaban a valores inexistentes y el prefill
+  // quedaba en silencio sin seleccionar nada.
+  //
+  // El contexto tematico se conserva en el campo que el contrato ya tiene,
+  // 'motivo_principal' (opcional, elegible por la paciente), sin crear tipos de
+  // sesion nuevos ni alterar precio, duracion, disponibilidad ni pago.
   const params = new URLSearchParams(location.search);
-  const svcParam = params.get("servicio");
-  const SVC_MAP = { ansiedad: "primera", depresion: "primera", adaptacion: "primera", duelo: "duelo", vinculo: "vinculo", acompanamiento: "primera" };
-  if (svcParam && SVC_MAP[svcParam]) {
-    const target = document.querySelector(`input[name="service"][value="${SVC_MAP[svcParam]}"]`);
-    // dispatchEvent sin autoavance (no hubo click del usuario)
-    if (target) { target.checked = true; target.dispatchEvent(new Event("change")); }
+  const svcParam = (params.get("servicio") || "").toLowerCase();
+  const SVC_MAP = {
+    ansiedad:       { service: "primera", motivo: "Ansiedad perinatal" },
+    depresion:      { service: "primera", motivo: "Depresión posparto" },
+    duelo:          { service: "primera", motivo: "Duelo gestacional o perinatal" },
+    vinculo:        { service: "primera", motivo: "Vínculo madre-bebé" },
+    adaptacion:     { service: "primera", motivo: "Matrescencia" },
+    acompanamiento: { service: "primera", motivo: "" },
+  };
+  const svcEntry = SVC_MAP[svcParam];
+  if (svcEntry) {
+    const target = document.querySelector(`input[name="service"][value="${svcEntry.service}"]`);
+    // Sin autoavance: la persona no eligió el tipo de sesión, lo eligió el
+    // enlace, y los dos tipos no son intercambiables (initial vs followup en el
+    // servidor). Se muestra la elección y se le da un "Continuar" explícito,
+    // que es el único caso en que ese control existe.
+    if (target) {
+      target.checked = true;
+      target.dispatchEvent(new Event("change"));
+      const step1Actions = document.querySelector('[data-step1-actions]');
+      if (step1Actions) step1Actions.hidden = false;
+    }
+    if (svcEntry.motivo) {
+      const motivo = document.getElementById("f-motivo");
+      // Solo si la opcion existe realmente en el select; nunca inventar una.
+      if (motivo && Array.from(motivo.options).some(o => o.value === svcEntry.motivo)) {
+        motivo.value = svcEntry.motivo;
+      }
+    }
   }
 
   // Init

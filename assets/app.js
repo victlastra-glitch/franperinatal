@@ -1,5 +1,5 @@
 // FranPerinatal — app.js v5
-// Nav con panel mobile, reveal, WhatsApp, forms, smoothing
+// Nav con panel mobile, reveal, forms, smoothing
 // v4: leadmag usa AppsScript_leadmagnet independiente (no Google Forms, no script de agenda)
 // v5: analytics de lead magnet sin PII (no email en GA4/Meta).
 (function () {
@@ -27,23 +27,93 @@
   window.addEventListener("pointerdown", force, { once: true });
 
   // ---------- Mobile nav panel ----------
+  // El panel es un disclosure modal: el foco no debe escaparse al contenido de
+  // fondo mientras esta abierto, Escape lo cierra y el foco vuelve al disparador.
   const burger = document.querySelector(".nav-burger");
   const panel = document.querySelector(".nav-panel");
-  function closePanel() {
-    if (!panel) return;
+
+  function panelFocusables() {
+    if (!panel) return [];
+    return Array.from(panel.querySelectorAll('a[href], button:not([disabled])'))
+      .filter(el => el.offsetParent !== null || el.getClientRects().length);
+  }
+
+  function isOpen() { return !!panel && panel.classList.contains("open"); }
+
+  function closePanel(restoreFocus) {
+    if (!panel || !isOpen()) return;
     panel.classList.remove("open");
-    if (burger) burger.setAttribute("aria-expanded", "false");
+    panel.setAttribute("aria-hidden", "true");
+    if (burger) {
+      burger.setAttribute("aria-expanded", "false");
+      burger.setAttribute("aria-label", "Abrir menú");
+      if (restoreFocus) burger.focus();
+    }
     document.body.style.overflow = "";
   }
-  function togglePanel() {
-    if (!panel) return;
-    const open = panel.classList.toggle("open");
-    if (burger) burger.setAttribute("aria-expanded", open ? "true" : "false");
-    document.body.style.overflow = open ? "hidden" : "";
+
+  function openPanel() {
+    if (!panel || isOpen()) return;
+    panel.classList.add("open");
+    panel.removeAttribute("aria-hidden");
+    if (burger) {
+      burger.setAttribute("aria-expanded", "true");
+      burger.setAttribute("aria-label", "Cerrar menú");
+    }
+    document.body.style.overflow = "hidden";
+    const first = panelFocusables()[0];
+    if (first) window.setTimeout(() => first.focus(), 60);
   }
-  if (burger) burger.addEventListener("click", togglePanel);
-  if (panel) panel.querySelectorAll("a").forEach(a => a.addEventListener("click", closePanel));
-  window.addEventListener("resize", () => { if (window.innerWidth > 960) closePanel(); });
+
+  function togglePanel() { isOpen() ? closePanel(true) : openPanel(); }
+
+  if (burger) {
+    // <button> ya activa con Enter/Space via click nativo.
+    burger.addEventListener("click", togglePanel);
+  }
+  if (panel) {
+    panel.setAttribute("aria-hidden", "true");
+    panel.querySelectorAll("a").forEach(a => a.addEventListener("click", () => closePanel(false)));
+  }
+
+  document.addEventListener("keydown", (e) => {
+    if (!isOpen()) return;
+    if (e.key === "Escape") { e.preventDefault(); closePanel(true); return; }
+    if (e.key !== "Tab") return;
+    // Contencion de foco: el panel cubre la pagina, tabular no debe salir de el.
+    const items = panelFocusables();
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === burger || !panel.contains(active))) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault(); first.focus();
+    }
+  });
+
+  window.addEventListener("resize", () => { if (window.innerWidth > 960) closePanel(false); });
+
+  // ---------- Una sola acción dominante en el primer viewport ----------
+  // En Home conviven la acción del header y la del hero. Mientras el hero
+  // está a la vista, la del header se mantiene contenida; al dejar atrás el
+  // hero pasa a ser la acción primaria persistente. Sin animación.
+  const heroEl = document.querySelector(".hero");
+  const navEl = document.querySelector("header.nav");
+  if (heroEl && navEl) {
+    navEl.classList.add("nav--hero-visible");
+    try {
+      const hio = new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+          navEl.classList.toggle("nav--hero-visible", e.isIntersecting);
+        });
+      }, { threshold: 0 });
+      hio.observe(heroEl);
+    } catch (e) {
+      navEl.classList.remove("nav--hero-visible");
+    }
+  }
 
   // ---------- Leadmag form — mismo origen; el Worker controla cualquier upstream ----------
   const LEADMAG_API_URL = '/api/leadmagnet';
@@ -137,11 +207,4 @@
     }
   }
 
-  // ---------- Apply tweaks ----------
-  try {
-    const a = localStorage.getItem("fb_accent");
-    const d = localStorage.getItem("fb_density");
-    if (a) document.documentElement.setAttribute("data-accent", a);
-    if (d) document.documentElement.setAttribute("data-density", d);
-  } catch (e) {}
 })();
