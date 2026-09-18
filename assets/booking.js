@@ -334,7 +334,11 @@
     if (dow === 0 || dow === 6) return "none"; // fin de semana cerrado
     if (HOLIDAYS_CL.has(iso)) return "none";
 
-    if (!slotsLoaded) return "loading";
+    // La vista general sólo atenúa el calendario: nunca decide si un día puede
+    // elegirse. Mientras está pendiente — y si falló — no sabemos qué está
+    // ocupado, así que el día se ofrece sin afirmar nada en ningún sentido y
+    // fetchDate() sigue siendo la única autoridad sobre sus horas.
+    if (!slotsLoaded || overviewFailed) return "unknown";
 
     // Bloqueo real basado en Calendar (bookedSlots viene del doGet)
     const takenHours = bookedSlots
@@ -371,7 +375,7 @@
       btn.dataset.state = state_;
       btn.dataset.iso = iso;
       if (iso === getSantiagoTodayKey()) btn.classList.add("today");
-      if (state_ === "past" || state_ === "none" || state_ === "empty" || state_ === "loading") btn.disabled = true;
+      if (state_ === "past" || state_ === "none" || state_ === "empty") btn.disabled = true;
       if (state.date && iso === dateKeyFromDate(state.date)) btn.classList.add("selected");
       btn.addEventListener("click", () => {
         state.date = date;
@@ -397,7 +401,9 @@
   function renderSlots() {
     const host = document.getElementById("bk-slots");
     host.innerHTML = "";
-    if (!state.date || !slotsLoaded) return;
+    // No se espera a la vista general: el guard de confirmedDates de más abajo
+    // es el que decide, y mientras tanto muestra "Comprobando horarios…".
+    if (!state.date) return;
     const subtitle = document.getElementById("bk-time-subtitle");
     const isoForGuard = dateKeyFromDate(state.date);
     // Sin confirmación del servidor para ESTA fecha no se ofrece ninguna hora.

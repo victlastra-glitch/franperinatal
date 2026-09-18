@@ -278,10 +278,27 @@ function localDayStart_(date) {
   return startAt_(date, '00:00');
 }
 
+/**
+ * The Calendar window an availability read needs — and no more than that.
+ *
+ * A dated read answers about one day, so it queries one day. It used to extend
+ * the window by the overview horizon regardless, which made every per-date
+ * request pull roughly 90 days of Calendar to keep a single date's slots:
+ * `workingSlots_` already discards every other day, so the extra ~89 days were
+ * fetched and thrown away. In Production that read took 3-12s and timed out
+ * outright often enough to fail the picker closed on dates that were free.
+ *
+ * The slot set is unchanged by the narrowing. Freebusy clips the intervals it
+ * returns to the window, so a session running past midnight into the requested
+ * date is still reported, still overlaps, and is still withheld. The last slot
+ * ends at 19:00, well inside the 23:59 bound.
+ *
+ * The date-less overview is untouched: it legitimately spans the horizon.
+ */
 function availabilityBounds_(requestedDate) {
   const startDate = requestedDate || localDateLabel_(new Date().toISOString());
   const start = localDayStart_(startDate);
-  const endDate = addCalendarDays_(startDate, AVAILABILITY_HORIZON_DAYS);
+  const endDate = requestedDate ? startDate : addCalendarDays_(startDate, AVAILABILITY_HORIZON_DAYS);
   return { start: start, end: startAt_(endDate, '23:59') };
 }
 
