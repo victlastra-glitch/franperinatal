@@ -292,7 +292,14 @@
   padding: 20px 0; border-top: 1px solid rgba(35, 31, 28, 0.12);
 }
 .warning-note strong { color: var(--ink); font-weight: 500; }
-.warning-note a { border-bottom: 1px solid currentColor; color: var(--accent-deep); }
+/* El recurso de crisis debe poder tocarse: objetivo de 44px de alto sin
+   alterar la caja de línea del párrafo (el relleno vertical se compensa con
+   margen negativo), y sin subir el tono visual de la nota. */
+.warning-note a {
+  color: var(--accent-deep);
+  text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 3px;
+  display: inline-block; padding: 11px 4px; margin: -11px -4px;
+}
 
 /* ---------- Process ---------- */
 .process-steps {

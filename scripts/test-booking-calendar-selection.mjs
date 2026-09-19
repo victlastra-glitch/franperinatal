@@ -45,6 +45,13 @@
  *   J. choosing a free hour advances by itself, to the contact step
  *   K. an occupied hour advances nothing, and Back still walks the steps
  *
+ * REMEDIATION (2026-09-19): two more page guarantees ride on the same fixture.
+ *
+ *   L. the initial render neither scrolls nor moves focus; a person-initiated
+ *      transition still scrolls to the stage
+ *   M. the summary total is the chosen service's price, from the same field
+ *      that fills the "Valor" row
+ *
  * The advance controls the fixture builds are read out of reserva.html rather
  * than invented here, so a "Continuar" regrowing on the hour step grows in this
  * fixture too and assertion I fails.
@@ -196,7 +203,13 @@ function buildPage(options) {
 
   const stage = el('div');
   byId.set('bk-stage', stage);
-  byId.set('bk-summary', el('div'));
+  // The live summary carries the two cells booking.js writes the amount to:
+  // the "Valor" row and the total. Both must come from the same state field.
+  const summary = el('div');
+  const priceCell = el('strong'); priceCell.dataset.field = 'price'; priceCell.textContent = '—';
+  const totalCell = el('strong'); totalCell.className = 'bk-summary-total-val'; totalCell.textContent = '—';
+  summary.appendChild(priceCell); summary.appendChild(totalCell);
+  byId.set('bk-summary', summary);
   byId.set('cal-grid', el('div'));
   byId.set('cal-month', el('div'));
   byId.set('cal-prev', el('button'));
@@ -244,6 +257,7 @@ function buildPage(options) {
   Object.defineProperty(FixedDate, 'parse', { value: Date.parse, writable: true, configurable: true });
 
   const requested = [];
+  const scrollCalls = [];
   const sandbox = {
     document: {
       getElementById: getEl,
@@ -252,7 +266,8 @@ function buildPage(options) {
       createElement: el, addEventListener() {}, body: el('body'),
     },
     window: {
-      addEventListener() {}, location: { href: '', search: '' }, scrollTo() {},
+      addEventListener() {}, location: { href: '', search: '' },
+      scrollTo() { scrollCalls.push([...arguments]); },
       setTimeout: (fn) => { timers.push(fn); return timers.length; },
       clearTimeout: (id) => { if (id) timers[id - 1] = null; },
     },
@@ -281,7 +296,8 @@ function buildPage(options) {
 
   return {
     stage, byId, getEl, nextButtons, prevButtons, sections, service, serviceLabel,
-    requested, runTimers, tick,
+    requested, scrollCalls, runTimers, tick,
+    priceCell, totalCell,
     // go() hides every step but the current one, so the visible step is a real
     // signal from the code under test, not something this fixture decides.
     currentStep() {
@@ -564,6 +580,35 @@ const isOverview = (url) => url.indexOf('?date=') === -1;
 //    back the way it was; each must break the assertion that covers it. A
 //    suite that passes against the defect proves nothing.
 // ---------------------------------------------------------------------------
+// L. Initial load. go(1) at start-up used to scroll the page so the h1 and the
+// reassurance line slid under the sticky nav, and to move focus onto the step
+// heading before the person had done anything. The first render must do
+// neither; a transition the person initiates still scrolls (asserted right
+// after, so the guard cannot be satisfied by removing scrolling altogether).
+// ---------------------------------------------------------------------------
+{
+  const page = buildPage({ respond: () => never() });
+  check(page.scrollCalls.length === 0, 'L: the initial render issues no scroll');
+  check(page.currentStep() === 1, 'L: and the page still opens on step 1');
+  await page.openCalendar();
+  check(page.scrollCalls.length === 1, 'L: a person-initiated transition still scrolls to the stage');
+}
+
+// ---------------------------------------------------------------------------
+// M. The summary total. Before, updateSummary() filled the "Valor" row and left
+// the total at "—" although the amount was already known. One source: the
+// chosen service's data-price feeds both cells.
+// ---------------------------------------------------------------------------
+{
+  const page = buildPage({ respond: () => never() });
+  check(page.priceCell.textContent === '—' && page.totalCell.textContent === '—',
+    'M: with no service chosen neither cell claims an amount');
+  await page.openCalendar();
+  check(page.priceCell.textContent === '$45.000', 'M: the value row shows the chosen service\'s price');
+  check(page.totalCell.textContent === '$45.000', 'M: and the total shows the same amount, from the same field');
+}
+
+// ---------------------------------------------------------------------------
 const GATE = 'if (!slotsLoaded || overviewFailed) return "unknown";';
 const DISABLE = 'if (state_ === "past" || state_ === "none" || state_ === "empty") btn.disabled = true;';
 const SLOTS_GATE = 'if (!state.date) return;';
@@ -657,6 +702,24 @@ const SLOTS_GATE = 'if (!state.date) return;';
     'M7: an hour-step advance control really would be visible to the fixture, so assertions F/G/I are load-bearing');
 }
 
+{
+  // M8 — the initial render scrolls again (the defect L replaces).
+  const mutant = buildPage({ respond: () => never(), patches: [['go(1, { initial: true });', 'go(1);']] });
+  check(mutant.scrollCalls.length === 1,
+    'M8: without the initial flag the first render scrolls, so assertion L is load-bearing');
+}
+
+{
+  // M9 — the total is no longer derived from the service price.
+  const mutant = buildPage({
+    respond: () => never(),
+    patches: [['if (totalEl) totalEl.textContent = (state.service && state.service.price) || "—";', '']],
+  });
+  await mutant.openCalendar();
+  check(mutant.priceCell.textContent === '$45.000' && mutant.totalCell.textContent === '—',
+    'M9: removing the derivation leaves the total at "—" while the value is known, so assertion M is load-bearing');
+}
+
 console.log('BOOKING_CALENDAR_SELECTION=PASS assertions=' + assertions);
 console.log('OVERVIEW_GATES_DATE_SELECTION=NO');
 console.log('PENDING_OR_FAILED_OVERVIEW_DAY_STATE=unknown');
@@ -667,4 +730,6 @@ console.log('WIZARD_STEPS=' + TOTAL_STEPS + ' HOUR_STEP=3');
 console.log('DATE_AND_HOUR_ADVANCE_CONTROLS=NONE');
 console.log('CHOOSING_IS_ADVANCING=YES (pointer and keyboard)');
 console.log('BACK_NAVIGATION=INTACT');
-console.log('ADVERSARIAL_MUTANTS_DETECTED=7');
+console.log('INITIAL_LOAD_SCROLL_OR_FOCUS=NONE');
+console.log('SUMMARY_TOTAL_SOURCE=SERVICE_PRICE');
+console.log('ADVERSARIAL_MUTANTS_DETECTED=9');

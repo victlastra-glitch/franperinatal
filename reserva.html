@@ -23,7 +23,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
-<link rel="stylesheet" href="assets/styles.css?v=3" />
+<link rel="stylesheet" href="assets/styles.css?v=4" />
 <link rel="stylesheet" href="assets/booking.css?v=3" />
 </head>
 <body data-booking-page>
@@ -232,7 +232,7 @@
                   required />
               </div>
               <div class="field">
-                <label for="f-phone">Teléfono <span aria-hidden="true" style="color:var(--rose,#8A5A6B);">*</span></label>
+                <label for="f-phone">Teléfono</label>
                 <input class="input" type="tel" id="f-phone" name="phone"
                   placeholder="+56 9 XXXX XXXX"
                   autocomplete="tel"
@@ -243,7 +243,7 @@
 
             <div class="bk-form-row">
               <div class="field">
-                <label for="f-rut">RUT Paciente <span aria-hidden="true" style="color:var(--rose,#8A5A6B);">*</span></label>
+                <label for="f-rut">RUT Paciente</label>
                 <input class="input" type="text" id="f-rut" name="patient_rut"
                   placeholder="12.345.678-9"
                   autocomplete="off"
@@ -253,10 +253,10 @@
               </div>
             </div>
 
-            <p class="field-hint">Tras completar el pago, recibirás la confirmación con el enlace de Meet (si es online) y los datos de la sesión.</p>
+            <p class="field-hint">Tras completar el pago, recibirás la confirmación con el enlace de Google Meet y los datos de la sesión.</p>
 
             <div class="field">
-              <label for="f-motivo">Motivo principal <small style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;">(opcional)</small></label>
+              <label for="f-motivo">Motivo principal <span class="field-optional">(opcional)</span></label>
               <select class="select" id="f-motivo" name="motivo_principal">
                 <option value="">Selecciona…</option>
                 <option value="Embarazo">Embarazo</option>
@@ -272,7 +272,7 @@
             </div>
 
             <div class="field">
-              <label for="f-reason">¿Hay algo que quieras contarme antes de la sesión? <small style="font-weight:400;text-transform:none;letter-spacing:0;font-size:12px;">(opcional)</small></label>
+              <label for="f-reason">¿Hay algo que quieras contarme antes de la sesión? <span class="field-optional">(opcional)</span></label>
               <textarea class="textarea" id="f-reason" name="reason"
                 rows="3"
                 placeholder="Puedes compartir lo que sientes o lo que esperas de este espacio. No hay respuesta correcta."></textarea>
@@ -329,10 +329,9 @@
 
             <div class="bk-review-note">
               <p class="eyebrow" style="margin:0 0 16px;">Antes de continuar</p>
-              <p class="serif">Al continuar, irás al pago seguro por Flow. La hora se confirma administrativamente una vez aprobado el pago.</p>
+              <p class="serif">Al continuar, irás al pago seguro por Flow. Tu hora queda confirmada una vez aprobado el pago.</p>
               <ul>
-                <li>Pago online requerido para confirmar la hora.</li>
-                <li>Una vez aprobado el pago, recibirás el enlace de Google Meet en el email.</li>
+                <li>Una vez aprobado el pago, recibirás el enlace de Google Meet por correo.</li>
                 <li>Podrás reagendar o cancelar tu hora desde el enlace de tu correo de confirmación.</li>
               </ul>
 
@@ -371,10 +370,6 @@
                 Tu hora preferida es <strong style="color:var(--ink);" id="sx-when">—</strong>
               </p>
 
-              <p style="font-size:14px;color:var(--ink-3);margin-top:14px;line-height:1.55;max-width:48ch;margin-left:auto;margin-right:auto;">
-                La hora se confirma administrativamente una vez aprobado el pago.
-              </p>
-
               <div class="bk-success-card">
                 <div class="bk-sx-col">
                   <span class="bk-sx-k">Fecha</span>
@@ -397,7 +392,7 @@
               <!-- Nota pago -->
               <div class="bk-success-note">
                 <p><strong>Pago online por Flow</strong></p>
-                <p>Si la ventana de Flow no se abrió, también verás el estado en <a href="/pago-resultado" class="bk-link">pago-resultado</a> tras completar el pago. La hora se confirma administrativamente una vez aprobado el pago.</p>
+                <p>Si la ventana de Flow no se abrió, puedes revisar el estado en <a href="/pago-resultado" class="bk-link">la página de resultado del pago</a> una vez completado.</p>
               </div>
 
               <!-- Modificar / cancelar -->
@@ -435,7 +430,7 @@
                       <div><span>ID</span><strong id="em-id" style="font-family:var(--mono);font-size:12px;letter-spacing:0.04em;">—</strong></div>
                     </div>
                     <hr />
-                    <p class="em-fine">Una vez aprobado el pago, te enviaremos la confirmación administrativa con el enlace de Google Meet, y los enlaces para reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.</p>
+                    <p class="em-fine">Una vez aprobado el pago, te enviaremos la confirmación con el enlace de Google Meet, y los enlaces para reagendar o cancelar tu sesión hasta 24 horas antes del horario agendado.</p>
                   </div>
                 </div>
               </details>
@@ -474,7 +469,7 @@
               <strong data-field="time" class="empty">Por elegir</strong>
             </li>
             <li>
-              <span>Precio</span>
+              <span>Valor</span>
               <strong data-field="price" class="empty">—</strong>
             </li>
           </ul>
@@ -540,16 +535,17 @@
       <small>© <span id="yr">2026</span> Francisca Bustos M.</small>
       <small>Consulta confidencial · Secreto profesional</small>
       <small><a href="/privacidad">Aviso de privacidad</a></small>
+      <small><button type="button" class="footer-consent-btn" data-consent-open hidden>Preferencias de cookies</button></small>
     </div>
   </div>
 </footer>
 
 <script>
 </script>
-<!-- Cache-bust v24 for the frontend analytics and booking bundles. -->
-<script src="assets/analytics.js?v=3" defer></script>
-<script src="assets/consent.js?v=1" defer></script>
-<script src="assets/booking.js?v=24" defer></script>
+<!-- Cache-bust v25 for the booking bundle (initial-load scroll, summary total). -->
+<script src="assets/analytics.js?v=4" defer></script>
+<script src="assets/consent.js?v=2" defer></script>
+<script src="assets/booking.js?v=25" defer></script>
 
 <script src="assets/app.js?v=6" defer></script>
 </body>

@@ -75,8 +75,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
-<link rel="stylesheet" href="assets/styles.css?v=3" />
-<link rel="stylesheet" href="assets/home.css?v=2" />
+<link rel="stylesheet" href="assets/styles.css?v=4" />
+<link rel="stylesheet" href="assets/home.css?v=4" />
 <link rel="stylesheet" href="assets/pages.css?v=2" />
 <style>
   /* ── Formulario de contacto nativo ─────────────────────── */
@@ -87,7 +87,6 @@
     font-family: var(--sans); font-size: 13px; font-weight: 500;
     letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2);
   }
-  .field label .req { color: var(--malva); margin-left: 2px; }
 
   .field input,
   .field select,
@@ -200,22 +199,22 @@
 
         <div class="field-row">
           <div class="field">
-            <label for="cf-name">Nombre completo <span class="req" aria-hidden="true">*</span></label>
+            <label for="cf-name">Nombre completo</label>
             <input id="cf-name" name="name" type="text" placeholder="Tu nombre" autocomplete="name" required />
           </div>
           <div class="field">
-            <label for="cf-email">Email <span class="req" aria-hidden="true">*</span></label>
+            <label for="cf-email">Email</label>
             <input id="cf-email" name="email" type="email" placeholder="tu@email.cl" autocomplete="email" required />
           </div>
         </div>
 
         <div class="field-row">
           <div class="field">
-            <label for="cf-phone">Teléfono <span style="color:var(--ink-3);font-weight:400">(opcional)</span></label>
+            <label for="cf-phone">Teléfono <span class="field-optional">(opcional)</span></label>
             <input id="cf-phone" name="phone" type="tel" placeholder="+56 9 1234 5678" autocomplete="tel" />
           </div>
           <div class="field">
-            <label for="cf-topic">Motivo de contacto <span class="req" aria-hidden="true">*</span></label>
+            <label for="cf-topic">Motivo de contacto</label>
             <select id="cf-topic" name="topic" required>
               <option value="" disabled selected>Selecciona…</option>
               <option value="Primera sesión">Agendar una primera sesión</option>
@@ -228,7 +227,7 @@
         </div>
 
         <div class="field">
-          <label for="cf-message">Mensaje <span class="req" aria-hidden="true">*</span></label>
+          <label for="cf-message">Mensaje</label>
           <textarea id="cf-message" name="message" placeholder="Cuéntame brevemente en qué puedo ayudarte…" required></textarea>
         </div>
 
@@ -325,12 +324,13 @@
       <small>© <span id="yr">2026</span> Francisca Bustos M.</small>
       <small>Consulta confidencial · Secreto profesional</small>
       <small><a href="/privacidad">Aviso de privacidad</a></small>
+      <small><button type="button" class="footer-consent-btn" data-consent-open hidden>Preferencias de cookies</button></small>
     </div>
   </div>
 </footer>
 
-<script src="assets/analytics.js?v=3" defer></script>
-<script src="assets/consent.js?v=1" defer></script>
+<script src="assets/analytics.js?v=4" defer></script>
+<script src="assets/consent.js?v=2" defer></script>
 <script src="assets/app.js?v=6" defer></script>
 <script>
 (function(){

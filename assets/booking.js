@@ -694,9 +694,15 @@
     }
   }
 
-  function go(n) {
+  function go(n, opts) {
     cancelScheduledAdvance(); // cancelar timers al navegar manualmente
     if (n < 1 || n > 6) return;
+    // Render inicial: la página abre arriba, con el h1 y la nota de contexto
+    // visibles bajo la barra fija. Desplazar y enfocar sólo corresponde a una
+    // transición iniciada por la persona; en la carga, el scroll automático
+    // metía la cabecera bajo la navegación y el foco programático saltaba
+    // por encima del enlace de salto y del propio título.
+    const initial = !!(opts && opts.initial);
     state.step = n;
     stage.querySelectorAll(".bk-step").forEach(sec => {
       sec.hidden = Number(sec.dataset.step) !== n;
@@ -707,8 +713,9 @@
     if (n === 6) fillSuccess();
     // Ocultar resumen en el paso final
     summary.style.display = n === 6 ? "none" : "";
+    if (initial) return;
     // Scroll suave al inicio del formulario
-    stage.scrollIntoView ? window.scrollTo({ top: stage.offsetTop - 120, behavior: "smooth" }) : null;
+    if (typeof window.scrollTo === "function") window.scrollTo({ top: stage.offsetTop - 120, behavior: "smooth" });
     // El foco va al encabezado del paso, no al primer control: quien llega por
     // teclado o lector de pantalla necesita oír PRIMERO en qué paso está. El
     // anillo de foco no se dibuja porque :focus-visible no se activa en un
@@ -740,6 +747,11 @@
     set("time", state.time);
     set("duration", state.service && state.service.duration, "—");
     set("price", state.service && state.service.price, "—");
+    // Un solo origen para el monto: el data-price del servicio elegido alimenta
+    // la fila "Valor" y el total. Con una sola sesión por reserva son el mismo
+    // número; antes el total quedaba en "—" aunque el valor ya se mostrara.
+    const totalEl = summary.querySelector(".bk-summary-total-val");
+    if (totalEl) totalEl.textContent = (state.service && state.service.price) || "—";
   }
   updateSummary();
 
@@ -852,6 +864,6 @@
     }
   }
 
-  // Init
-  go(1);
+  // Init — sin scroll ni foco programático: ver go().
+  go(1, { initial: true });
 })();

@@ -194,6 +194,9 @@
 }
 .article-author img {
   width: 48px; height: 48px; border-radius: 50%;
+  /* Elemento flex: sin esto, en anchos estrechos el retrato cedía ancho a la
+     línea de credencial y se dibujaba como un óvalo de ~38px (medido a 390px). */
+  flex: 0 0 48px;
   object-fit: cover;
   background: var(--paper-deep, #EDE4D6);
 }

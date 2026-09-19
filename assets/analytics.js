@@ -126,6 +126,20 @@
   window.FB_rejectCookies = function () {
     try { localStorage.setItem(CONSENT_KEY, 'essentials'); } catch(e) {}
     // Consent Mode permanece en 'denied' y no se carga ninguna etiqueta.
+    // Si la persona revisa su elección y pasa de 'accepted' a 'essentials' en
+    // la misma visita, el consentimiento vuelve a 'denied' y track() pasa a
+    // ser no-op de inmediato; las etiquetas ya descargadas dejan de cargarse
+    // en la siguiente navegación, porque este archivo no las inicializa sin
+    // una decisión 'accepted' almacenada.
+    if (window._fbMeasurementOn) {
+      window.gtag('consent', 'update', {
+        'ad_storage':         'denied',
+        'analytics_storage':  'denied',
+        'ad_user_data':       'denied',
+        'ad_personalization': 'denied'
+      });
+      window._fbMeasurementOn = false;
+    }
   };
 
   // Restaurar una decisión previa de aceptar. 'essentials' (y el valor legado
