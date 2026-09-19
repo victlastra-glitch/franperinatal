@@ -45,6 +45,8 @@ var V7_HEADER_ALIASES = Object.freeze({
   status: Object.freeze(['status', 'estado']),
   cancelledAt: Object.freeze(['cancelledat', 'cancelled_at', 'cancelado', 'fecha cancelacion']),
   replacedByReservationId: Object.freeze(['replacedbyreservationid', 'replaced_by_reservation_id', 'reemplazado por']),
+  // Historical column only. The live sheet still carries it for rows written
+  // before RUT collection was retired; nothing writes it any more.
   patientRut: Object.freeze(['patientrut', 'patient_rut', 'rut', 'rut paciente']),
 });
 var V7_TO_V2_FIELD = Object.freeze({
@@ -175,10 +177,17 @@ var NOTIFICATION_OUTBOX_TERMINAL_STATES = Object.freeze(['sent', 'superseded']);
 // repoint the Web App to the previously verified permanent version, which does
 // not contain it.
 var IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED = true;
+// Patient RUT is no longer collected. No current path — availability, reserve,
+// Flow create/verify, Calendar/Meet, notification or management — reads it, and
+// it is not persisted, so the create payload no longer carries it.
 const CREATE_FLOW_FIELDS = Object.freeze([
   'idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone',
-  'patientRut', 'reason', 'message',
+  'reason', 'message',
 ]);
+// Retired input keys. Still accepted so a browser holding the previous
+// booking.js across a deploy is not rejected mid-booking; never read into the
+// payload, never stored, never forwarded.
+const CREATE_FLOW_RETIRED_FIELDS = Object.freeze(['patientRut']);
 var ACTIVE_SLOT_STATES = Object.freeze([
   LIFECYCLE.BOOKING_STATUS.INITIATED,
   LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING,
@@ -907,14 +916,16 @@ function parseCreatePayload_(e) {
   const raw = String((e && e.postData && e.postData.contents) || ''); if (!raw || raw.length > 4096) fail_('REQUEST_REJECTED');
   let candidate; try { candidate = JSON.parse(raw); } catch (_) { fail_('REQUEST_REJECTED'); }
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) fail_('REQUEST_REJECTED');
-  if (Object.keys(candidate).some(function(key) { return key !== 'action' && CREATE_FLOW_FIELDS.indexOf(key) === -1; })) fail_('REQUEST_REJECTED');
+  if (Object.keys(candidate).some(function(key) {
+    return key !== 'action' && CREATE_FLOW_FIELDS.indexOf(key) === -1 && CREATE_FLOW_RETIRED_FIELDS.indexOf(key) === -1;
+  })) fail_('REQUEST_REJECTED');
   if (candidate.action !== 'create_flow_payment') fail_('REQUEST_REJECTED');
   const payload = {}; CREATE_FLOW_FIELDS.forEach(function(key) { payload[key] = String(candidate[key] || '').trim(); });
   if (!validIdempotencyKey_(payload.idempotencyKey)) fail_('IDEMPOTENCY_KEY_REJECTED');
   if (!/^(initial|followup)$/.test(payload.serviceType) || !/^(online|presencial)$/.test(payload.modality)
     || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date) || !/^\d{2}:\d{2}$/.test(payload.time)) fail_('REQUEST_REJECTED');
   if (!payload.name || payload.name.length > 80 || !payload.email || payload.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) fail_('REQUEST_REJECTED');
-  ['phone', 'patientRut', 'reason', 'message'].forEach(function(key) { if (payload[key].length > 500) fail_('REQUEST_REJECTED'); });
+  ['phone', 'reason', 'message'].forEach(function(key) { if (payload[key].length > 500) fail_('REQUEST_REJECTED'); });
   return payload;
 }
 function validIdempotencyKey_(value) { return new RegExp('^' + PRODUCTION.idempotencyNamespace + '-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'i').test(String(value || '')); }

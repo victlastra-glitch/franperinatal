@@ -20,7 +20,7 @@ function digestBytes(value) {
   return bytes(createHash('sha256').update(text).digest());
 }
 
-function loadBookingContext(DateImpl) {
+function loadBookingContext(DateImpl, overrideSources) {
   let headers = [];
   const rows = [];
   const sheet = {
@@ -78,7 +78,7 @@ function loadBookingContext(DateImpl) {
     GmailApp: { sendEmail: () => { throw new Error('mail must not be called'); } }, MailApp: { sendEmail: () => { throw new Error('MailApp must not be called'); } },
   };
   vm.createContext(context);
-  for (const source of sources) vm.runInContext(source, context);
+  for (const source of (overrideSources || sources)) vm.runInContext(source, context);
   headers = [...context.RESERVATION_HEADERS];
   return { context, rows };
 }
@@ -111,11 +111,40 @@ check(vm.runInContext('Date.parse("2026-08-27T14:00:00.000Z")', context) === Dat
 const fields = vm.runInContext('CREATE_FLOW_FIELDS.slice()', context);
 check(JSON.stringify(fields) === JSON.stringify([
   'idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone',
-  'patientRut', 'reason', 'message',
+  'reason', 'message',
 ]), 'CREATE_FLOW_FIELDS public contract is unchanged');
 ['now', 'nowMs', 'testNow', 'clock'].forEach((key) => {
   check(fields.indexOf(key) === -1, 'CREATE_FLOW_FIELDS does not include ' + key);
 });
+
+// --- Data minimisation: patient RUT is no longer collected ------------------
+// Nothing in availability, reserve, Flow create/verify, Calendar/Meet,
+// notification or management reads a RUT, and no row stores one, so the create
+// contract no longer carries it. The key stays tolerated for one deploy window
+// so a browser holding the previous booking.js is not rejected mid-booking.
+check(fields.indexOf('patientRut') === -1, 'CREATE_FLOW_FIELDS no longer carries patientRut');
+const retiredFields = vm.runInContext('CREATE_FLOW_RETIRED_FIELDS.slice()', context);
+check(JSON.stringify(retiredFields) === JSON.stringify(['patientRut']),
+  'patientRut is declared a retired, tolerated input key');
+
+const payloadWithoutRut = { ...validPayload };
+delete payloadWithoutRut.patientRut;
+const parsedWithoutRut = context.parseCreatePayload_(createEvent(payloadWithoutRut));
+check(!Object.prototype.hasOwnProperty.call(parsedWithoutRut, 'patientRut'),
+  'a create payload that omits patientRut is accepted and carries none');
+const parsedLegacyRut = context.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11.111.111-1' }));
+check(!Object.prototype.hasOwnProperty.call(parsedLegacyRut, 'patientRut'),
+  'a legacy create payload still carrying patientRut is accepted and the value is dropped');
+check(JSON.stringify(parsedLegacyRut) === JSON.stringify(parsedWithoutRut),
+  'a supplied patientRut changes nothing about the parsed payload');
+
+const createdWithoutRut = context.createFlowPayment_(createEvent({
+  ...payloadWithoutRut,
+  idempotencyKey: 'fran-booking-123e4567-e89b-12d3-a456-4266141740aa',
+  time: '11:00',
+}));
+check(createdWithoutRut.ok === true && createdWithoutRut.paymentUrl.startsWith('https://www.flow.cl/app/web/pay'),
+  'createFlowPayment_ creates a payment order for a booking that supplies no RUT');
 
 check(/nowMs === undefined \? Date\.now\(\) : Number\(nowMs\)/.test(codeSource),
   'production assertBookableSlot_ defaults to Date.now() when nowMs is omitted');
@@ -161,6 +190,33 @@ const realDateContext = loadBookingContext(Date);
 check(typeof realDateContext.context.Date.now === 'function'
   && realDateContext.context.Date.now === Date.now,
   'without a test VM clock, production Date.now remains the host Date.now');
+
+// --- Adversarial mutations on the RUT minimisation --------------------------
+const mutateCode = (from, to) => {
+  assert.ok(codeSource.includes(from), 'mutation target present: ' + from);
+  return sources.map((source, index) => (index === 0 ? source.replace(from, to) : source));
+};
+
+const intolerantContext = loadBookingContext(createFixedDate(), mutateCode(
+  "const CREATE_FLOW_RETIRED_FIELDS = Object.freeze(['patientRut']);",
+  'const CREATE_FLOW_RETIRED_FIELDS = Object.freeze([]);',
+)).context;
+assert.throws(
+  () => intolerantContext.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11.111.111-1' })),
+  /REQUEST_REJECTED/,
+  'dropping the retired-key tolerance must break a legacy in-flight browser',
+); assertions += 1;
+console.log('MUTATION_RETIRED_KEY_TOLERANCE_REMOVED=DETECTED');
+
+const recollectingContext = loadBookingContext(createFixedDate(), mutateCode(
+  "  'reason', 'message',\n]);\n",
+  "  'patientRut', 'reason', 'message',\n]);\n",
+)).context;
+check(Object.prototype.hasOwnProperty.call(
+  recollectingContext.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11.111.111-1' })),
+  'patientRut',
+), 'reinstating patientRut in CREATE_FLOW_FIELDS must be visible in the parsed payload');
+console.log('MUTATION_PATIENT_RUT_RECOLLECTED=DETECTED');
 
 console.log(`BOOKING_CLOCK_CONTRACT_TESTS=PASS assertions=${assertions}`);
 console.log(`FIXED_TEST_NOW=${FIXED_TEST_NOW_ISO}`);

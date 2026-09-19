@@ -11,7 +11,7 @@ data and behave as if any leak is permanent.
 
 ## Data that must never leave the server
 
-Name, RUT, email, phone, session notes, service/modality selection, calendar event
+Name, email, phone, session notes, service/modality selection, calendar event
 linkage, Flow tokens, `publicStatusToken`, raw capability bearers, upstream Apps
 Script URLs, script ids, deployment ids.
 
@@ -24,6 +24,10 @@ Script URLs, script ids, deployment ids.
 - **Bearers are hashed at rest** and returned only to the dispatcher at send time;
   rotation invalidates the previous bearer. Never persist or print a raw bearer.
 - **Calendar linkage is stored without PII.**
+- **Patient RUT is no longer collected.** The booking form does not ask for it,
+  the create contract does not carry it, and nothing written today stores one. The
+  `patientRut` column on the legacy v7 sheet holds historical rows only. Do not
+  reintroduce the field without a current, executable operational purpose.
 
 ## Secrets
 

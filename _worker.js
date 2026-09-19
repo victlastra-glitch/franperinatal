@@ -95,12 +95,17 @@ async function handleAvailability(request, env) {
   return jsonResp({ ok: true, slots: slots }, 200);
 }
 
-const CREATE_FIELDS = new Set(['idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'patientRut', 'reason', 'message']);
+// Patient RUT is no longer collected. Nothing in the current booking, payment,
+// Calendar, email or management path reads it, so it is not forwarded upstream.
+const CREATE_FIELDS = new Set(['idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'reason', 'message']);
+// Retired input keys: still tolerated so a browser holding the previous
+// booking.js across a deploy is not rejected mid-booking, and dropped here.
+const CREATE_RETIRED_FIELDS = new Set(['patientRut']);
 
 function validCreatePayload(value) {
   if (!value || Array.isArray(value) || typeof value !== 'object') return null;
   const keys = Object.keys(value);
-  if (keys.some((key) => !CREATE_FIELDS.has(key))) return null;
+  if (keys.some((key) => !CREATE_FIELDS.has(key) && !CREATE_RETIRED_FIELDS.has(key))) return null;
   const payload = {};
   for (const key of CREATE_FIELDS) {
     const field = value[key] == null ? '' : String(value[key]).trim();

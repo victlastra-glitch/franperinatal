@@ -160,6 +160,23 @@ check(requested.every((u) => !/[?&](email|token|rut|name)=/i.test(u)),
 check(requested.every((u) => u.indexOf('script.google.com') === -1),
   'and never address the upstream directly');
 
+// --- Data minimisation: the page collects no patient RUT -------------------
+// No current path — availability, reserve, Flow create/verify, Calendar/Meet,
+// notification or management — reads a RUT, and no row stores one, so the page
+// must not ask for one, validate one, or put one in the create request.
+const RUT_PAGE_GUARANTEES = [
+  ['the booking page has no RUT input', (t) => !/id="f-rut"/.test(t)],
+  ['the review summary has no RUT row', (t) => !/id="rv-rut"/.test(t)],
+  ['the booking page never asks for a RUT', (t) => !/\bRUT\b/i.test(t)],
+];
+const RUT_SOURCE_GUARANTEES = [
+  ['the page runs no RUT validation', (t) => !/isValidChileanRut|formatRut|cleanRut/.test(t)],
+  ['the create request carries no patientRut', (t) => !/patientRut/.test(t)],
+  ['no RUT rejection code is handled client-side', (t) => !/PATIENT_RUT_REQUIRED|INVALID_PATIENT_RUT/.test(t)],
+];
+RUT_PAGE_GUARANTEES.forEach(([message, holds]) => check(holds(page), message));
+RUT_SOURCE_GUARANTEES.forEach(([message, holds]) => check(holds(source), message));
+
 // ---------------------------------------------------------------------------
 // Adversarial mutations. A contract written as patterns proves nothing unless
 // breaking the thing on purpose makes it fail, so each guarantee is checked
@@ -174,6 +191,14 @@ const mutations = [
     source.replace(/const isoTaken = state\.date \? dateKeyFromDate\(state\.date\) : '';\n(\s*)state\.time = null;/,
       "const isoTaken = state.date ? dateKeyFromDate(state.date) : '';"),
     SLOT_TAKEN_GUARANTEES, 'source'],
+  ['RUT_FIELD_REGROWN',
+    page.replace('<label for="f-phone">Teléfono</label>',
+      '<label for="f-rut">RUT Paciente</label>\n                <input class="input" type="text" id="f-rut" name="patient_rut" required />\n                <label for="f-phone">Teléfono</label>'),
+    RUT_PAGE_GUARANTEES, 'page'],
+  ['RUT_SENT_AGAIN',
+    source.replace('      phone:       state.form.phone,\n',
+      '      phone:       state.form.phone,\n      patientRut:  state.form.patientRut,\n'),
+    RUT_SOURCE_GUARANTEES, 'source'],
   ['HOUR_STEP_REGROWS_AN_ADVANCE_BUTTON',
     page.replace('<div class="bk-actions bk-actions--back">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos de contacto',
       '<div class="bk-actions">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n            <button class="btn btn-primary" data-action="next">Continuar</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos de contacto'),

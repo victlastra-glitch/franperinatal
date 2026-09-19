@@ -211,51 +211,6 @@
     });
   });
 
-  // ------- Web 04.11: helpers para RUT chileno (validación módulo 11) -------
-  function cleanRut(rut) {
-    return String(rut || '').replace(/[\s.\-]/g, '').toUpperCase();
-  }
-  function isValidChileanRut(rut) {
-    const clean = cleanRut(rut);
-    if (clean.length < 2 || clean.length > 9) return false;
-    const body = clean.slice(0, -1);
-    const dv = clean.slice(-1);
-    if (!/^\d+$/.test(body)) return false;
-    if (!/^[\dK]$/.test(dv)) return false;
-    if (body.length < 7) return false; // bloquea RUTs claramente inválidos (<1.000.000)
-    let sum = 0;
-    let mul = 2;
-    for (let i = body.length - 1; i >= 0; i--) {
-      sum += parseInt(body[i], 10) * mul;
-      mul = mul === 7 ? 2 : mul + 1;
-    }
-    const mod = 11 - (sum % 11);
-    let expected;
-    if (mod === 11) expected = '0';
-    else if (mod === 10) expected = 'K';
-    else expected = String(mod);
-    return dv === expected;
-  }
-  function formatRut(rut) {
-    const clean = cleanRut(rut);
-    if (clean.length < 2) return rut;
-    const body = clean.slice(0, -1);
-    const dv = clean.slice(-1);
-    let formatted = '';
-    for (let i = 0; i < body.length; i++) {
-      if (i > 0 && (body.length - i) % 3 === 0) formatted += '.';
-      formatted += body[i];
-    }
-    return formatted + '-' + dv;
-  }
-  // Limpiar validity custom del RUT cuando el usuario edita
-  const _rutInputEl = document.getElementById("f-rut");
-  if (_rutInputEl) {
-    _rutInputEl.addEventListener("input", function() {
-      _rutInputEl.setCustomValidity("");
-    });
-  }
-
   // ------- Step 3: Calendar -------
   let calYear, calMonth;
   const santiagoNowFormatter = new Intl.DateTimeFormat("en-CA", {
@@ -456,21 +411,19 @@
   }
 
   // ------- Step 5: captura formulario -------
-  // Web 04.11: RUT y Teléfono ahora obligatorios. RUT con validación módulo 11.
+  // Teléfono obligatorio. No se solicita RUT: ningún paso de la reserva, del
+  // pago ni de la sesión lo utiliza.
   function captureForm() {
     const f = document.getElementById("bk-form");
     const fd = new FormData(f);
     const phoneRaw    = fd.get("phone") || "";
     const phoneDigits = phoneRaw.replace(/\D/g, "");
     const phoneEl     = document.getElementById("f-phone");
-    const rutRaw      = fd.get("patient_rut") || "";
-    const rutEl       = document.getElementById("f-rut");
     const nameEl      = document.getElementById("f-name");
     const emailEl     = document.getElementById("f-email");
 
     // Limpiar validity previo en todos los campos relevantes
     if (phoneEl) phoneEl.setCustomValidity("");
-    if (rutEl)   rutEl.setCustomValidity("");
     if (nameEl)  nameEl.setCustomValidity("");
     if (emailEl) emailEl.setCustomValidity("");
 
@@ -478,7 +431,6 @@
       name:             fd.get("name"),
       email:            fd.get("email"),
       phone:            phoneRaw,
-      patientRut:       rutRaw,
       motivo_principal: fd.get("motivo_principal") || "",
       reason:           fd.get("reason") || "",
     };
@@ -489,7 +441,6 @@
     const nameVal  = (state.form.name  || "").trim();
     const emailVal = (state.form.email || "").trim();
     const phoneTrimmed = String(phoneRaw).trim();
-    const rutTrimmed   = String(rutRaw).trim();
     let hasError = false;
 
     if (!nameVal) {
@@ -506,14 +457,6 @@
       hasError = true;
     } else if (phoneDigits.length < 9) {
       if (phoneEl) phoneEl.setCustomValidity("Ingresa un teléfono válido con al menos 9 números.");
-      hasError = true;
-    }
-    // RUT: obligatorio + validación módulo 11 (acepta con/sin puntos o guion)
-    if (!rutTrimmed) {
-      if (rutEl) rutEl.setCustomValidity("Ingresa un RUT válido para emisión de boleta.");
-      hasError = true;
-    } else if (!isValidChileanRut(rutTrimmed)) {
-      if (rutEl) rutEl.setCustomValidity("Ingresa un RUT válido para emisión de boleta.");
       hasError = true;
     }
 
@@ -584,14 +527,6 @@
     const fechaISO = dateKeyFromDate(state.date);
     const horaISO  = (state.time || '').toString();
 
-    // Web 04.11: RUT obligatorio (ya validado en captureForm con dígito verificador).
-    // Enviamos el formato canónico con puntos y guion: 12.345.678-9.
-    const rutEl = document.getElementById('f-rut');
-    const rutRawForSend = rutEl ? (rutEl.value || '').trim() : '';
-    const patientRut = rutRawForSend && isValidChileanRut(rutRawForSend)
-      ? formatRut(rutRawForSend)
-      : rutRawForSend;
-
     const motivoParts = [
       state.form.motivo_principal,
       state.form.reason,
@@ -606,12 +541,11 @@
       name:        state.form.name,
       email:       state.form.email,
       phone:       state.form.phone,
-      patientRut:  patientRut,
       reason:      motivoParts.join(' — '),
       message:     state.form.reason || '',
     };
 
-    // Funnel event only: no name, email, phone, RUT, free text or token.
+    // Funnel event only: no name, email, phone, free text or token.
     if (typeof window.fbTrack === 'function') {
       window.fbTrack('payment_started', {
         service_type: serviceType,
@@ -633,8 +567,6 @@
         if (code === 'SLOT_TAKEN')         msg = 'Ese horario ya fue reservado. Elige otro para continuar.';
         else if (code === 'INVALID_PHONE') msg = 'Ingresa un teléfono válido con al menos 9 números.';
         else if (code === 'PHONE_REQUIRED') msg = 'Ingresa un teléfono de contacto.';
-        else if (code === 'PATIENT_RUT_REQUIRED') msg = 'Ingresa tu RUT para emisión de boleta.';
-        else if (code === 'INVALID_PATIENT_RUT')  msg = 'Ingresa un RUT válido para emisión de boleta.';
         else if (code === 'ONLINE_ONLY') msg = 'La atención se realiza exclusivamente online.';
         else if (code === 'INVALID_SERVICE') msg = 'Servicio no válido. Recarga la página.';
         else if (code === 'INVALID_DATETIME') msg = 'Fecha u hora inválida. Vuelve a elegir.';
@@ -662,7 +594,7 @@
           updateSummary();
           fetchDate(isoTaken, true);
           setTimeout(() => go(3), 1500);
-        } else if (code === 'PATIENT_RUT_REQUIRED' || code === 'INVALID_PATIENT_RUT' || code === 'PHONE_REQUIRED') {
+        } else if (code === 'PHONE_REQUIRED') {
           // Volver al formulario de datos
           setTimeout(() => go(4), 1200);
         }
@@ -772,16 +704,6 @@
     document.getElementById("rv-name").textContent = state.form.name;
     document.getElementById("rv-email").textContent = state.form.email;
     document.getElementById("rv-phone").textContent = state.form.phone;
-    // Web 04.12: mostrar RUT del paciente en el resumen (formato canónico
-    // si pasa validación módulo 11; en caso contrario, raw — captureForm()
-    // ya impidió llegar hasta acá con un RUT inválido).
-    const rutReviewEl = document.getElementById("rv-rut");
-    if (rutReviewEl) {
-      const rutRaw = (state.form.patientRut || "").trim();
-      rutReviewEl.textContent = rutRaw
-        ? (isValidChileanRut(rutRaw) ? formatRut(rutRaw) : rutRaw)
-        : "—";
-    }
     document.getElementById("rv-reason").textContent = state.form.reason;
   }
 
