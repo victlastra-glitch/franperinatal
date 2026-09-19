@@ -1,5 +1,5 @@
 /* =========================================================================
-   assets/forms.js — Submissions reales vía Formspree + fallback WhatsApp
+   assets/forms.js — Submissions reales vía Formspree
    -------------------------------------------------------------------------
    Configuración:
    - Reemplaza FORMSPREE_ID con tu ID real de Formspree (formspree.io)
@@ -16,8 +16,6 @@
     contacto:  'https://formspree.io/f/XXXXXXXX',  // form de contacto
     leadmag:   'https://formspree.io/f/XXXXXXXX',  // suscripción a la guía
   };
-
-  const WHATSAPP = '56957663038';
 
   /**
    * Envía un formulario a Formspree. Devuelve { ok, error }.
@@ -47,14 +45,6 @@
   }
 
   /**
-   * Construye un mensaje de WhatsApp pre-llenado como fallback.
-   */
-  function whatsappFallback(text) {
-    const msg = encodeURIComponent(text);
-    return `https://wa.me/${WHATSAPP}?text=${msg}`;
-  }
-
-  /**
    * Convierte un FormData en un objeto plano legible.
    */
   function formToObject(form) {
@@ -71,5 +61,5 @@
   }
 
   window.FB = window.FB || {};
-  window.FB.forms = { submit, whatsappFallback, formToObject, ENDPOINTS, WHATSAPP };
+  window.FB.forms = { submit, formToObject, ENDPOINTS };
 })();

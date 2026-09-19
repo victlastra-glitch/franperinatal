@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
 <meta name="theme-color" content="#FAF6F0" />
 
 <title>Test de Edimburgo (EPDS) · Autoevaluación de depresión perinatal — Francisca Bustos</title>
@@ -16,7 +17,7 @@
 <meta property="og:description" content="Escala clínica validada para detectar depresión perinatal. 10 preguntas, 2 minutos, resultado inmediato." />
 <meta property="og:url" content="https://franciscabustos.cl/recursos/test-edimburgo" />
 
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='20'%20fill='%238A5A6B'/%3E%3Ctext%20x='50'%20y='69'%20text-anchor='middle'%20font-family='Fraunces,Georgia,serif'%20font-style='italic'%20font-size='54'%20fill='%23FAF6F0'%3Efb%3C/text%3E%3C/svg%3E" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -84,6 +85,8 @@
   padding: 72px 24px 96px;
 }
 .epds-intro { text-align: left; }
+.epds-wrap.is-running { padding-top: 40px; }
+.epds-wrap.is-running .epds-intro { display: none; }
 .epds-intro .eyebrow-mark { color: var(--accent-deep); }
 .epds-intro h1 {
   font-family: var(--serif); font-weight: 300;
@@ -151,6 +154,12 @@
 }
 .epds-progress-step.done { background: var(--accent-deep); }
 .epds-progress-step.current { background: var(--ink); }
+
+/* El enunciado recibe foco programático al abrir el test para que un lector de
+   pantalla lo anuncie. No es un control —nadie llega a él con Tab— así que no
+   dibuja anillo: encuadrar la pregunta entera leía como texto seleccionado. */
+.epds-qtext:focus,
+.epds-qtext:focus-visible { outline: none; }
 
 .epds-qnum {
   font-family: var(--sans);
@@ -369,11 +378,13 @@
 </head>
 <body>
 
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+
 <!-- =================== NAV (Web 04.17: estructura canónica + rutas root-relative limpias) =================== -->
 <header class="nav">
   <div class="nav-inner">
-    <a class="brand" href="/" aria-label="Francisca Bustos · Inicio">
-      <span class="brand-name">Francisca Bustos<small>Psicología Perinatal</small></span>
+    <a class="brand" href="/" aria-label="Francisca Bustos M. · Inicio">
+      <span class="brand-name"><span class="brand-line">Francisca</span> <span class="brand-line">Bustos M.</span><small>Psicóloga Clínica · Perinatal</small></span>
     </a>
     <nav class="nav-links" aria-label="Principal">
       <a class="nav-link" href="/">Inicio</a>
@@ -389,14 +400,13 @@
       </button>
     </div>
   </div>
-  <div class="nav-panel" id="nav-panel" role="menu">
-    <a href="/" role="menuitem">Inicio</a>
-    <a href="/sobre-mi" role="menuitem">Sobre mí</a>
-    <a href="/servicios" role="menuitem">Servicios</a>
-    <a href="/faq" role="menuitem">Preguntas</a>
-    <a href="/contacto" role="menuitem">Contacto</a>
-    <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión →</a>
-    <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20me%20gustar%C3%ADa%20agendar%20una%20sesi%C3%B3n." class="btn btn-wa btn-lg" style="margin-top:12px;">Escribir por WhatsApp</a>
+  <div class="nav-panel" id="nav-panel" aria-label="Menú">
+    <a href="/">Inicio</a>
+    <a href="/sobre-mi">Sobre mí</a>
+    <a href="/servicios">Servicios</a>
+    <a href="/faq">Preguntas</a>
+    <a href="/contacto">Contacto</a>
+    <a href="/reserva" class="btn btn-primary btn-lg">Reservar sesión →</a>
   </div>
 </header>
 
@@ -406,7 +416,7 @@
   Test de Edimburgo
 </nav>
 
-<main class="epds-wrap">
+<main id="contenido" class="epds-wrap">
 
   <!-- ============================================================
        STATE 1 — INTRO
@@ -500,8 +510,8 @@
       <h3>¿Qué hacer ahora?</h3>
       <div id="result-next"></div>
       <div class="epds-next-actions">
-        <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión <span class="arrow" aria-hidden="true">→</span></a>
-        <a href="https://wa.me/56957663038?text=Hola%20Francisca%2C%20hice%20el%20test%20de%20Edimburgo%20y%20me%20gustar%C3%ADa%20consultar." class="btn btn-ghost btn-lg" data-cta="whatsapp">Consultar por WhatsApp</a>
+        <a href="/reserva" class="btn btn-primary btn-lg">Reservar sesión <span class="arrow" aria-hidden="true">→</span></a>
+        <a href="/contacto" class="btn btn-ghost btn-lg">Escribir antes de reservar <span class="arrow" aria-hidden="true">→</span></a>
       </div>
       <div class="epds-next-fine">
         <button class="epds-restart" id="epds-restart">← Volver a hacer el test</button>
@@ -514,16 +524,46 @@
 <!-- =================== FOOTER MINI =================== -->
 <footer class="footer">
   <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand-name">Francisca Bustos M.</div>
+        <p class="footer-brand-desc">
+          Psicología clínica especializada en salud mental perinatal: embarazo,
+          posparto y matrescencia, y duelo gestacional y perinatal.
+        </p>
+      </div>
+      <nav class="footer-col" aria-labelledby="ft-seguir">
+        <p class="footer-col-title" id="ft-seguir">Continuar</p>
+        <ul>
+          <li><a href="/sobre-mi">Sobre mí</a></li>
+          <li><a href="/servicios">Servicios</a></li>
+          <li><a href="/blog">Blog</a></li>
+          <li><a href="/faq">Preguntas</a></li>
+          <li><a href="/recursos/test-edimburgo">Test de Edimburgo</a></li>
+          <li><a href="/guia/10-senales">Guía 10 señales</a></li>
+        </ul>
+      </nav>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-contacto">Contacto</p>
+        <ul aria-labelledby="ft-contacto">
+          <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
+          <li><a href="/contacto">Formulario de contacto</a></li>
+          <li>Atención online por videollamada</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-respaldo">Respaldo</p>
+        <ul class="footer-creds" aria-labelledby="ft-respaldo">
+          <li><span class="cred-name">Univ. Zaragoza</span></li>
+          <li><span class="cred-name">Superintendencia de Salud</span><span class="cred-reg">Registro 598177</span></li>
+          <li><span class="cred-name">Colegio de Psicólogos CL</span><span class="cred-reg">Registro 12.847</span></li>
+        </ul>
+      </div>
+    </div>
     <div class="footer-bottom">
-      <small>
-        © <span id="yr"></span> Francisca Bustos · Psicóloga clínica perinatal ·
-        Reg. SSS 598177 · Atención online para personas en Chile.
-      </small>
-      <small>
-        El test de Edimburgo (Cox, Holden &amp; Sagovsky, 1987) está validado en
-        Chile y forma parte del Programa de Apoyo al Desarrollo Biopsicosocial
-        del MINSAL.
-      </small>
+      <small>© <span id="yr">2026</span> Francisca Bustos M.</small>
+      <small>Consulta confidencial · Secreto profesional</small>
+      <small><a href="/privacidad">Aviso de privacidad</a></small>
     </div>
   </div>
 </footer>
@@ -645,11 +685,31 @@ const $options  = document.getElementById('options');
 const $back     = document.getElementById('epds-back');
 const $counter  = document.getElementById('counter');
 
+const $wrap = document.querySelector('.epds-wrap');
+const prefersReducedMotion = window.matchMedia
+  ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  : false;
+
 function show(stateEl) {
   [$intro, $test, $result].forEach(el => el.classList.remove('active'));
   stateEl.classList.add('active');
-  if (stateEl === $intro) $intro.style.display = '';
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  // Un solo estado visible a la vez: con el test o el resultado en pantalla,
+  // la intro (y su "Comenzar test") desaparece.
+  $wrap.classList.toggle('is-running', stateEl !== $intro);
+}
+
+/* Coloca el estado recién abierto justo debajo del header pegajoso, en lugar
+   de mandar la página al tope del documento: el salto al tope era lo que dejaba
+   la pregunta activa demasiado abajo y fuera del primer viewport. */
+function positionTo(el, focusEl) {
+  const header = document.querySelector('.nav');
+  const offset = (header ? header.getBoundingClientRect().height : 0) + 24;
+  const top = Math.max(0, el.getBoundingClientRect().top + window.pageYOffset - offset);
+  window.scrollTo({ top, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
+  if (focusEl) {
+    if (!focusEl.hasAttribute('tabindex')) focusEl.setAttribute('tabindex', '-1');
+    focusEl.focus({ preventScroll: true });
+  }
 }
 
 // Init
@@ -713,12 +773,16 @@ document.getElementById('epds-begin').addEventListener('click', () => {
   answers = new Array(EPDS_QUESTIONS.length).fill(null);
   show($test);
   renderQuestion();
+  // El foco va al enunciado de la pregunta 1, que es lo que un lector de
+  // pantalla debe anunciar al entrar al test.
+  positionTo($test, $qtext);
 });
 
 document.getElementById('epds-restart').addEventListener('click', () => {
   current = 0;
   answers = new Array(EPDS_QUESTIONS.length).fill(null);
   show($intro);
+  positionTo($intro, document.getElementById('epds-begin'));
 });
 
 // ================== RESULT LOGIC ==================
@@ -809,7 +873,7 @@ function finish() {
     next = `
       <p>Algunas opciones inmediatas:</p>
       <ul style="margin:14px 0 0; padding-left:20px; line-height:1.7; color:var(--ink-2);">
-        <li>Agendar una sesión o escribir por WhatsApp en los próximos días.</li>
+        <li>Agendar una sesión o escribir por el formulario de contacto en los próximos días.</li>
         <li>Si no es posible una atención pronto, derivación a una colega de confianza.</li>
         <li>Considerar una evaluación médica complementaria si corresponde.</li>
         <li>Apoyarte en alguien cercano durante esta etapa.</li>
@@ -829,22 +893,15 @@ function finish() {
   // porque corresponde a información clínica sensible.
 
   show($result);
+  positionTo($result, $band);
 }
 
 // Year
 document.getElementById('yr').textContent = new Date().getFullYear();
-
-// Nav burger (basic)
-const burger = document.querySelector('.nav-burger');
-const panel  = document.getElementById('nav-panel');
-if (burger && panel) {
-  burger.addEventListener('click', () => {
-    const open = panel.classList.toggle('open');
-    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
-  });
-}
 </script>
 
-<script src="../assets/analytics.js?v=1"></script>
+<script src="../assets/analytics.js?v=3" defer></script>
+<script src="../assets/consent.js?v=1" defer></script>
+<script src="../assets/app.js?v=6" defer></script>
 </body>
 </html>

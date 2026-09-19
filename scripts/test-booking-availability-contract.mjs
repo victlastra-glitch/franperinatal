@@ -47,30 +47,54 @@ check(has(/fetchDate\(iso, false\);/),
   'choosing a date asks the server about it before the hour step renders');
 
 // --- SLOT_TAKEN cannot leave a stale hour selectable ----------------------
-const slotTaken = source.slice(source.indexOf("if (code === 'SLOT_TAKEN') {"));
-const block = slotTaken.slice(0, slotTaken.indexOf('} else if'));
-check(/state\.time = null;/.test(block),
-  'SLOT_TAKEN clears the hour the server just rejected');
-check(/confirmedDates\.delete\(isoTaken\)/.test(block),
-  'SLOT_TAKEN drops the cached view of that date, so it cannot be reused');
-check(/fetchDate\(isoTaken, true\)/.test(block),
-  'SLOT_TAKEN re-reads that date from the server before the hour step renders again');
-check(/enableNext\(4, false\)/.test(block),
-  'and the step cannot be advanced until a new hour is chosen');
-check(/go\(4\)/.test(block), 'the patient is returned to the hour step');
+// The hour step is step 3 since the single-option "Modalidad" step was removed;
+// the guarantees below are about behaviour, not about that number.
+const slotTakenBlock = (text) => {
+  const from = text.slice(text.indexOf("if (code === 'SLOT_TAKEN') {"));
+  return from.slice(0, from.indexOf('} else if'));
+};
+const SLOT_TAKEN_GUARANTEES = [
+  ['clears the hour the server just rejected', (t) => /state\.time = null;/.test(slotTakenBlock(t))],
+  ['drops the cached view of that date, so it cannot be reused', (t) => /confirmedDates\.delete\(isoTaken\)/.test(slotTakenBlock(t))],
+  ['re-reads that date from the server before the hour step renders again', (t) => /fetchDate\(isoTaken, true\)/.test(slotTakenBlock(t))],
+  ['returns the patient to the hour step', (t) => /go\(3\)/.test(slotTakenBlock(t))],
+];
+for (const [what, holds] of SLOT_TAKEN_GUARANTEES) check(holds(source), 'SLOT_TAKEN ' + what);
 
-// A bare `go(4)` with no refresh is the defect this replaces.
-check(!/if \(code === 'SLOT_TAKEN'\) \{\s*\/\/[^\n]*\n\s*setTimeout\(\(\) => go\(4\), 1500\);\s*\}/.test(source),
+// A bare `go(...)` with no refresh is the defect this replaces.
+check(!/if \(code === 'SLOT_TAKEN'\) \{\s*\/\/[^\n]*\n\s*setTimeout\(\(\) => go\(\d\), 1500\);\s*\}/.test(source),
   'SLOT_TAKEN never merely navigates back without re-reading availability');
+
+// An unconfirmed date must also forget any hour already chosen for it, or a
+// stale selection survives a failed re-read.
+check(/if \(!confirmedDates\.has\(isoForGuard\)\) \{\s*\n\s*state\.time = null;/.test(source),
+  'an unconfirmed date clears the selected hour before the step renders');
 
 // --- The inversion itself --------------------------------------------------
 check(has(/OCUPADAS/), 'the occupied-not-free contract is stated where bookedSlots is declared');
 check(has(/!takenHours\.includes\(s\)/),
   'the grid is still working hours minus occupied hours');
 
-// --- enableNext must be able to disable -----------------------------------
-check(has(/function enableNext\(stepNum, enabled\)/) && has(/btn\.disabled = enabled === false/),
-  'enableNext can disable, which fail-closed needs');
+// --- Choosing IS advancing, so there is nothing to leave enabled ----------
+// This replaces the old `enableNext(4, false)` guard. That guard disabled a
+// "Continuar" button on the hour step; the step no longer has one, because a
+// single unambiguous selection advances by itself. The invariant it protected —
+// a cleared hour can never be carried forward — is now structural: with no
+// advance control on the date and hour steps, the only way past them is to
+// choose, and choosing is what sets state.date / state.time.
+const page = await readFile(new URL('../reserva.html', import.meta.url), 'utf8');
+const stepMarkup = (text, n) => {
+  const start = text.indexOf('<div class="bk-step" data-step="' + n + '"');
+  const end = text.indexOf('<div class="bk-step" data-step="', start + 1);
+  return text.slice(start, end === -1 ? undefined : end);
+};
+const STEP_GUARANTEES = [
+  ['the date step has no advance control', (t) => stepMarkup(t, 2).indexOf('data-action="next"') === -1],
+  ['the hour step has no advance control', (t) => stepMarkup(t, 3).indexOf('data-action="next"') === -1],
+];
+for (const [what, holds] of STEP_GUARANTEES) check(holds(page), what);
+check(/data-step1-actions hidden/.test(page),
+  'the one remaining advance control is hidden until a URL prefill needs it');
 
 // --- No client-side authority ---------------------------------------------
 check(!/slots\.filter\([^)]*free/i.test(source), 'the page never re-derives freeness from anything but the server list');
@@ -93,6 +117,7 @@ const stubElement = (tag) => {
     appendChild(c) { this._children.push(c); return c; },
     addEventListener(t, f) { (this._listeners[t] = this._listeners[t] || []).push(f); },
     removeEventListener() {}, setAttribute() {}, getAttribute() { return null; }, removeAttribute() {},
+    hasAttribute() { return false; },
     focus() {}, scrollIntoView() {}, closest() { return null; },
     querySelector() { return stubElement(); }, querySelectorAll() { return []; },
   };
@@ -134,6 +159,36 @@ check(requested.every((u) => !/[?&](email|token|rut|name)=/i.test(u)),
   'availability requests carry no identifying data');
 check(requested.every((u) => u.indexOf('script.google.com') === -1),
   'and never address the upstream directly');
+
+// ---------------------------------------------------------------------------
+// Adversarial mutations. A contract written as patterns proves nothing unless
+// breaking the thing on purpose makes it fail, so each guarantee is checked
+// against a source in which exactly that guarantee has been removed.
+// ---------------------------------------------------------------------------
+const mutations = [
+  ['SLOT_TAKEN_KEEPS_CACHED_DATE', source.replace('confirmedDates.delete(isoTaken);', ''),
+    SLOT_TAKEN_GUARANTEES, 'source'],
+  ['SLOT_TAKEN_SKIPS_REFRESH', source.replace('fetchDate(isoTaken, true);', ''),
+    SLOT_TAKEN_GUARANTEES, 'source'],
+  ['SLOT_TAKEN_KEEPS_REJECTED_HOUR',
+    source.replace(/const isoTaken = state\.date \? dateKeyFromDate\(state\.date\) : '';\n(\s*)state\.time = null;/,
+      "const isoTaken = state.date ? dateKeyFromDate(state.date) : '';"),
+    SLOT_TAKEN_GUARANTEES, 'source'],
+  ['HOUR_STEP_REGROWS_AN_ADVANCE_BUTTON',
+    page.replace('<div class="bk-actions bk-actions--back">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos de contacto',
+      '<div class="bk-actions">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n            <button class="btn btn-primary" data-action="next">Continuar</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos de contacto'),
+    STEP_GUARANTEES, 'page'],
+];
+let detected = 0;
+for (const [name, mutated, guarantees, kind] of mutations) {
+  const original = kind === 'source' ? source : page;
+  assert.notEqual(mutated, original, 'mutation ' + name + ' did not change anything');
+  const stillAllTrue = guarantees.every(([, holds]) => holds(mutated));
+  assert.equal(stillAllTrue, false, 'mutation ' + name + ' went undetected');
+  detected += 1;
+  console.log('MUTATION_' + name + '=DETECTED');
+}
+console.log('MUTATIONS_DETECTED=' + detected + '/' + mutations.length);
 
 console.log('BOOKING_AVAILABILITY_CONTRACT=PASS assertions=' + assertions);
 console.log('PAGE_INITIALISES_WITH_ALL_AVAILABILITY_FAILING=YES');
