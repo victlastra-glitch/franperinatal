@@ -17,12 +17,16 @@
  *   B  the cookie decision can be reopened and changed from the footer,
  *      without touching unrelated storage and without loading a tag on open;
  *      the first-visit banner reserves its own height so nothing is trapped
- *   C  Home's lead-magnet copy no longer offers "leerla ahora" as an action
- *   D  the *4141 crisis link is a >=44px target at 390px
+ *   C  Home's guide section opens the guide directly: no email field, no
+ *      promise of an email, no call to /api/leadmagnet, and the guide page it
+ *      points at renders whole, gated by nothing
+ *   D  the *4141 crisis link is a >=44px target at 390px, on Home and on /lp
  *   E  one required/optional convention on /reserva and /contacto
  *   F  no route slug as link text on the booking page
  *   G  every blog filter returns something specific; every card has a date;
  *      the author avatar is the 400w derivative
+ *   I  no public page states a 50-60 minute session; /blog/primera-sesion
+ *      says 50 minutes in prose, in its FAQ and in its FAQPage JSON-LD
  *   plus: no horizontal overflow, mobile menu opens with reachable links,
  *   no console errors, no external request besides Google Fonts.
  */
@@ -295,7 +299,21 @@ for (const [label, w, h] of VIEWPORTS) {
   await evaluate("localStorage.setItem('qa_sentinel', 'keep'); true");
   await navigate('/', 'home@' + label);
   await noOverflow();
-  check(await evaluate("(document.querySelector('.leadmag .lede') || {}).textContent.indexOf('Ingresa tu correo') !== -1 && !document.querySelector('.leadmag .lede button')"), 'C lead-magnet copy states that the email comes first; no "leerla ahora" control');
+  const guide = await evaluate(`(() => {
+    const sec = document.querySelector('.leadmag');
+    const links = [...sec.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'));
+    return {
+      fields: sec.querySelectorAll('input, textarea, form, button').length,
+      links,
+      opensGuide: links.filter((h) => /^\\/guia\\/10-senales/.test(h)).length,
+      promise: /enviar|enviamos|enviaremos|envío|a tu correo|ingresa tu correo|recibirla|recibir la guía|suscri|newsletter|spam|te la mandamos/i.test(sec.textContent),
+      handlers: !!sec.querySelector('[onclick], [onkeydown], [data-leadmag-form]'),
+    };
+  })()`);
+  check(guide.fields === 0, 'C the guide section carries no form, input or submit control (' + guide.fields + ')');
+  check(guide.opensGuide >= 2 && guide.links.every((h) => /^\/guia\/10-senales/.test(h)), 'C every action in the section opens the guide itself ' + JSON.stringify(guide.links));
+  check(!guide.promise, 'C no copy in the section promises an email delivery or a subscription');
+  check(!guide.handlers, 'C no residual lead-capture handler in the markup');
   check(await evaluate("document.querySelectorAll('script[src*=\"forms.js\"]').length === 0"), 'forms.js is no longer loaded');
   const crisis = await evaluate("(() => { const a = document.querySelector('.warning-note a[href=\"tel:*4141\"]'); const r = a.getBoundingClientRect(); return { h: r.height, text: a.textContent.trim(), lineH: document.querySelector('.warning-note').getBoundingClientRect().height }; })()");
   check(crisis.h >= 44, 'D crisis link target >= 44px (' + crisis.h.toFixed(1) + 'px)');
@@ -427,6 +445,86 @@ await navigate('/recursos/test-edimburgo', 'epds@390x844');
 await noOverflow();
 check(await evaluate("!!document.querySelector('[data-consent-open]') && document.querySelector('[data-consent-open]').hidden === false"), 'B footer trigger present on the EPDS page');
 check(await evaluate("typeof EPDS_QUESTIONS !== 'undefined' && EPDS_QUESTIONS.length === 10"), 'EPDS smoke: the ten-item instrument is intact');
+
+// --- /lp: the same crisis target, and no lead-capture residue ---------------------
+for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
+  await setViewport(w, h);
+  await navigate('/lp', 'lp@' + label);
+  await evaluate("localStorage.setItem('fb_cookie_consent', 'essentials'); true");
+  await navigate('/lp', 'lp@' + label);
+  await noOverflow();
+  const lp = await evaluate(`(async () => {
+    const a = document.querySelector('.lp-crisis-note a[href="tel:*4141"]');
+    const note = document.querySelector('.lp-crisis-note');
+    // A loading="lazy" image only starts once it nears the viewport, so the page
+    // is walked a screen at a time before the images are judged; each wait is
+    // bounded so a never-started request cannot hang the run.
+    const imgs = [...document.querySelectorAll('img')];
+    for (let y = 0; y < document.documentElement.scrollHeight; y += window.innerHeight) {
+      window.scrollTo({ top: y, behavior: 'instant' });
+      await new Promise((r) => { setTimeout(r, 80); });
+    }
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    await Promise.all(imgs.map((i) => (i.complete ? null : new Promise((r) => { i.onload = r; i.onerror = r; setTimeout(r, 3000); }))));
+    return a ? { h: a.getBoundingClientRect().height, text: a.textContent.trim(),
+      noteH: note.getBoundingClientRect().height, noteText: note.textContent.trim(),
+      decoded: imgs.filter((i) => i.complete && i.naturalWidth > 0).length, total: imgs.length,
+      broken: imgs.filter((i) => !i.complete || i.naturalWidth === 0).map((i) => i.currentSrc || i.getAttribute('src')) } : null;
+  })()`);
+  check(!!lp && lp.h >= 44, 'D /lp crisis link target >= 44px (' + (lp ? lp.h.toFixed(1) : 'missing') + 'px)');
+  check(!!lp && lp.text === '*4141', 'D /lp crisis resource text preserved');
+  check(!!lp && /Línea de Prevención del Suicidio/.test(lp.noteText) && /servicio de urgencia/.test(lp.noteText), 'D /lp crisis wording and routing preserved');
+  check(!!lp && lp.broken.length === 0, 'no broken image on /lp (' + (lp && lp.decoded) + '/' + (lp && lp.total) + ' decoded) ' + JSON.stringify(lp && lp.broken));
+  await shot('lp-' + label);
+}
+
+// --- The first-session article states the real duration ---------------------------
+for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
+  await setViewport(w, h);
+  await navigate('/blog/primera-sesion-psicologa-perinatal', 'primera-sesion@' + label);
+  await noOverflow();
+  const dur = await evaluate(`(() => {
+    // A closed <details> keeps its answer out of innerText, so the copy is read
+    // from a script-free clone: collapsed FAQ text counts, JSON-LD does not.
+    const clone = document.body.cloneNode(true);
+    [...clone.querySelectorAll('script, style')].forEach((n) => { n.remove(); });
+    const text = clone.textContent;
+    const faq = [...document.querySelectorAll('script[type="application/ld+json"]')]
+      .map((n) => { try { return JSON.parse(n.textContent); } catch (_) { return null; } })
+      .find((j) => j && j['@type'] === 'FAQPage');
+    const answer = faq ? faq.mainEntity.find((q) => /Cuánto dura/.test(q.name)).acceptedAnswer.text : '';
+    const range = /50\\s*(?:y|a|-|–|—)\\s*60/i;
+    return { range: range.test(text) || range.test(answer) || /60\\s*minutos/i.test(text + ' ' + answer),
+      fifty: (text.match(/50\\s*minutos/gi) || []).length, answer };
+  })()`);
+  check(!dur.range, 'I the article states no 50-60 minute range');
+  check(dur.fifty >= 2, 'I the article states 50 minutes in prose and in its FAQ (' + dur.fifty + ' mentions)');
+  check(/^50 minutos\./.test(dur.answer), 'I the FAQPage JSON-LD answer states 50 minutos ("' + dur.answer.slice(0, 24) + '")');
+  await shot('primera-sesion-' + label);
+}
+check(!apiCalls.some((c) => /leadmagnet/.test(c)), 'C no /api/leadmagnet request was made from any page');
+
+// --- The guide itself, now the destination the Home section promises ----------------
+for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
+  await setViewport(w, h);
+  await navigate('/guia/10-senales', 'guia@' + label);
+  await noOverflow();
+  const g = await evaluate(`(() => {
+    const imgs = [...document.querySelectorAll('img')];
+    return { title: document.title,
+      heading: (document.querySelector('h1') || {}).textContent || '',
+      signals: document.querySelectorAll('.signal, .urgent-signal').length,
+      crisis: /\\*4141/.test(document.body.textContent),
+      forms: document.querySelectorAll('form, input[type=email]').length,
+      broken: imgs.filter((i) => i.complete && i.naturalWidth === 0).length };
+  })()`);
+  check(/10 señales/i.test(g.title) && /señales de que necesitas/i.test(g.heading), 'C the guide page renders its own title ("' + String(g.heading).slice(0, 40).trim() + '")');
+  check(g.signals === 10, 'C the guide still carries its ten signals (' + g.signals + ')');
+  check(g.crisis, 'C the guide keeps its *4141 crisis resource');
+  check(g.forms === 0, 'C the guide asks for nothing before it can be read');
+  check(g.broken === 0, 'no broken image on the guide');
+  await shot('guia-' + label);
+}
 
 // --- Wrap up --------------------------------------------------------------------
 socket.close();

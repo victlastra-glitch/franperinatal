@@ -41,7 +41,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 
 <link rel="stylesheet" href="assets/styles.css?v=4" />
-<link rel="stylesheet" href="assets/home.css?v=4" />
+<link rel="stylesheet" href="assets/home.css?v=5" />
 
 <!-- JSON-LD: MedicalBusiness virtual -->
 <script type="application/ld+json">
@@ -482,14 +482,15 @@
   </div>
 </section>
 
-<!-- =================== LEAD MAGNET =================== -->
+<!-- =================== GUÍA DESCARGABLE =================== -->
+<!-- La guía se lee directamente en el sitio: /guia/10-senales (y su PDF). No se
+     pide correo, no se promete un envío y no hay llamada a /api/leadmagnet. La
+     captura de correo es una capacidad futura; mientras no exista, esta sección
+     no puede prometerla. -->
 <section class="leadmag">
   <div class="container leadmag-grid">
-    <div class="leadmag-visual reveal" role="button" tabindex="0"
-         aria-label="Ingresa tu correo para recibir la guía"
-         style="cursor:pointer"
-         onclick="document.querySelector('[data-leadmag-form] input[type=email]')?.focus()"
-         onkeydown="if(event.key==='Enter'||event.key===' ')document.querySelector('[data-leadmag-form] input[type=email]')?.focus()">
+    <a class="leadmag-visual reveal" href="/guia/10-senales"
+       aria-label="Leer la guía: 10 señales de que necesitas apoyo en el posparto">
       <div class="leadmag-booklet">
         <span class="lm-eyebrow">Guía gratuita · PDF</span>
         <div class="lm-title">10 señales de que necesitas apoyo en el posparto.</div>
@@ -498,24 +499,21 @@
         </div>
         <span class="lm-meta">PDF · 8 min de lectura</span>
       </div>
-    </div>
+    </a>
     <div class="reveal">
-      <div class="eyebrow eyebrow-mark">Descarga gratuita</div>
+      <div class="eyebrow eyebrow-mark">Lectura gratuita</div>
       <h2 class="mt-3">Una guía clínica para<br/>entender qué te está pasando.</h2>
       <p class="lede mt-3">
         Documento de 10 señales basadas en evidencia, escrito por Francisca,
         para reconocer cuándo lo que sientes en el posparto deja de ser parte
-        del proceso y empieza a pedir ayuda. Ingresa tu correo para recibirla:
-        te la enviamos y, al mismo tiempo, se abre para que puedas leerla de inmediato.
+        del proceso y empieza a pedir ayuda. Puedes leerla completa aquí mismo,
+        sin dejar tu correo.
       </p>
-      <form class="leadmag-form" data-leadmag-form novalidate>
-        <div class="field-row">
-          <input class="input" type="email" required placeholder="Tu correo electrónico" aria-label="Correo electrónico" autocomplete="email" />
-          <button type="submit" class="btn btn-accent btn-lg">Enviarme la guía <span class="arrow" aria-hidden="true">→</span></button>
-        </div>
-        <p class="leadmag-note">Te enviaremos la guía a tu correo y también podrás leerla al instante. Sin spam. Al enviar, aceptas el <a href="/privacidad" style="color:inherit;text-decoration:underline;text-underline-offset:2px;">aviso de privacidad</a>.</p>
-        <p class="leadmag-note" data-leadmag-ok hidden style="color: var(--accent-deep);"></p>
-      </form>
+      <div class="leadmag-actions">
+        <a class="btn btn-accent btn-lg" href="/guia/10-senales">Leer la guía <span class="arrow" aria-hidden="true">→</span></a>
+        <a class="btn btn-ghost btn-lg" href="/guia/10-senales.pdf" target="_blank" rel="noopener">Descargar el PDF</a>
+      </div>
+      <p class="leadmag-note">Lectura libre, sin correo y sin registro.</p>
     </div>
   </div>
 </section>

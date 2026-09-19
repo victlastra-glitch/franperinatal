@@ -632,7 +632,7 @@
   max-width: 62ch;
 }
 
-/* ---------- Lead capture (guía descargable) ---------- */
+/* ---------- Guía descargable (lectura directa, sin captura) ---------- */
 .leadmag {
   padding-block: calc(var(--section-gap) * 1.15);
   background: var(--bg-2);
@@ -693,12 +693,12 @@
 .leadmag-booklet .lm-lines span:nth-child(4) { width: 70%; }
 .leadmag-booklet .lm-lines span:nth-child(5) { width: 90%; }
 
-.leadmag-form { display: flex; flex-direction: column; gap: 16px; margin-top: 28px; }
-.leadmag-form .field-row {
-  display: grid; grid-template-columns: 1fr auto; gap: 10px;
+/* La guía se abre directamente: dos destinos, sin formulario de por medio. */
+.leadmag-actions {
+  display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px;
 }
 .leadmag-note {
-  font-size: 13px; color: var(--ink-3); line-height: 1.5; margin-top: 4px;
+  font-size: 13px; color: var(--ink-3); line-height: 1.5; margin-top: 16px;
 }
 
 /* ---------- Final CTA ---------- */
@@ -780,8 +780,8 @@
   .final-cta-actions .btn-lg { flex: 1; }
   .final-cta-title { font-size: 42px; }
 
-  .leadmag-form .field-row { grid-template-columns: 1fr; }
-  .leadmag-form .btn { width: 100%; }
+  .leadmag-actions { flex-direction: column; }
+  .leadmag-actions .btn { width: 100%; }
 }
 
 /* ---------- §11B  Costura Francisca -> Cómo funciona ----------

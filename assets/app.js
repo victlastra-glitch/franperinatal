@@ -1,7 +1,7 @@
-// FranPerinatal — app.js v5
-// Nav con panel mobile, reveal, forms, smoothing
-// v4: leadmag usa AppsScript_leadmagnet independiente (no Google Forms, no script de agenda)
-// v5: analytics de lead magnet sin PII (no email en GA4/Meta).
+// FranPerinatal — app.js v6
+// Nav con panel mobile, reveal, smoothing
+// v6: la guía se lee directamente desde el sitio; sin captura de correo, sin
+//     llamada a /api/leadmagnet y sin analytics de descarga.
 (function () {
   // ---------- Reveal on scroll ----------
   const all = document.querySelectorAll(".reveal");
@@ -115,96 +115,9 @@
     }
   }
 
-  // ---------- Leadmag form — mismo origen; el Worker controla cualquier upstream ----------
-  const LEADMAG_API_URL = '/api/leadmagnet';
-
-  // Destino del PDF ya creado en guia/
-  const LEADMAG_PDF_URL  = 'guia/10-senales.pdf';
-
-  const lmForm = document.querySelector("[data-leadmag-form]");
-  if (lmForm) {
-    lmForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
-
-      const emailInput = lmForm.querySelector("input[type=email]");
-      const email = (emailInput?.value || "").trim();
-
-      // Validación básica en frontend antes de enviar
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-        if (emailInput) {
-          emailInput.setCustomValidity("Ingresa un correo electrónico válido.");
-          emailInput.reportValidity();
-          emailInput.setCustomValidity("");
-        }
-        return;
-      }
-
-      const submitBtn = lmForm.querySelector("button[type=submit]");
-      const okMsg     = lmForm.querySelector("[data-leadmag-ok]");
-      const row       = lmForm.querySelector(".field-row");
-
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Enviando…"; }
-
-      let envioCorrecto = false;
-
-      // El Worker decide si esta función está disponible en el ambiente actual.
-      try {
-        const resp = await fetch(LEADMAG_API_URL, {
-          method:  'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body:    JSON.stringify({ action: 'leadmag', email }),
-        });
-        const result = await resp.json().catch(() => ({}));
-        envioCorrecto = !!(result && result.ok);
-      } catch (_) {
-        envioCorrecto = false;
-      }
-
-      // Actualizar mensaje de éxito/fallback según resultado real
-      if (okMsg) {
-        if (envioCorrecto) {
-          okMsg.innerHTML =
-            '<strong>✓ Gracias.</strong> Te enviamos la guía a tu correo y la abriremos ahora. ' +
-            '<a href="' + LEADMAG_PDF_URL + '" target="_blank" rel="noopener" ' +
-            'style="color:var(--accent-deep);text-decoration:underline">Abrirla de nuevo →</a>';
-        } else {
-          okMsg.innerHTML =
-            'No pudimos enviar el correo en este momento, pero puedes leer la guía ahora. ' +
-            '<a href="' + LEADMAG_PDF_URL + '" target="_blank" rel="noopener" ' +
-            'style="color:var(--accent-deep);text-decoration:underline">Abrir la guía →</a>';
-        }
-        okMsg.hidden = false;
-      }
-      if (row) { row.style.display = "none"; }
-
-      // Tracking
-      if (window.fbTrack) {
-        const leadMagnetParams = {
-          lead_magnet_id: 'guia_10_senales',
-          guide_name: 'guia_10_senales',
-          source: 'leadmag_form',
-          page_path: window.location.pathname,
-          event_context: envioCorrecto ? 'leadmag_delivery_success' : 'leadmag_pdf_fallback'
-        };
-        window.fbTrack('descarga_guia', leadMagnetParams);
-        window.fbTrack('submit_form_guia', {
-          lead_magnet_id: leadMagnetParams.lead_magnet_id,
-          guide_name: leadMagnetParams.guide_name,
-          source: leadMagnetParams.source,
-          page_path: leadMagnetParams.page_path,
-          event_context: 'leadmag_form_submitted'
-        });
-      }
-
-      // Abrir PDF en nueva pestaña — siempre, independiente del resultado del correo
-      try { window.open(LEADMAG_PDF_URL, "_blank", "noopener"); } catch (_) {}
-    });
-
-    // Limpiar validación personalizada cuando el usuario edita el campo
-    const lmEmailInput = lmForm.querySelector("input[type=email]");
-    if (lmEmailInput) {
-      lmEmailInput.addEventListener("input", function () { lmEmailInput.setCustomValidity(""); });
-    }
-  }
+  // ---------- Guía "10 señales" ----------
+  // No hay formulario: la guía se abre desde el marcado (/guia/10-senales y su
+  // PDF). Mientras /api/leadmagnet no sea una capacidad real, el sitio no pide
+  // un correo ni promete un envío, así que aquí no queda nada que ejecutar.
 
 })();

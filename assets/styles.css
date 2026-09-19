@@ -908,8 +908,9 @@ body { padding-bottom: var(--consent-h, 0px); }
    dentro de una frase: necesita un objetivo táctil real de 44px. Los enlaces
    en medio de un párrafo quedan fuera por ser parte del texto, como permite
    el criterio de tamaño de objetivo para enlaces en línea; la única excepción
-   es el recurso de crisis *4141 de Home, que assets/home.css ensancha a 44px
-   sin alterar la caja de línea porque es un recurso que debe poder tocarse. */
+   es el recurso de crisis *4141, que assets/home.css (Home) y el bloque de
+   estilos de lp.html ensanchan a 44px sin alterar la caja de línea porque es
+   un recurso que debe poder tocarse. */
 .footer-bottom a {
   color: inherit;
   min-height: 44px; display: inline-flex; align-items: center;

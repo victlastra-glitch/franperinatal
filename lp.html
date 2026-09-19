@@ -128,6 +128,24 @@
   color: var(--ink-2);
 }
 .lp-footer-min a { color: var(--ink-2); text-decoration: underline; }
+/* Nota de crisis. El recurso *4141 debe poder tocarse: objetivo de 44px de
+   alto sin alterar la caja de línea de la nota —el relleno vertical se
+   compensa con margen negativo— y sin subir su tono visual. Misma excepción
+   que assets/home.css aplica al mismo recurso en Home. */
+.lp-crisis-note {
+  background: var(--bg-2);
+  border-top: 1px solid var(--line);
+  padding: 16px clamp(20px, 4vw, 48px);
+  text-align: center;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.lp-crisis-note a {
+  color: var(--ink); font-weight: 500;
+  text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 3px;
+  display: inline-block; line-height: 20px;
+  padding: 12px 4px; margin: -12px -4px;
+}
 .lp-wa-float {
   position: fixed;
   bottom: 24px; right: 24px;
@@ -469,8 +487,8 @@
 </footer>
 
 <!-- Crisis note (obligatoria en páginas de salud mental) -->
-<div style="background:var(--bg-2); border-top:1px solid var(--line); padding:16px clamp(20px,4vw,48px); text-align:center; font-size:13px; color:var(--ink-2);">
-  Si estás en crisis o con pensamientos de hacerte daño, llama al <a href="tel:*4141" style="color:var(--ink); font-weight:500;">*4141</a> (Línea de Prevención del Suicidio) o acude al servicio de urgencia más cercano.
+<div class="lp-crisis-note">
+  Si estás en crisis o con pensamientos de hacerte daño, llama al <a href="tel:*4141">*4141</a> (Línea de Prevención del Suicidio) o acude al servicio de urgencia más cercano.
 </div>
 
 <script src="assets/analytics.js?v=4" defer></script>
