@@ -100,6 +100,102 @@ try {
     'semantic assertion must reject a same-count lost/gained call-site mutation'
   );
   console.log('SEMANTIC_UPSTREAM_MUTANT_TESTS=PASS');
+  // -------------------------------------------------------------------------
+  // _routes.json — which requests invoke the Function at all.
+  //
+  // Pages Advanced Mode defaults to running _worker.js on /*, so every image,
+  // stylesheet and HTML page was a Function invocation. The manifest narrows
+  // that to the routes whose behaviour actually depends on Worker execution.
+  //
+  // The covered set is DERIVED from _worker.js rather than typed out here: a
+  // route added to the Worker and not to the manifest would be served as a
+  // static 404, and a hardcoded list would not notice.
+  // -------------------------------------------------------------------------
+  const routesManifest = JSON.parse(await readFile(new URL('../_routes.json', import.meta.url), 'utf8'));
+  assert.equal(routesManifest.version, 1, '_routes.json must declare version 1');
+  assert.ok(Array.isArray(routesManifest.include) && routesManifest.include.length > 0, 'include must be a non-empty array');
+  assert.ok(Array.isArray(routesManifest.exclude), 'exclude must be an array');
+  assert.ok(routesManifest.include.length + routesManifest.exclude.length <= 100, 'Pages allows at most 100 rules');
+  for (const rule of [...routesManifest.include, ...routesManifest.exclude]) {
+    assert.match(rule, /^\/[^*]*(\*)?$/, `rule must start with / and may only end in *: ${rule}`);
+  }
+  assert.ok(!routesManifest.include.includes('/*'), 'including /* would reinstate the invoke-on-everything default');
+
+  // Cloudflare Pages route matching: `*` is a trailing wildcard, everything
+  // else is an exact path match.
+  const invokesFunction = (pathname) => routesManifest.include.some((rule) => rule.endsWith('*')
+    ? pathname.startsWith(rule.slice(0, -1))
+    : pathname === rule)
+    && !routesManifest.exclude.some((rule) => rule.endsWith('*')
+      ? pathname.startsWith(rule.slice(0, -1))
+      : pathname === rule);
+
+  // Every path _worker.js branches on, read out of its own source.
+  const exactRoutes = [...workerSource.matchAll(/url\.pathname === '([^']+)'/g)].map((m) => m[1]);
+  const prefixRoutes = [...workerSource.matchAll(/url\.pathname\.startsWith\('([^']+)'\)/g)].map((m) => m[1]);
+  assert.ok(exactRoutes.length >= 12, `expected the full Worker route surface, saw ${exactRoutes.length}`);
+  assert.ok(prefixRoutes.includes('/backend/'), 'the /backend/ prefix block must still be in the Worker');
+
+  const workerDependent = [...new Set([...exactRoutes, ...prefixRoutes.map((prefix) => prefix + 'appsscript/booking/Code.js')])];
+  for (const pathname of workerDependent) {
+    assert.ok(invokesFunction(pathname), `_routes.json must invoke the Function for ${pathname}`);
+  }
+  console.log('WORKER_DEPENDENT_ROUTES_COVERED=' + workerDependent.length);
+
+  // /backend is blocked by the Worker, not only by _redirects. Both halves.
+  assert.ok(invokesFunction('/backend'), '/backend must reach the Worker 404');
+  assert.ok(invokesFunction('/backend/appsscript/booking/Code.js'), '/backend/* must reach the Worker 404');
+  const backendBlock = await workerModule.default.fetch(
+    new Request('https://preview.example/backend/appsscript/booking/Code.js'),
+    { APP_ENV: 'production', APPS_SCRIPT_WEB_APP_URL: 'https://script.google.com/macros/s/synthetic/exec' }, {}
+  );
+  assert.equal(backendBlock.status, 404, '/backend/* is still refused by the Worker');
+  assert.equal(await backendBlock.text(), 'not_found');
+  console.log('BACKEND_BLOCK_PRESERVED=YES');
+
+  // Ordinary site traffic must never reach the Function.
+  const staticPaths = ['/', '/index.html', '/reserva.html', '/reserva', '/assets/booking.js', '/assets/styles.css',
+    '/assets/booking.css', '/assets/francisca-hero-1200.webp', '/servicios', '/sobre-mi', '/faq', '/contacto',
+    '/blog', '/blog/sintomas-depresion-postparto', '/guia/10-senales', '/recursos/test-edimburgo',
+    '/manage', '/manage.html', '/pago', '/pago.html', '/pago-resultado.html', '/privacidad',
+    '/sitemap.xml', '/robots.txt', '/favicon.ico'];
+  for (const pathname of staticPaths) {
+    assert.ok(!invokesFunction(pathname), `${pathname} must be served statically, not by the Function`);
+  }
+  console.log('STATIC_ROUTES_BYPASS_FUNCTION=YES count=' + staticPaths.length);
+
+  // The Worker's own 301 www -> apex now only sees included paths, so the
+  // apex-canonical rule has to exist in _redirects, which Pages applies to
+  // statically served requests. Losing it would be an SEO regression, silent.
+  const redirects = await readFile(new URL('../_redirects', import.meta.url), 'utf8');
+  assert.match(redirects, /^https:\/\/www\.franciscabustos\.cl\/\*\s+https:\/\/franciscabustos\.cl\/:splat\s+301$/m,
+    '_redirects must carry the www -> apex 301 for statically served routes');
+  assert.ok(workerSource.includes("url.hostname === 'www.franciscabustos.cl'"),
+    'and the Worker keeps its own copy for the routes it still sees');
+  console.log('WWW_CANONICAL_REDIRECT=BOTH_LAYERS');
+
+  // Adversarial mutations: each assertion above must be able to fail.
+  const mutate = (manifest) => {
+    const invokes = (pathname) => manifest.include.some((rule) => rule.endsWith('*')
+      ? pathname.startsWith(rule.slice(0, -1)) : pathname === rule)
+      && !manifest.exclude.some((rule) => rule.endsWith('*')
+        ? pathname.startsWith(rule.slice(0, -1)) : pathname === rule);
+    return invokes;
+  };
+  const withoutApi = mutate({ include: routesManifest.include.filter((r) => r !== '/api/*'), exclude: [] });
+  assert.ok(!withoutApi('/api/availability'),
+    'MUTATION_DROP_API_ROUTE: dropping /api/* really does stop the Function being invoked');
+  const everything = mutate({ include: ['/*'], exclude: [] });
+  assert.ok(everything('/assets/booking.js'),
+    'MUTATION_INCLUDE_EVERYTHING: the default /* really does invoke the Function for a static asset');
+  const excludedBackend = mutate({ include: routesManifest.include, exclude: ['/backend/*'] });
+  assert.ok(!excludedBackend('/backend/appsscript/booking/Code.js'),
+    'MUTATION_EXCLUDE_BACKEND: an exclude rule really does take a path away from the Worker');
+  console.log('MUTATION_DROP_API_ROUTE=DETECTED');
+  console.log('MUTATION_INCLUDE_EVERYTHING=DETECTED');
+  console.log('MUTATION_EXCLUDE_BACKEND=DETECTED');
+  console.log('PRODUCTION_ROUTES_MANIFEST_TESTS=PASS');
+
   console.log('FAIL_CLOSED_ROUTE_UPSTREAM_FETCH_CALLS=0');
   console.log('PRODUCTION_WORKER_ROUTE_TESTS=PASS');
 } finally {

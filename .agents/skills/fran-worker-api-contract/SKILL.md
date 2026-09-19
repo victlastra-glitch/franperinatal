@@ -25,6 +25,28 @@ decision that matters must already have been made server-side upstream.
 `scripts/test-production-worker-routes.mjs`; an unlisted route is a defect, not a
 feature.
 
+## Which requests invoke the Worker — `_routes.json`
+
+Pages Advanced Mode runs `_worker.js` on `/*` by default, so every page, image
+and stylesheet was a Function invocation. `_routes.json` narrows that to the
+routes whose behaviour depends on Worker execution:
+
+```
+include: /api/*   /pago-resultado   /backend   /backend/*
+exclude: (none)
+```
+
+Everything else is served straight from Pages static. Consequences that are easy
+to get wrong:
+
+- **A new Worker route must be added to `_routes.json` too.** A route the Worker
+  branches on but the manifest omits is served as a static 404, not by the
+  handler. `scripts/test-production-worker-routes.mjs` derives the covered set
+  from `_worker.js` itself and fails on the gap.
+- **The 301 `www` → apex now only covers included paths.** `_redirects` carries
+  the domain-level rule for everything else; both layers must stay.
+- `include` must never be `/*`, and `*` is only legal at the end of a rule.
+
 ## Invariants
 
 - **Upstream comes from `env.APPS_SCRIPT_WEB_APP_URL`.** Never hardcode an Apps
@@ -50,7 +72,7 @@ feature.
 
 ```
 node scripts/assert-production-worker-structure.mjs _worker.js
-node scripts/test-production-worker-routes.mjs
+node scripts/test-production-worker-routes.mjs   # also covers _routes.json
 node scripts/test-production-payment-status-privacy.mjs
 node scripts/test-manage-contract.mjs
 node backend/appsscript/booking/test/preview-host-validation.test.mjs

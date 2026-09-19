@@ -25,6 +25,15 @@
  *   H. per-date read succeeded -> only the hours the server left free
  *
  * F-H are the fail-closed half: the loosening above must not reach the hours.
+ *
+ * G also pins the second defect of the same incident, request amplification.
+ * renderSlots() re-asked fetchDate() for any unconfirmed date and fetchDate()
+ * ends by calling renderSlots(), so a failing /api/availability was retried
+ * without bound by every open tab. Bounded now, and pinned here:
+ *   one selection      -> exactly ONE request, and it stops on failure
+ *   after the failure  -> ZERO automatic requests, no timer and no poll
+ *   one Reintentar     -> exactly ONE more, the control disabled meanwhile
+ *   a retry that works -> the authoritative hours, fail-closed intact
  */
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -238,8 +247,16 @@ function buildPage(options) {
     requested, runTimers, tick,
     days: () => byId.get('cal-grid').children.filter((c) => c.dataset.iso),
     day: (iso) => byId.get('cal-grid').children.find((c) => c.dataset.iso === iso) || null,
-    slotButtons: () => byId.get('bk-slots').children.filter((c) => c.tagName === 'button'),
+    // An offerable hour is a `.bk-slot`. The Reintentar control is a button in
+    // the same host and must never be counted as one, or "no hour is offered"
+    // would silently stop meaning anything.
+    slotButtons: () => byId.get('bk-slots').children.filter((c) => c.tagName === 'button' && c.classList.contains('bk-slot')),
+    retryButton: () => byId.get('bk-slots').children.find((c) => c.tagName === 'button' && c.classList.contains('bk-retry')) || null,
     slotMessage: () => (byId.get('bk-slots').children.find((c) => c.tagName === 'p') || {}).textContent || '',
+    dateRequests: (iso) => requested.filter((u) => u.indexOf('?date=' + iso) !== -1).length,
+    async settle(rounds) {
+      for (let i = 0; i < (rounds || 6); i += 1) { this.runTimers(); await this.tick(); }
+    },
     async openCalendar() {
       fire(this.serviceLabel, 'pointerdown');
       fire(this.service, 'change');
@@ -355,27 +372,116 @@ const isOverview = (url) => url.indexOf('?date=') === -1;
 }
 
 // ---------------------------------------------------------------------------
-// G. The authoritative read fails: nothing is offered. Fail-closed holds.
+// G. The authoritative read fails: nothing is offered, and the page stops.
+//
+//    This is the request-amplification half. renderSlots() used to call
+//    fetchDate() whenever the date was not confirmed, and fetchDate() ends by
+//    calling renderSlots(); a failing endpoint therefore produced an unbounded
+//    retry loop — one browser tab hammering /api/availability for as long as
+//    the patient stayed on the step. Bounded now: ONE request per selection,
+//    and no second one until a human asks for it.
+//
+//    AMPLIFICATION_CAP is a safety valve, not the assertion: past it the fake
+//    endpoint stops answering, so a regression cannot hang this suite in an
+//    endless microtask chain. The assertion is the exact count.
 // ---------------------------------------------------------------------------
-{
+const AMPLIFICATION_CAP = 12;
+
+function failingPerDatePage(extra) {
   let dateCalls = 0;
-  const page = buildPage({
-    // Fails once, then stays in flight — otherwise renderSlots' own retry
-    // would spin forever and the test would never settle.
+  const options = {
     respond: (url) => {
       if (isOverview(url)) return httpFail();
       dateCalls += 1;
-      return dateCalls === 1 ? httpFail() : never();
+      if (dateCalls > AMPLIFICATION_CAP) return never();
+      return httpFail();
     },
-  });
+  };
+  if (extra && extra.patches) options.patches = extra.patches;
+  const page = buildPage(options);
+  page.dateCallCount = () => dateCalls;
+  return page;
+}
+
+{
+  const page = failingPerDatePage();
   await page.openCalendar();
   await page.chooseDay(TARGET);
+  await page.settle();
 
-  check(dateCalls >= 1, 'the per-date read was attempted');
+  check(page.dateRequests(TARGET) === 1,
+    'selecting a date issues exactly ONE authoritative read, and its failure issues no more'
+    + ' (saw ' + page.dateRequests(TARGET) + ')');
+  check(page.dateCallCount() === 1, 'the fake endpoint was asked exactly once');
   check(page.slotButtons().length === 0, 'a failed per-date read offers no hour at all');
   check(page.slotMessage().indexOf('No pudimos comprobar') === 0,
     'and says so, which is the message the incident reported');
   check(page.nextButtons[4].disabled === true, 'Continue stays disabled');
+
+  // B. Nothing automatic happens afterwards: no timer, no poll, no re-render
+  //    that quietly re-asks. Pump hard and the count must not move.
+  await page.settle(20);
+  check(page.dateRequests(TARGET) === 1,
+    'no automatic second request appears after the failure (saw ' + page.dateRequests(TARGET) + ')');
+
+  // C. The explicit control exists, and one click is worth exactly one request.
+  const retry = page.retryButton();
+  check(retry !== null, 'an explicit Reintentar control is offered');
+  check(retry.textContent === 'Reintentar', 'labelled for the patient, in Spanish');
+  check(retry.disabled === false, 'and it is clickable');
+
+  check(fire(retry, 'click') === true, 'Reintentar accepts the click');
+  check(retry.disabled === true, 'and disables itself immediately, before anything settles');
+  check(fire(retry, 'click') === false, 'so a second click while it is pending does nothing');
+  check(fire(retry, 'click') === false, 'and a third does nothing either');
+  await page.settle();
+  check(page.dateRequests(TARGET) === 2,
+    'one Reintentar click is exactly one additional request (saw ' + page.dateRequests(TARGET) + ')');
+
+  // D. Fail-closed survives the retry: it failed again, so still no hour.
+  check(page.slotButtons().length === 0, 'the second failure still offers no hour');
+  check(page.nextButtons[4].disabled === true, 'and Continue is still disabled');
+  const retryAgain = page.retryButton();
+  check(retryAgain !== null && retryAgain.disabled === false,
+    'a fresh, enabled Reintentar is offered for the next attempt');
+  check(fire(retryAgain, 'click') === true, 'which can be used');
+  await page.settle();
+  check(page.dateRequests(TARGET) === 3,
+    'and it too is worth exactly one request (saw ' + page.dateRequests(TARGET) + ')');
+}
+
+// ---------------------------------------------------------------------------
+// E. A successful Reintentar shows the authoritative hours — the recovery has
+//    to actually recover, or "stop retrying" would just be a nicer outage.
+// ---------------------------------------------------------------------------
+{
+  const OCCUPIED = [{ date: TARGET, time: '12:00' }];
+  let dateCalls = 0;
+  const page = buildPage({
+    respond: (url) => {
+      if (isOverview(url)) return never();
+      dateCalls += 1;
+      return dateCalls === 1 ? httpFail() : jsonOk(OCCUPIED);
+    },
+  });
+  await page.openCalendar();
+  await page.chooseDay(TARGET);
+  await page.settle();
+  check(page.slotButtons().length === 0, 'the first read failed, so no hour is offered');
+
+  fire(page.retryButton(), 'click');
+  await page.settle();
+
+  check(page.dateRequests(TARGET) === 2, 'the recovery took exactly two requests in total');
+  check(page.retryButton() === null, 'the Reintentar control is gone once the date is confirmed');
+  const buttons = page.slotButtons();
+  check(buttons.length === 9, 'the working grid is rendered after a successful retry');
+  const blocked = buttons.filter((b) => b.disabled).map((b) => b.textContent);
+  check(blocked.length === 1 && blocked[0] === '12:00',
+    'and it is the server list that decides, not the retry: 12:00 stays occupied');
+  fire(buttons.find((b) => b.textContent === '11:00'), 'click');
+  page.runTimers();
+  check(page.nextButtons[4].disabled === false, 'a recovered date can be booked again');
 }
 
 // ---------------------------------------------------------------------------
@@ -468,10 +574,43 @@ const SLOTS_GATE = 'if (!state.date) return;';
     'M4: removing the confirmedDates guard does offer hours, so assertions F-H are load-bearing');
 }
 
+{
+  // M5 — the request-amplification defect itself. Put back the automatic
+  //      re-ask (`if (!pendingDates.has(iso))`, with no memory of having
+  //      already tried) and the failing endpoint is hammered until the fake
+  //      stops answering. This is the loop that took Production down.
+  const mutant = failingPerDatePage({
+    patches: [[
+      'if (!pendingDates.has(isoForGuard) && !attemptedDates.has(isoForGuard)) {',
+      'if (!pendingDates.has(isoForGuard)) {',
+    ]],
+  });
+  await mutant.openCalendar();
+  await mutant.chooseDay(TARGET);
+  await mutant.settle();
+  check(mutant.dateRequests(TARGET) > AMPLIFICATION_CAP,
+    'M5: with the automatic re-ask restored one failed date really does amplify past '
+    + AMPLIFICATION_CAP + ' requests (saw ' + mutant.dateRequests(TARGET) + '), so the count assertions in G are load-bearing');
+}
+
+{
+  // M6 — drop the explicit control and the patient is stranded: no hours, and
+  //      no way to ask again. That is what makes "no automatic retry" safe.
+  const mutant = failingPerDatePage({ patches: [['host.appendChild(retry);', 'void retry;']] });
+  await mutant.openCalendar();
+  await mutant.chooseDay(TARGET);
+  await mutant.settle();
+  check(mutant.retryButton() === null && mutant.dateRequests(TARGET) === 1,
+    'M6: without the Reintentar control there is no second request at all, so the manual-retry assertions are load-bearing');
+}
+
 console.log('BOOKING_CALENDAR_SELECTION=PASS assertions=' + assertions);
 console.log('OVERVIEW_GATES_DATE_SELECTION=NO');
 console.log('PENDING_OR_FAILED_OVERVIEW_DAY_STATE=unknown');
 console.log('PAST_WEEKEND_HOLIDAY=STILL_DISABLED');
 console.log('HOURS_AUTHORITY=PER_DATE_FETCH_ONLY');
 console.log('HOURS_FAIL_CLOSED=YES');
-console.log('ADVERSARIAL_MUTANTS_DETECTED=4');
+console.log('FAILED_ATTEMPT_REQUEST_COUNT=1');
+console.log('AUTOMATIC_RETRY_REQUESTS=0');
+console.log('MANUAL_RETRY_REQUEST_COUNT=1');
+console.log('ADVERSARIAL_MUTANTS_DETECTED=6');
