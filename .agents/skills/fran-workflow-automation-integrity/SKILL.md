@@ -10,6 +10,29 @@ Two time-triggered workers, both at **5 minutes**:
 Installed and verified only through
 `backend/appsscript/booking/TriggerInstallGuard.js`.
 
+## Delivery is an immediate attempt over the worker, never instead of it
+
+`enqueueLifecycleNotification_` makes **one** best-effort attempt on the row it
+just appended, via `dispatchLifecycleNotificationImmediateBestEffort_`. That
+attempt is `processOneLifecycleNotificationOutbox_` on a single row — the same
+claim, ceiling, supersession, rotation and allowlist below, not a second
+delivery implementation. `IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED` (Code.js) is
+a source-level flag, not a runtime switch: turning it off is an edit and a new
+Apps Script version, so the rollback is repointing to a verified earlier one.
+
+- **The row is authoritative, the attempt is not.** Any failure leaves the row
+  retryable and returns null. Nothing in the lifecycle may depend on a send: a
+  booking, payment, reschedule, cancellation or refund that already persisted
+  stands whatever the send does.
+- **Only a freshly appended row is dispatched**, and only after the state it
+  announces — including Calendar/Meet — is persisted. Both are the caller's
+  guarantee, at every enqueue call site.
+- The dispatch runs under the script lock its call site already holds, which is
+  the same lock the worker takes.
+- **It does not make delivery exactly-once.** It moves which execution makes the
+  first attempt; the send-then-crash window below is unchanged in width and
+  still applies to it.
+
 ## Execution completed ≠ business outcome confirmed
 
 A worker returning cleanly means it ran. It does not mean the patient received
@@ -32,8 +55,14 @@ evidence.
   mutation is marked, not silently dropped. Cancellation still sends.
 - **Lock ownership is explicit.** The worker already holds the lock; nested callers
   use `lockAlreadyHeld` and must not release a lock they did not acquire.
-- **Delivery is at-least-once.** The send-then-crash window is accepted and
-  documented. Downstream guards, not the worker, prevent duplicate patient effects —
+- **Delivery is at-least-once.** The transport is called before the resulting
+  `sent` state can be persisted, so an execution lost in between leaves a
+  `claimed` row that no durable record can tell apart from an attempt that never
+  reached Gmail; the retry may deliver the same message twice. Closing that
+  would need a provider-side idempotency key GmailApp does not offer. The window
+  is accepted and documented, and characterised by
+  `notification-immediate-dispatch`. Downstream guards, not the worker, prevent
+  duplicate patient effects —
   e.g. `enqueuePatientCancellationNotificationOnce_` caps a booking at **one** final
   cancellation email (`FINAL_CANCELLATION_PATIENT_EMAIL_COUNT_MAX=1`).
 - **Capability rotation happens per retry**, under the already-owned lock, hash-at-
@@ -69,6 +98,7 @@ node backend/appsscript/booking/test/notification-outbox-worker.test.mjs
 node backend/appsscript/booking/test/notification-outbox-sheet.test.mjs
 node backend/appsscript/booking/test/sequential-notification-harness.test.mjs
 node backend/appsscript/booking/test/no-drain-notification-harness.test.mjs
+node backend/appsscript/booking/test/notification-immediate-dispatch.test.mjs
 node backend/appsscript/booking/test/production-trigger-contract.test.mjs
 ```
 

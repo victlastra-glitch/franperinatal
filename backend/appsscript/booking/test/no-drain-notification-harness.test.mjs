@@ -10,6 +10,14 @@ const FixedDate = createFixedDate();
  * No-drain multi-event notification harness.
  * Proves durable per-event outbox identity when the worker does not run
  * between lifecycle mutations.
+ *
+ * The immediate-dispatch accelerator is switched OFF here on purpose. It is
+ * best-effort by construction and a production run in which every immediate
+ * attempt is unavailable — Gmail quota exhausted, configuration unreadable —
+ * degrades to exactly this shape: rows accumulate and only the periodic worker
+ * ever delivers them. That is the case this harness exists to pin. The
+ * accelerated route is covered by notification-immediate-dispatch and by the
+ * lifecycle/email suites, which run with the committed default.
  */
 const files = ['../Code.js', '../Lifecycle.js', '../EmailTemplates.js', '../CalendarGateway.js', '../Reconciliation.js', '../RefundGateway.js'];
 const sources = await Promise.all(files.map((path) => readFile(new URL(path, import.meta.url), 'utf8')));
@@ -208,6 +216,11 @@ const reconciliation = context.__RECONCILIATION_TEST_EXPORTS__;
 
 let assertions = 0;
 const check = (condition, message) => { assert.ok(condition, message); assertions += 1; };
+// Read from the committed source, not from the context: switching the harness
+// to the fallback route must never be able to hide a shipped default of false.
+check(/\nvar IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED = true;\n/.test(sources[0]),
+  'the committed default for immediate dispatch is on');
+context.IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED = false;
 const record = () => currentRows()[0];
 const schema = () => ({ headers, columns: Object.fromEntries(headers.map((h, i) => [h, i + 1])) });
 const store = {

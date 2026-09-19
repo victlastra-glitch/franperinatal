@@ -682,7 +682,8 @@ node backend/appsscript/booking/test/availability-dst-bounds.test.mjs
 # the rest of the booking suite
 for t in phase-a booking-clock-contract lifecycle notification-outbox-worker \
          notification-outbox-sheet sequential-notification-harness \
-         no-drain-notification-harness pre-transaction-contract flow-contract \
+         no-drain-notification-harness notification-immediate-dispatch \
+         pre-transaction-contract flow-contract \
          flow-signature-charset lifecycle-harness calendar-metadata-reconciliation \
          email-design-system-v4 lifecycle-email-v2 \
          production-derived-integration session-duration-contract \
@@ -702,6 +703,7 @@ node scripts/assert-production-worker-structure.mjs _worker.js
 node scripts/test-production-worker-routes.mjs
 node scripts/test-production-payment-status-privacy.mjs
 node scripts/test-manage-contract.mjs
+node scripts/test-manage-cancellation-ui.mjs
 node scripts/test-booking-availability-contract.mjs
 git diff --check
 
