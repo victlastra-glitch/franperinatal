@@ -565,6 +565,10 @@ const STALE_PRIVACY = [
   [/limpiando los datos del sitio/i, 'clearing browser data as the only way to change consent'],
   [/12 meses desde el [uú]ltimo contacto|al menos 5 a[ñn]os/i, 'an invented retention period'],
   [/Ley 21\.719|Agencia de Protecci[oó]n de Datos/i, 'future legislation or authority as operative'],
+  // The practice has no canonical public street address, and no fixed reply
+  // deadline is promised: both were published without anything establishing them.
+  [/domicilio profesional|Av\.? Las Condes|\bAvenida\b|\bcalle\b \S+ \d/i, 'a public street address'],
+  [/\d+\s+d[ií]as\s+h[áa]biles/i, 'an invented fixed response deadline'],
 ];
 for (const [label, w, h] of VIEWPORTS) {
   await setViewport(w, h);
@@ -590,6 +594,9 @@ for (const [label, w, h] of VIEWPORTS) {
   check(/No afirmo que esa medici[oó]n sea an[oó]nima/.test(pr.main), 'measurement is not claimed to be anonymous');
   check(/No afirmo cifrado de extremo a extremo/.test(pr.main), 'protection is stated as transit encryption and restricted access');
   check(/No pido tu correo/.test(pr.main), 'the guide is stated to ask for no email');
+  check(/plazos establecidos por la normativa aplicable/.test(pr.main),
+    'the rights deadline defers to the applicable rules');
+  check(/hola@franciscabustos\.cl/.test(pr.main), 'the contact mechanism is still the canonical email');
   await shot('privacidad-' + label);
 
   if (label === '1440x900') {

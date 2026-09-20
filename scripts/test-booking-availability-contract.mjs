@@ -171,7 +171,7 @@ const BILLING_PAGE_GUARANTEES = [
   ['the billing fields live in their own step, not in the contact step',
     (t) => /data-step="5"[\s\S]*?id="f-rut"/.test(t) && !/data-step="4"[\s\S]*?id="f-rut"[\s\S]*?data-step="5"/.test(t)],
   ['the billing step says what the data is for',
-    (t) => /emitir tu boleta de honorarios después de la sesión/.test(t)],
+    (t) => /emitir la boleta de honorarios correspondiente a tu sesión/.test(t)],
   ['the review summary shows the billing trio back',
     (t) => /id="rv-rut"/.test(t) && /id="rv-address"/.test(t) && /id="rv-comuna"/.test(t)],
 ];
@@ -216,7 +216,7 @@ const mutations = [
     page.replace('id="f-rut" name="patient_rut"', 'id="f-rut-disabled" name="patient_rut_disabled"'),
     BILLING_PAGE_GUARANTEES, 'page'],
   ['BILLING_STEP_FOLDED_BACK_INTO_CONTACT',
-    page.replace('emitir tu boleta de honorarios después de la sesión', 'coordinar tu sesión'),
+    page.replace('emitir la boleta de honorarios correspondiente a tu sesión', 'coordinar tu sesión'),
     BILLING_PAGE_GUARANTEES, 'page'],
   ['BILLING_REVIEW_ROWS_REMOVED',
     page.replace('<div><dt>Dirección</dt><dd id="rv-address">—</dd></div>', ''),
