@@ -285,6 +285,36 @@ for (const [label, w, h] of VIEWPORTS) {
       await sleep(700);
       check((await evaluate("[...document.querySelectorAll('.bk-step')].find((s) => !s.hidden).dataset.step")) === '4', 'choosing an hour reaches the contact step');
       await shot('reserva-' + label + '-step4');
+
+      // J: the billing step says what the billing fields are for and links to
+      // /privacidad. Site links inherit colour and carry no underline, so the
+      // assertion is that this one is visibly distinct from its own note.
+      await evaluate(`(() => {
+        const set = (id, v) => { const el = document.getElementById(id); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); };
+        set('f-name', 'Prueba QA'); set('f-email', 'qa@example.cl'); set('f-phone', '+56 9 1234 5678');
+        return true;
+      })()`);
+      await click('[data-action="submit-form"]');
+      await sleep(500);
+      check((await evaluate("[...document.querySelectorAll('.bk-step')].find((s) => !s.hidden).dataset.step")) === '5', 'J the billing step follows the contact step');
+      const disclosure = await evaluate(`(() => {
+        const step = document.querySelector('.bk-step[data-step="5"]');
+        const a = step ? step.querySelector('.field-hint a[href="/privacidad"]') : null;
+        if (!a) return null;
+        const r = a.getBoundingClientRect();
+        return { w: r.width, h: r.height, color: getComputedStyle(a).color,
+          noteColor: getComputedStyle(a.parentElement).color,
+          underline: getComputedStyle(a).textDecorationLine,
+          boleta: /boleta/i.test(a.parentElement.textContent) };
+      })()`);
+      check(!!disclosure, 'J the billing step links to /privacidad');
+      if (disclosure) {
+        check(disclosure.w > 0 && disclosure.h > 0, 'J the privacy link is rendered (' + Math.round(disclosure.w) + 'x' + Math.round(disclosure.h) + ')');
+        check(disclosure.color !== disclosure.noteColor, 'J the privacy link is distinguishable from its note (' + disclosure.color + ' vs ' + disclosure.noteColor + ')');
+        check(/underline/.test(disclosure.underline), 'J the privacy link is underlined (' + disclosure.underline + ')');
+        check(disclosure.boleta, 'J the note states the billing purpose');
+      }
+      await shot('reserva-' + label + '-step5');
     }
   }
   if (w < 700) await mobileMenu();
@@ -524,6 +554,51 @@ for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
   check(g.forms === 0, 'C the guide asks for nothing before it can be read');
   check(g.broken === 0, 'no broken image on the guide');
   await shot('guia-' + label);
+}
+
+// --- /privacidad: the notice must describe the site that exists ------------------
+// Every string below is a claim the current code either proves or contradicts.
+const STALE_PRIVACY = [
+  [/Formspree/i, 'Formspree (the contact form posts to a Google Form)'],
+  [/(?<!No afirmo )cifrad[oa] de extremo a extremo/i, 'an end-to-end encryption claim'],
+  [/correo mensual|darte de baja|Suscripci[oó]n a la gu[ií]a/i, 'a guide subscription'],
+  [/limpiando los datos del sitio/i, 'clearing browser data as the only way to change consent'],
+  [/12 meses desde el [uú]ltimo contacto|al menos 5 a[ñn]os/i, 'an invented retention period'],
+  [/Ley 21\.719|Agencia de Protecci[oó]n de Datos/i, 'future legislation or authority as operative'],
+];
+for (const [label, w, h] of VIEWPORTS) {
+  await setViewport(w, h);
+  await navigate('/privacidad', 'privacidad@' + label);
+  await noOverflow();
+  const pr = await evaluate(`(() => {
+    const main = document.querySelector('main').textContent.replace(/\\s+/g, ' ');
+    const wrap = document.querySelector('.legal-wrap').getBoundingClientRect();
+    return { main, width: wrap.width,
+      sections: document.querySelectorAll('.legal h2').length,
+      hrefs: [...document.querySelectorAll('main a')].map((a) => a.getAttribute('href')) };
+  })()`);
+  check(pr.sections >= 6 && pr.sections <= 9, 'the notice stays a readable number of sections (' + pr.sections + ')');
+  check(pr.width <= 800, 'the notice keeps a comfortable measure (' + Math.round(pr.width) + 'px)');
+  for (const [re, what] of STALE_PRIVACY) check(!re.test(pr.main), 'the notice no longer states ' + what);
+  check(/RUT, direcci[oó]n y comuna/.test(pr.main) && /boleta de honorarios/.test(pr.main), 'billing data is described with its purpose');
+  check(/no se env[ií]an a la pasarela de pago|No recibe tu RUT/.test(pr.main), 'billing data is stated not to reach the payment gateway');
+  check(/formulario de Google/.test(pr.main), 'the contact path is described as it is');
+  check(/se calculan en tu navegador/.test(pr.main) && /ni a ninguna herramienta de medici[oó]n/.test(pr.main), 'the Edinburgh scale is described as device-only');
+  check(/tamizaje/.test(pr.main) && /no reemplaza una evaluaci[oó]n cl[ií]nica/.test(pr.main), 'screening is still distinguished from diagnosis');
+  check(/Flow/.test(pr.main) && /Cloudflare/.test(pr.main), 'Flow and Cloudflare are named');
+  check(/Preferencias de cookies/.test(pr.main), 'consent can be reopened, and the notice says where');
+  check(/No afirmo que esa medici[oó]n sea an[oó]nima/.test(pr.main), 'measurement is not claimed to be anonymous');
+  check(/No afirmo cifrado de extremo a extremo/.test(pr.main), 'protection is stated as transit encryption and restricted access');
+  check(/No pido tu correo/.test(pr.main), 'the guide is stated to ask for no email');
+  await shot('privacidad-' + label);
+
+  if (label === '1440x900') {
+    for (const href of [...new Set(pr.hrefs)]) {
+      if (!href || href.startsWith('mailto:') || href.startsWith('#')) continue;
+      const res = await fetch(ORIGIN + href, { redirect: 'follow' }).catch(() => null);
+      check(!!res && res.status < 400, 'link resolves: ' + href + ' (' + (res ? res.status : 'no response') + ')');
+    }
+  }
 }
 
 // --- Wrap up --------------------------------------------------------------------
