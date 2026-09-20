@@ -207,7 +207,7 @@ const record = () => currentRows()[0];
 const idempotencyKey = 'fran-booking-aaaaaaaa-e89b-12d3-a456-4266141740aa';
 const createPayload = {
   action: 'create_flow_payment', idempotencyKey, serviceType: 'initial', modality: 'online',
-  date: '2026-09-03', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
+  date: '2026-09-03', time: '11:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
 };
 
 // free slot -> Flow create accepted

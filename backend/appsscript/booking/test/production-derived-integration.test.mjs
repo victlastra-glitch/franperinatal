@@ -183,7 +183,7 @@ function create(n, serviceType, time) {
     postData: { contents: JSON.stringify({
       action: 'create_flow_payment', idempotencyKey: key, serviceType, modality: 'online',
       date: '2026-09-03', time, name: 'Synthetic', email: opsEmail,
-      phone: '', patientRut: '', reason: '', message: '',
+      phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
     }) },
   });
 }

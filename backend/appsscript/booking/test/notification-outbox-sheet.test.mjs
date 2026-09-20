@@ -187,7 +187,7 @@ check(created === outboxSheet && outboxHeaders.length === phase.OUTBOX_HEADERS.l
   && phase.OUTBOX_HEADERS.includes('source_operation_id'),
   'ensure creates the current outbox header schema');
 check(JSON.stringify(reservationRows.map((row) => headers.map((header) => row[header] ?? ''))) === reservationSnapshot
-  && headers.length === 58,
+  && headers.length === 65,
   'creating the outbox does not change reservation data or the 58-column booking schema');
 
 const schema = { headers, columns: Object.fromEntries(headers.map((header, index) => [header, index + 1])) };

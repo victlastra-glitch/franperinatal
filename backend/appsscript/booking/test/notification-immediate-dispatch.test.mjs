@@ -54,7 +54,7 @@ function confirmBooking(h, n, date, time, leadMs) {
   const created = h.context.createFlowPayment_({
     postData: { contents: JSON.stringify({
       action: 'create_flow_payment', idempotencyKey: idem(n), serviceType: 'initial', modality: 'online',
-      date, time, name: 'Synthetic', email: PATIENT_EMAIL, phone: '', patientRut: '', reason: '', message: '',
+      date, time, name: 'Synthetic', email: PATIENT_EMAIL, phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
     }) },
   });
   if (!created.ok) throw new Error('fixture booking rejected: ' + JSON.stringify(created));

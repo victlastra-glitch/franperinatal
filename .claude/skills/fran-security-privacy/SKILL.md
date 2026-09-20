@@ -24,10 +24,14 @@ Script URLs, script ids, deployment ids.
 - **Bearers are hashed at rest** and returned only to the dispatcher at send time;
   rotation invalidates the previous bearer. Never persist or print a raw bearer.
 - **Calendar linkage is stored without PII.**
-- **Patient RUT is no longer collected.** The booking form does not ask for it,
-  the create contract does not carry it, and nothing written today stores one. The
-  `patientRut` column on the legacy v7 sheet holds historical rows only. Do not
-  reintroduce the field without a current, executable operational purpose.
+- **Billing data is collected, stored, and goes no further.** RUT, dirección and
+  comuna are asked for in the booking wizard's own billing step, travel in the
+  create contract, and are persisted as `billing_rut`, `billing_address` and
+  `billing_comuna`. They exist for the post-session boleta de honorarios and for
+  nothing else: never in a response allowlist, never in a log line, never in an
+  analytics payload, never forwarded to Flow, Calendar or Meet. The legacy
+  `patientRut` column on the v7 sheet is a different, historical column; nothing
+  reads or writes it.
 
 ## Secrets
 

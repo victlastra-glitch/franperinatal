@@ -87,7 +87,7 @@ const validPayload = {
   action: 'create_flow_payment',
   idempotencyKey: 'fran-booking-123e4567-e89b-12d3-a456-426614174000',
   serviceType: 'initial', modality: 'online', date: '2026-08-27', time: '10:00',
-  name: 'Synthetic Patient', email: 'ops@example.test', phone: '', patientRut: '', reason: '', message: '',
+  name: 'Synthetic Patient', email: 'ops@example.test', phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
 };
 const createEvent = (payload) => ({ postData: { contents: JSON.stringify(payload) } });
 
@@ -101,7 +101,8 @@ check(Number.isFinite(FixedDate.UTC(2026, 7, 27, 14, 0, 0)), 'Date.UTC keeps nat
 check(FixedDate.now() !== Date.now(), 'host Date.now() is not the VM test clock');
 check(new Date().toISOString() !== FIXED_TEST_NOW_ISO, 'host zero-arg Date is not the frozen test instant');
 
-const { context } = loadBookingContext(FixedDate);
+const { context, rows } = loadBookingContext(FixedDate);
+const headers = [...context.RESERVATION_HEADERS];
 check(context.Date.now() === FIXED_TEST_NOW_MS, 'VM Date.now() is the frozen test instant');
 check(vm.runInContext('new Date().toISOString()', context) === FIXED_TEST_NOW_ISO,
   'VM zero-arg new Date() is independent of host wall clock');
@@ -111,40 +112,63 @@ check(vm.runInContext('Date.parse("2026-08-27T14:00:00.000Z")', context) === Dat
 const fields = vm.runInContext('CREATE_FLOW_FIELDS.slice()', context);
 check(JSON.stringify(fields) === JSON.stringify([
   'idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone',
-  'reason', 'message',
+  'patientRut', 'address', 'comuna', 'reason', 'message',
 ]), 'CREATE_FLOW_FIELDS public contract is unchanged');
 ['now', 'nowMs', 'testNow', 'clock'].forEach((key) => {
   check(fields.indexOf(key) === -1, 'CREATE_FLOW_FIELDS does not include ' + key);
 });
 
-// --- Data minimisation: patient RUT is no longer collected ------------------
-// Nothing in availability, reserve, Flow create/verify, Calendar/Meet,
-// notification or management reads a RUT, and no row stores one, so the create
-// contract no longer carries it. The key stays tolerated for one deploy window
-// so a browser holding the previous booking.js is not rejected mid-booking.
-check(fields.indexOf('patientRut') === -1, 'CREATE_FLOW_FIELDS no longer carries patientRut');
+// --- Billing data: the boleta trio is required and decided HERE -------------
+// The reservation is the record a post-session boleta de honorarios is issued
+// from, so a row that cannot name a payer is a row that cannot serve the
+// purpose it was created for. The browser checks the same RUT as a courtesy;
+// these assertions are about the server refusing on its own.
 const retiredFields = vm.runInContext('CREATE_FLOW_RETIRED_FIELDS.slice()', context);
-check(JSON.stringify(retiredFields) === JSON.stringify(['patientRut']),
-  'patientRut is declared a retired, tolerated input key');
+check(JSON.stringify(retiredFields) === JSON.stringify([]),
+  'no input key is currently retired, and the tolerance mechanism still exists');
 
-const payloadWithoutRut = { ...validPayload };
-delete payloadWithoutRut.patientRut;
-const parsedWithoutRut = context.parseCreatePayload_(createEvent(payloadWithoutRut));
-check(!Object.prototype.hasOwnProperty.call(parsedWithoutRut, 'patientRut'),
-  'a create payload that omits patientRut is accepted and carries none');
-const parsedLegacyRut = context.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11.111.111-1' }));
-check(!Object.prototype.hasOwnProperty.call(parsedLegacyRut, 'patientRut'),
-  'a legacy create payload still carrying patientRut is accepted and the value is dropped');
-check(JSON.stringify(parsedLegacyRut) === JSON.stringify(parsedWithoutRut),
-  'a supplied patientRut changes nothing about the parsed payload');
+const parsed = context.parseCreatePayload_(createEvent(validPayload));
+check(parsed.patientRut === '11.111.111-1' && parsed.address === 'Calle Sintetica 123'
+  && parsed.comuna === 'Providencia',
+  'a valid create payload carries the billing trio through to the parsed payload');
 
-const createdWithoutRut = context.createFlowPayment_(createEvent({
-  ...payloadWithoutRut,
+// Canonical form is decided server-side, not trusted from the browser.
+const parsedRaw = context.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11111111-1' }));
+check(parsedRaw.patientRut === '11.111.111-1',
+  'an unformatted RUT is normalised to canonical form by the server');
+const parsedSpaced = context.parseCreatePayload_(createEvent({ ...validPayload, patientRut: ' 11.111.111-1 ' }));
+check(parsedSpaced.patientRut === '11.111.111-1', 'surrounding whitespace does not change the verdict');
+
+[['', 'PATIENT_RUT_REQUIRED'], ['11.111.111-2', 'INVALID_PATIENT_RUT'],
+ ['12345-6', 'INVALID_PATIENT_RUT'], ['not-a-rut', 'INVALID_PATIENT_RUT']].forEach(([value, code]) => {
+  assert.throws(() => context.parseCreatePayload_(createEvent({ ...validPayload, patientRut: value })),
+    new RegExp(code), 'RUT "' + value + '" is refused as ' + code);
+  assertions += 1;
+});
+[['address', 'BILLING_ADDRESS_REQUIRED'], ['comuna', 'BILLING_COMUNA_REQUIRED']].forEach(([field, code]) => {
+  assert.throws(() => context.parseCreatePayload_(createEvent({ ...validPayload, [field]: '   ' })),
+    new RegExp(code), 'a blank ' + field + ' is refused as ' + code);
+  assertions += 1;
+});
+
+// The billing trio reaches the stored row, and only the stored row.
+const createdWithBilling = context.createFlowPayment_(createEvent({
+  ...validPayload,
   idempotencyKey: 'fran-booking-123e4567-e89b-12d3-a456-4266141740aa',
   time: '11:00',
 }));
-check(createdWithoutRut.ok === true && createdWithoutRut.paymentUrl.startsWith('https://www.flow.cl/app/web/pay'),
-  'createFlowPayment_ creates a payment order for a booking that supplies no RUT');
+check(createdWithBilling.ok === true && createdWithBilling.paymentUrl.startsWith('https://www.flow.cl/app/web/pay'),
+  'createFlowPayment_ creates a payment order for a booking that supplies billing data');
+const storedRow = rows[rows.length - 1];
+check(storedRow.billing_rut === '11.111.111-1'
+  && storedRow.billing_address === 'Calle Sintetica 123'
+  && storedRow.billing_comuna === 'Providencia',
+  'the billing trio is persisted on the reservation row');
+check(storedRow.patient_name === 'Synthetic Patient'
+  && storedRow.patient_email === 'ops@example.test',
+  'the administrative record keeps the name beside the email it already kept');
+check(headers.indexOf('billing_rut') > headers.indexOf('transaction_amount_clp'),
+  'the billing columns were appended, not inserted');
 
 check(/nowMs === undefined \? Date\.now\(\) : Number\(nowMs\)/.test(codeSource),
   'production assertBookableSlot_ defaults to Date.now() when nowMs is omitted');
@@ -191,32 +215,59 @@ check(typeof realDateContext.context.Date.now === 'function'
   && realDateContext.context.Date.now === Date.now,
   'without a test VM clock, production Date.now remains the host Date.now');
 
-// --- Adversarial mutations on the RUT minimisation --------------------------
+// --- Adversarial mutations on the billing contract --------------------------
 const mutateCode = (from, to) => {
   assert.ok(codeSource.includes(from), 'mutation target present: ' + from);
   return sources.map((source, index) => (index === 0 ? source.replace(from, to) : source));
 };
 
-const intolerantContext = loadBookingContext(createFixedDate(), mutateCode(
-  "const CREATE_FLOW_RETIRED_FIELDS = Object.freeze(['patientRut']);",
-  'const CREATE_FLOW_RETIRED_FIELDS = Object.freeze([]);',
+// 1. Drop the address requirement: a blank dirección must then sail through.
+//    Unlike the RUT, which the checksum would still catch, the address has a
+//    single guard, so removing it is the whole difference.
+const unrequiredContext = loadBookingContext(createFixedDate(), mutateCode(
+  "  if (!payload.address) fail_('BILLING_ADDRESS_REQUIRED');\n",
+  '',
 )).context;
-assert.throws(
-  () => intolerantContext.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11.111.111-1' })),
-  /REQUEST_REJECTED/,
-  'dropping the retired-key tolerance must break a legacy in-flight browser',
-); assertions += 1;
-console.log('MUTATION_RETIRED_KEY_TOLERANCE_REMOVED=DETECTED');
+check(unrequiredContext.parseCreatePayload_(createEvent({ ...validPayload, address: '   ' })).address === '',
+  'dropping the required-address check must let a blank dirección through');
+console.log('MUTATION_BILLING_ADDRESS_NOT_REQUIRED=DETECTED');
 
-const recollectingContext = loadBookingContext(createFixedDate(), mutateCode(
-  "  'reason', 'message',\n]);\n",
-  "  'patientRut', 'reason', 'message',\n]);\n",
+// Defence in depth, asserted as a property rather than a mutation: even without
+// the explicit required check, a blank RUT never passes, because an empty
+// string is not a valid RUT either.
+const noRequiredCheck = loadBookingContext(createFixedDate(), mutateCode(
+  "  if (!payload.patientRut) fail_('PATIENT_RUT_REQUIRED');\n",
+  '',
 )).context;
-check(Object.prototype.hasOwnProperty.call(
-  recollectingContext.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11.111.111-1' })),
-  'patientRut',
-), 'reinstating patientRut in CREATE_FLOW_FIELDS must be visible in the parsed payload');
-console.log('MUTATION_PATIENT_RUT_RECOLLECTED=DETECTED');
+assert.throws(() => noRequiredCheck.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '' })),
+  /INVALID_PATIENT_RUT/, 'a blank RUT is refused by the checksum even with the required check gone');
+assertions += 1;
+
+// 2. Neuter the checksum: a RUT with a wrong verifier digit must then be
+//    accepted. A field that is merely non-empty is not a RUT.
+const uncheckedContext = loadBookingContext(createFixedDate(), mutateCode(
+  'function validChileanRut_(value) {\n  const clean = cleanChileanRut_(value);',
+  'function validChileanRut_(value) {\n  if (value) return true;\n  const clean = cleanChileanRut_(value);',
+)).context;
+check(uncheckedContext.parseCreatePayload_(createEvent({ ...validPayload, patientRut: '11.111.111-2' })).patientRut
+  === '11.111.111-2',
+  'neutering the modulo-11 check must accept a wrong verifier digit');
+console.log('MUTATION_RUT_CHECKSUM_IGNORED=DETECTED');
+
+// 3. Stop persisting it: the create still succeeds, and the stored row silently
+//    loses the only reason the field was collected. This is the failure mode a
+//    green "the payload parsed fine" suite would never notice.
+const unpersistedHarness = loadBookingContext(createFixedDate(), mutateCode(
+  '    billing_rut: payload.patientRut, billing_address: payload.address,\n',
+  '    billing_address: payload.address,\n',
+));
+const unpersistedCreate = unpersistedHarness.context.createFlowPayment_(createEvent({
+  ...validPayload, idempotencyKey: 'fran-booking-123e4567-e89b-12d3-a456-4266141740bb', time: '12:00',
+}));
+check(unpersistedCreate.ok === true
+  && unpersistedHarness.rows[unpersistedHarness.rows.length - 1].billing_rut === '',
+  'dropping the persistence must leave billing_rut empty on an otherwise successful booking');
+console.log('MUTATION_BILLING_RUT_NOT_PERSISTED=DETECTED');
 
 console.log(`BOOKING_CLOCK_CONTRACT_TESTS=PASS assertions=${assertions}`);
 console.log(`FIXED_TEST_NOW=${FIXED_TEST_NOW_ISO}`);

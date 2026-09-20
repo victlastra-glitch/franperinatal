@@ -257,7 +257,7 @@ const idempotencyKey = 'fran-booking-cccccccc-e89b-12d3-a456-4266141740cc';
 const created = context.createFlowPayment_({
   postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey, serviceType: 'initial', modality: 'online',
-    date: '2026-09-03', time: '13:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '', reason: '', message: '',
+    date: '2026-09-03', time: '13:00', name: 'Synthetic', email: allowlisted, phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
   }) },
 });
 check(created.ok, 'Flow create accepted');

@@ -95,12 +95,14 @@ async function handleAvailability(request, env) {
   return jsonResp({ ok: true, slots: slots }, 200);
 }
 
-// Patient RUT is no longer collected. Nothing in the current booking, payment,
-// Calendar, email or management path reads it, so it is not forwarded upstream.
-const CREATE_FIELDS = new Set(['idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'reason', 'message']);
-// Retired input keys: still tolerated so a browser holding the previous
-// booking.js across a deploy is not rejected mid-booking, and dropped here.
-const CREATE_RETIRED_FIELDS = new Set(['patientRut']);
+// The create contract. `patientRut`, `address` and `comuna` are billing details
+// the post-session boleta needs: forwarded upstream, stored on the reservation,
+// and absent from every response allowlist and every log line in this file.
+const CREATE_FIELDS = new Set(['idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'patientRut', 'address', 'comuna', 'reason', 'message']);
+// Retired input keys: tolerated so a browser holding a previous booking.js
+// across a deploy is not rejected mid-booking, and dropped rather than
+// forwarded. Empty today; the mechanism stays so retiring a key stays cheap.
+const CREATE_RETIRED_FIELDS = new Set([]);
 
 function validCreatePayload(value) {
   if (!value || Array.isArray(value) || typeof value !== 'object') return null;

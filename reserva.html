@@ -205,12 +205,12 @@
           </div>
         </div>
 
-        <!-- ── PASO 4: Datos de contacto ────────────────────── -->
+        <!-- ── PASO 4: Datos personales ─────────────────────── -->
         <div class="bk-step" data-step="4" hidden>
           <div class="bk-step-head">
             <span class="bk-step-num">4 de 6 — Tus datos</span>
-            <h2>Datos de contacto</h2>
-            <p class="lede">Solo usamos esta información para coordinar tu sesión.</p>
+            <h2>¿Cómo te contacto?</h2>
+            <p class="lede">Con esto coordino tu sesión y te envío la confirmación.</p>
           </div>
 
           <form class="bk-form" id="bk-form" novalidate>
@@ -228,20 +228,17 @@
                 <label for="f-email">Correo electrónico</label>
                 <input class="input" type="email" id="f-email" name="email"
                   placeholder="correo@ejemplo.com"
-                  autocomplete="email"
+                  autocomplete="email" inputmode="email"
                   required />
               </div>
               <div class="field">
                 <label for="f-phone">Teléfono</label>
                 <input class="input" type="tel" id="f-phone" name="phone"
                   placeholder="+56 9 XXXX XXXX"
-                  autocomplete="tel"
+                  autocomplete="tel" inputmode="tel"
                   required aria-required="true" />
-                <p class="field-hint" style="margin-top:6px;font-size:12px;">Lo usaremos sólo para coordinar tu sesión si es necesario.</p>
               </div>
             </div>
-
-            <p class="field-hint">Tras completar el pago, recibirás la confirmación con el enlace de Google Meet y los datos de la sesión.</p>
 
             <div class="field">
               <label for="f-motivo">Motivo principal <span class="field-optional">(opcional)</span></label>
@@ -260,25 +257,67 @@
             </div>
 
             <div class="field">
-              <label for="f-reason">¿Hay algo que quieras contarme antes de la sesión? <span class="field-optional">(opcional)</span></label>
+              <label for="f-reason">¿Hay algo que quieras contarme antes? <span class="field-optional">(opcional)</span></label>
               <textarea class="textarea" id="f-reason" name="reason"
                 rows="3"
-                placeholder="Puedes compartir lo que sientes o lo que esperas de este espacio. No hay respuesta correcta."></textarea>
-              <p class="field-hint">Este formulario es solo para coordinar la sesión. Evita incluir antecedentes clínicos sensibles en este espacio.</p>
+                placeholder="Lo que sientes, o lo que esperas de este espacio. No hay respuesta correcta."></textarea>
             </div>
 
           </form>
 
           <div class="bk-actions">
             <button class="btn btn-ghost" data-action="prev">← Volver</button>
-            <button class="btn btn-primary" data-action="submit-form">Revisar reserva <span class="arrow">→</span></button>
+            <button class="btn btn-primary" data-action="submit-form">Continuar <span class="arrow">→</span></button>
           </div>
         </div>
 
-        <!-- ── PASO 5: Revisión ─────────────────────────────── -->
+        <!-- ── PASO 5: Datos para la boleta ─────────────────── -->
         <div class="bk-step" data-step="5" hidden>
           <div class="bk-step-head">
-            <span class="bk-step-num">5 de 6 — Revisión</span>
+            <span class="bk-step-num">5 de 6 — Boleta</span>
+            <h2>Datos para tu boleta</h2>
+            <p class="lede">Los usaremos para emitir tu boleta de honorarios después de la sesión.</p>
+          </div>
+
+          <form class="bk-form" id="bk-billing" novalidate>
+
+            <div class="field bk-field-short">
+              <label for="f-rut">RUT</label>
+              <input class="input" type="text" id="f-rut" name="patient_rut"
+                placeholder="12.345.678-9"
+                autocomplete="off" inputmode="text"
+                required aria-required="true" />
+            </div>
+
+            <div class="bk-form-row">
+              <div class="field">
+                <label for="f-address">Dirección</label>
+                <input class="input" type="text" id="f-address" name="address"
+                  placeholder="Calle y número"
+                  autocomplete="street-address"
+                  required aria-required="true" />
+              </div>
+              <div class="field">
+                <label for="f-comuna">Comuna</label>
+                <input class="input" type="text" id="f-comuna" name="comuna"
+                  placeholder="Providencia"
+                  autocomplete="address-level3"
+                  required aria-required="true" />
+              </div>
+            </div>
+
+          </form>
+
+          <div class="bk-actions">
+            <button class="btn btn-ghost" data-action="prev">← Volver</button>
+            <button class="btn btn-primary" data-action="submit-billing">Revisar reserva <span class="arrow">→</span></button>
+          </div>
+        </div>
+
+        <!-- ── PASO 6: Revisión ─────────────────────────────── -->
+        <div class="bk-step" data-step="6" hidden>
+          <div class="bk-step-head">
+            <span class="bk-step-num">6 de 6 — Revisión</span>
             <h2>Revisa tu reserva</h2>
             <p class="lede">Confirma que los datos están correctos antes de agendar.</p>
           </div>
@@ -306,6 +345,16 @@
                 <div><dt>Nombre</dt><dd id="rv-name">—</dd></div>
                 <div><dt>Email</dt><dd id="rv-email">—</dd></div>
                 <div><dt>Teléfono</dt><dd id="rv-phone">—</dd></div>
+                <div><dt>Motivo</dt><dd id="rv-motivo">—</dd></div>
+              </dl>
+
+              <hr class="bk-review-rule" />
+
+              <p class="bk-review-group">Datos para tu boleta</p>
+              <dl class="bk-review-dl">
+                <div><dt>RUT</dt><dd id="rv-rut">—</dd></div>
+                <div><dt>Dirección</dt><dd id="rv-address">—</dd></div>
+                <div><dt>Comuna</dt><dd id="rv-comuna">—</dd></div>
               </dl>
 
               <div class="bk-review-reason">
@@ -336,8 +385,8 @@
           </div>
         </div>
 
-        <!-- ── PASO 6: Confirmación exitosa ─────────────────── -->
-        <div class="bk-step" data-step="6" hidden>
+        <!-- ── PASO 7: Confirmación exitosa ─────────────────── -->
+        <div class="bk-step" data-step="7" hidden>
           <div class="bk-success">
             <div class="bk-success-inner">
 

@@ -212,12 +212,14 @@ function emailV4RefundConfirmed_(eventType, record) {
 }
 
 /**
- * The reservation schema stores no patient name (deliberate minimisation), so
- * most sends have no name to greet. A bare "Hola," addressed nobody and spent a
- * line of vertical space before the message, so it is no longer rendered at all:
- * the email opens on the H1 and goes straight to the lead. When the existing
- * template input does carry a name, the personal greeting renders as before. No
- * name is stored or collected to satisfy this — the input is unchanged.
+ * A bare "Hola," addressed nobody and spent a line of vertical space before the
+ * message, so it is never rendered: with no name the email opens on the H1 and
+ * goes straight to the lead.
+ *
+ * The reservation now stores `patient_name`, so a booking made through the
+ * wizard does carry one and greets by first name. Rows written before that
+ * column existed carry none and still render no greeting row at all — which is
+ * why the empty case stays a supported, tested shape rather than dead code.
  */
 function emailV4Greeting_(record) {
   const raw = String(record && (record.patient_first_name || record.patient_name) || '').trim();

@@ -170,6 +170,9 @@
   text-transform: none; letter-spacing: 0; line-height: 1.5; margin-top: -2px;
 }
 .bk-form .field label { color: var(--ink-2); }
+/* Un RUT tiene un largo conocido: darle el ancho de un correo lo hace parecer
+   un campo mas grande de lo que pide. En movil vuelve a ancho completo. */
+.bk-field-short { max-width: 260px; }
 
 /* Review */
 .bk-review { display: grid; grid-template-columns: 1.5fr 1fr; gap: 24px; }
@@ -199,6 +202,11 @@
   font-weight: 300;
 }
 .bk-review-rule { border: 0; border-top: 1px solid var(--line); margin: 28px 0; }
+.bk-review-group {
+  font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase;
+  color: var(--ink-3); font-family: var(--sans); font-weight: 500;
+  margin: 0 0 18px;
+}
 .bk-review-reason { margin-top: 24px; }
 .bk-review-reason dt {
   font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase;
@@ -386,6 +394,7 @@
   .bk-review { grid-template-columns: 1fr; }
   .bk-review-dl { grid-template-columns: 1fr; gap: 18px; }
   .bk-form-row { grid-template-columns: 1fr; }
+  .bk-field-short { max-width: none; }
   .bk-success-card { grid-template-columns: 1fr 1fr; }
   .em-detail { grid-template-columns: 1fr; }
 }

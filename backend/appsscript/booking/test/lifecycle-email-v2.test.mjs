@@ -242,7 +242,7 @@ function createPayload(n, time, date) {
   return {
     action: 'create_flow_payment', idempotencyKey: idempotencyKey(n), serviceType: n % 2 ? 'followup' : 'initial',
     modality: 'online', date: date || '2026-09-03', time, name: 'Synthetic', email: allowlisted,
-    phone: '', patientRut: '', reason: '', message: '',
+    phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
   };
 }
 function createBooking(n, time, date) {

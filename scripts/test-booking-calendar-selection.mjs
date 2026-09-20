@@ -501,9 +501,19 @@ const isOverview = (url) => url.indexOf('?date=') === -1;
 //    Read from reserva.html, so this is a statement about the shipped page.
 // ---------------------------------------------------------------------------
 {
-  check(TOTAL_STEPS === 6, 'the wizard is six steps — the single-option modality step is gone');
+  // Six wizard steps plus the terminal success screen. The single-option
+  // modality step is still gone; step 5 is the billing group, which is a form
+  // and therefore needs an explicit advance, exactly as step 4 does.
+  check(TOTAL_STEPS === 7, 'the wizard is six steps plus the success screen');
   check(stepHasVisibleNext(2) === false, 'the date step exposes no explicit advance control');
   check(stepHasVisibleNext(3) === false, 'the hour step exposes no explicit advance control');
+  check(stepActions(4).indexOf('submit-form') !== -1,
+    'the contact step advances through its own validation, not a bare next');
+  check(stepActions(5).indexOf('submit-billing') !== -1,
+    'the billing step advances through its own validation, not a bare next');
+  check(stepActions(5).indexOf('prev') !== -1, 'and the billing step still offers Back');
+  check(stepActions(4).indexOf('next') === -1 && stepActions(5).indexOf('next') === -1,
+    'neither form step carries a redundant generic Continue');
   check(stepActions(2).indexOf('prev') !== -1 && stepActions(3).indexOf('prev') !== -1,
     'both still offer Back, which is the only navigation they need');
   // Step 1 keeps a next, but hidden: it is revealed only when a URL prefill has
@@ -726,7 +736,7 @@ console.log('PENDING_OR_FAILED_OVERVIEW_DAY_STATE=unknown');
 console.log('PAST_WEEKEND_HOLIDAY=STILL_DISABLED');
 console.log('HOURS_AUTHORITY=PER_DATE_FETCH_ONLY');
 console.log('HOURS_FAIL_CLOSED=YES');
-console.log('WIZARD_STEPS=' + TOTAL_STEPS + ' HOUR_STEP=3');
+console.log('WIZARD_STEPS=' + TOTAL_STEPS + ' (6 + success) HOUR_STEP=3 BILLING_STEP=5');
 console.log('DATE_AND_HOUR_ADVANCE_CONTROLS=NONE');
 console.log('CHOOSING_IS_ADVANCING=YES (pointer and keyboard)');
 console.log('BACK_NAVIGATION=INTACT');

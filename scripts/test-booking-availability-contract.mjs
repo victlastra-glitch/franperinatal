@@ -160,22 +160,43 @@ check(requested.every((u) => !/[?&](email|token|rut|name)=/i.test(u)),
 check(requested.every((u) => u.indexOf('script.google.com') === -1),
   'and never address the upstream directly');
 
-// --- Data minimisation: the page collects no patient RUT -------------------
-// No current path — availability, reserve, Flow create/verify, Calendar/Meet,
-// notification or management — reads a RUT, and no row stores one, so the page
-// must not ask for one, validate one, or put one in the create request.
-const RUT_PAGE_GUARANTEES = [
-  ['the booking page has no RUT input', (t) => !/id="f-rut"/.test(t)],
-  ['the review summary has no RUT row', (t) => !/id="rv-rut"/.test(t)],
-  ['the booking page never asks for a RUT', (t) => !/\bRUT\b/i.test(t)],
+// --- Billing data: the page collects the boleta trio, in its own step -------
+// The reservation is the record a post-session boleta de honorarios is issued
+// from. The page asks for RUT, dirección and comuna in a step of their own, so
+// the contact step stays short and the purpose of each group is legible.
+const BILLING_PAGE_GUARANTEES = [
+  ['the booking page has a RUT input', (t) => /id="f-rut"[\s\S]*?name="patient_rut"/.test(t)],
+  ['the booking page has an address input', (t) => /id="f-address"[\s\S]*?name="address"/.test(t)],
+  ['the booking page has a comuna input', (t) => /id="f-comuna"[\s\S]*?name="comuna"/.test(t)],
+  ['the billing fields live in their own step, not in the contact step',
+    (t) => /data-step="5"[\s\S]*?id="f-rut"/.test(t) && !/data-step="4"[\s\S]*?id="f-rut"[\s\S]*?data-step="5"/.test(t)],
+  ['the billing step says what the data is for',
+    (t) => /emitir tu boleta de honorarios después de la sesión/.test(t)],
+  ['the review summary shows the billing trio back',
+    (t) => /id="rv-rut"/.test(t) && /id="rv-address"/.test(t) && /id="rv-comuna"/.test(t)],
 ];
-const RUT_SOURCE_GUARANTEES = [
-  ['the page runs no RUT validation', (t) => !/isValidChileanRut|formatRut|cleanRut/.test(t)],
-  ['the create request carries no patientRut', (t) => !/patientRut/.test(t)],
-  ['no RUT rejection code is handled client-side', (t) => !/PATIENT_RUT_REQUIRED|INVALID_PATIENT_RUT/.test(t)],
+const BILLING_SOURCE_GUARANTEES = [
+  ['the page validates the RUT as a courtesy', (t) => /isValidChileanRut/.test(t) && /formatRut/.test(t)],
+  ['the create request carries the billing trio',
+    (t) => /patientRut:\s+patientRut,/.test(t) && /address:\s+state\.form\.address/.test(t)
+      && /comuna:\s+state\.form\.comuna/.test(t)],
+  ['the server rejection codes are handled client-side',
+    (t) => /PATIENT_RUT_REQUIRED/.test(t) && /INVALID_PATIENT_RUT/.test(t)
+      && /BILLING_ADDRESS_REQUIRED/.test(t) && /BILLING_COMUNA_REQUIRED/.test(t)],
 ];
-RUT_PAGE_GUARANTEES.forEach(([message, holds]) => check(holds(page), message));
-RUT_SOURCE_GUARANTEES.forEach(([message, holds]) => check(holds(source), message));
+BILLING_PAGE_GUARANTEES.forEach(([message, holds]) => check(holds(page), message));
+BILLING_SOURCE_GUARANTEES.forEach(([message, holds]) => check(holds(source), message));
+
+// --- Billing data never leaves the booking request -------------------------
+// It is not a funnel dimension and it is not a log line. The analytics call and
+// every console call in booking.js must be free of it.
+const analyticsCalls = source.match(/fbTrack\([\s\S]*?\}\)/g) || [];
+check(analyticsCalls.length >= 1, 'the page still emits a funnel event');
+check(analyticsCalls.every((call) => !/patientRut|address|comuna|state\.form/.test(call)),
+  'no funnel event carries billing data or any form field');
+const consoleCalls = source.match(/console\.[a-z]+\([\s\S]{0,160}?\)/g) || [];
+check(consoleCalls.every((call) => !/patientRut|state\.form|f-rut|f-address|f-comuna/.test(call)),
+  'nothing in booking.js logs a billing field');
 
 // ---------------------------------------------------------------------------
 // Adversarial mutations. A contract written as patterns proves nothing unless
@@ -191,17 +212,27 @@ const mutations = [
     source.replace(/const isoTaken = state\.date \? dateKeyFromDate\(state\.date\) : '';\n(\s*)state\.time = null;/,
       "const isoTaken = state.date ? dateKeyFromDate(state.date) : '';"),
     SLOT_TAKEN_GUARANTEES, 'source'],
-  ['RUT_FIELD_REGROWN',
-    page.replace('<label for="f-phone">Teléfono</label>',
-      '<label for="f-rut">RUT Paciente</label>\n                <input class="input" type="text" id="f-rut" name="patient_rut" required />\n                <label for="f-phone">Teléfono</label>'),
-    RUT_PAGE_GUARANTEES, 'page'],
-  ['RUT_SENT_AGAIN',
-    source.replace('      phone:       state.form.phone,\n',
-      '      phone:       state.form.phone,\n      patientRut:  state.form.patientRut,\n'),
-    RUT_SOURCE_GUARANTEES, 'source'],
+  ['BILLING_RUT_FIELD_REMOVED',
+    page.replace('id="f-rut" name="patient_rut"', 'id="f-rut-disabled" name="patient_rut_disabled"'),
+    BILLING_PAGE_GUARANTEES, 'page'],
+  ['BILLING_STEP_FOLDED_BACK_INTO_CONTACT',
+    page.replace('emitir tu boleta de honorarios después de la sesión', 'coordinar tu sesión'),
+    BILLING_PAGE_GUARANTEES, 'page'],
+  ['BILLING_REVIEW_ROWS_REMOVED',
+    page.replace('<div><dt>Dirección</dt><dd id="rv-address">—</dd></div>', ''),
+    BILLING_PAGE_GUARANTEES, 'page'],
+  ['BILLING_NOT_SENT',
+    source.replace('      patientRut:  patientRut,\n', ''),
+    BILLING_SOURCE_GUARANTEES, 'source'],
+  // Client and server codes drifting apart is the realistic failure: the page
+  // keeps handling a code the server stopped sending, and the person sees the
+  // generic fallback instead of the field that is actually wrong.
+  ['BILLING_REJECTION_CODE_DRIFT',
+    source.replaceAll('BILLING_ADDRESS_REQUIRED', 'BILLING_ADDRESS_MISSING'),
+    BILLING_SOURCE_GUARANTEES, 'source'],
   ['HOUR_STEP_REGROWS_AN_ADVANCE_BUTTON',
-    page.replace('<div class="bk-actions bk-actions--back">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos de contacto',
-      '<div class="bk-actions">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n            <button class="btn btn-primary" data-action="next">Continuar</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos de contacto'),
+    page.replace('<div class="bk-actions bk-actions--back">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos personales',
+      '<div class="bk-actions">\n            <button class="btn btn-ghost" data-action="prev">← Volver</button>\n            <button class="btn btn-primary" data-action="next">Continuar</button>\n          </div>\n        </div>\n\n        <!-- ── PASO 4: Datos personales'),
     STEP_GUARANTEES, 'page'],
 ];
 let detected = 0;

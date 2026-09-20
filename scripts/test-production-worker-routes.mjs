@@ -80,14 +80,15 @@ try {
   assert.equal(Object.hasOwn(managementBody, 'reason'), false, 'management response excludes clinical text');
   console.log('MANAGEMENT_RESPONSE_NO_PII_TEST=PASS');
 
-  // The create contract no longer carries a patient RUT. The key is still
-  // tolerated so a browser holding the previous booking.js across a deploy is
-  // not rejected mid-booking, and it is dropped here rather than forwarded.
+  // The create contract carries the billing trio the post-session boleta needs.
+  // The Worker is a proxy: it forwards them verbatim and decides nothing about
+  // them, and they appear in no response and no log line.
   const createEnv = { APP_ENV: 'production', APPS_SCRIPT_WEB_APP_URL: 'https://script.google.com/macros/s/synthetic/exec' };
   const createBase = {
     idempotencyKey: 'fran-booking-123e4567-e89b-12d3-a456-426614174000',
     serviceType: 'initial', modality: 'online', date: '2026-08-27', time: '10:00',
     name: 'Synthetic Patient', email: 'synthetic@example.test', phone: '+56900000000',
+    patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia',
     reason: 'synthetic reason', message: 'synthetic message',
   };
   const forwardedBodies = [];
@@ -107,30 +108,46 @@ try {
   );
 
   stubCreateUpstream();
-  const withoutRut = await postCreate(workerModule, createBase);
-  assert.equal((await withoutRut.json()).ok, true, 'a create payload with no patientRut is accepted');
-  assert.equal(Object.hasOwn(forwardedBodies[0], 'patientRut'), false,
-    'the forwarded create body carries no patientRut');
+  const withBilling = await postCreate(workerModule, createBase);
+  assert.equal((await withBilling.json()).ok, true, 'a create payload carrying billing data is accepted');
+  assert.equal(forwardedBodies[0].patientRut, '11.111.111-1',
+    'the forwarded create body carries the RUT verbatim');
+  assert.equal(forwardedBodies[0].address, 'Calle Sintetica 123',
+    'the forwarded create body carries the address verbatim');
+  assert.equal(forwardedBodies[0].comuna, 'Providencia',
+    'the forwarded create body carries the comuna verbatim');
 
-  const legacyRut = await postCreate(workerModule, { ...createBase, patientRut: '11.111.111-1' });
-  assert.equal((await legacyRut.json()).ok, true,
-    'a legacy create payload still carrying patientRut is not rejected');
-  assert.equal(Object.hasOwn(forwardedBodies[1], 'patientRut'), false,
-    'a supplied patientRut is dropped at the Worker and never forwarded upstream');
-  assert.deepEqual(forwardedBodies[1], forwardedBodies[0],
-    'a supplied patientRut changes nothing about what is forwarded');
-  console.log('CREATE_REQUEST_NO_PATIENT_RUT_TEST=PASS');
+  // The Worker forwards; it does not judge. An unparseable RUT is the upstream's
+  // decision, and inventing a second verdict here is the defect this asserts away.
+  const badRut = await postCreate(workerModule, { ...createBase, patientRut: 'not-a-rut' });
+  assert.equal(badRut.status, 200, 'the Worker does not reject a RUT on its own authority');
+  assert.equal(forwardedBodies[1].patientRut, 'not-a-rut',
+    'and it forwards the value it was given, unchanged, for the server to refuse');
 
-  // Adversarial mutation: reinstating the field must be visible downstream.
-  const recollectSource = workerSource.replace("'phone', 'reason', 'message'", "'phone', 'patientRut', 'reason', 'message'");
-  assert.notEqual(recollectSource, workerSource, 'mutation target present in _worker.js');
-  const recollectModule = await import(`data:text/javascript;base64,${Buffer.from(recollectSource).toString('base64')}`);
+  // An unknown key is still refused: widening the contract stays deliberate.
+  const unknownKey = await postCreate(workerModule, { ...createBase, giro: 'synthetic' });
+  assert.equal(unknownKey.status, 400, 'an unlisted create field is still rejected');
+  console.log('CREATE_REQUEST_BILLING_FORWARDED_TEST=PASS');
+
+  // The response the browser gets is unchanged by any of it.
+  const createBody = await (await postCreate(workerModule, {
+    ...createBase, idempotencyKey: 'fran-booking-123e4567-e89b-12d3-a456-4266141740ff',
+  })).json();
+  ['patientRut', 'address', 'comuna', 'name', 'email', 'phone', 'reason', 'message']
+    .forEach((field) => assert.equal(Object.hasOwn(createBody, field), false,
+      `the create response never echoes ${field}`));
+  console.log('CREATE_RESPONSE_NO_BILLING_ECHO_TEST=PASS');
+
+  // Adversarial mutation: dropping the field must be visible downstream.
+  const droppedSource = workerSource.replace("'phone', 'patientRut', 'address', 'comuna', 'reason', 'message'", "'phone', 'reason', 'message'");
+  assert.notEqual(droppedSource, workerSource, 'mutation target present in _worker.js');
+  const droppedModule = await import(`data:text/javascript;base64,${Buffer.from(droppedSource).toString('base64')}`);
   forwardedBodies.length = 0;
   stubCreateUpstream();
-  await postCreate(recollectModule, { ...createBase, patientRut: '11.111.111-1' });
-  assert.equal(forwardedBodies[0].patientRut, '11.111.111-1',
-    'reinstating patientRut in CREATE_FIELDS must forward it upstream');
-  console.log('MUTATION_WORKER_PATIENT_RUT_RECOLLECTED=DETECTED');
+  const droppedResponse = await postCreate(droppedModule, createBase);
+  assert.equal(droppedResponse.status, 400,
+    'removing patientRut/address/comuna from CREATE_FIELDS must reject the browser that sends them');
+  console.log('MUTATION_WORKER_BILLING_FIELDS_DROPPED=DETECTED');
 
   const availabilityCall = workerSource.indexOf(
     'productionUpstream(env)',
