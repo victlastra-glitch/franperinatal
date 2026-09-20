@@ -850,15 +850,34 @@ function expireUnpaidHoldRecord_(sheet, schema, record, nowMs) {
   return Object.assign(record, updates);
 }
 
-function expireUnpaidHolds_(sheet, schema, nowMs) {
-  reservationRecords_(sheet, schema).forEach(function(record) {
+/**
+ * Sweep an ALREADY-LOADED reservation collection for expired unpaid holds.
+ *
+ * expireUnpaidHoldRecord_ persists each transition to the sheet and mirrors the
+ * same fields back onto the record it was handed, so the returned collection is
+ * the post-expiry state — exactly what a re-read of the sheet would report for
+ * every field slot occupancy depends on. A caller that already holds the
+ * records therefore does not need a second full read to see the effect.
+ */
+function expireUnpaidHoldsIn_(sheet, schema, records, nowMs) {
+  const loaded = Array.isArray(records) ? records : [];
+  loaded.forEach(function(record) {
     expireUnpaidHoldRecord_(sheet, schema, record, nowMs);
   });
+  return loaded;
+}
+
+function expireUnpaidHolds_(sheet, schema, nowMs) {
+  return expireUnpaidHoldsIn_(sheet, schema, reservationRecords_(sheet, schema), nowMs);
 }
 
 function availability_(e) {
   const config = readConfig_(); const resources = assertResources_(config); const schema = assertSchema_(resources.sheet);
-  expireUnpaidHolds_(resources.sheet, schema);
+  // One full reservation read serves this whole request. The sweep persists any
+  // expired unpaid hold exactly as before and hands back the same collection,
+  // already carrying those transitions, for the occupancy calculation below —
+  // which used to re-read the entire sheet only to observe them.
+  const reservations = expireUnpaidHoldsIn_(resources.sheet, schema, reservationRecords_(resources.sheet, schema));
   const requestedDate = String((e.parameter || {}).date || ''); if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) fail_('REQUEST_REJECTED');
   const bounds = availabilityBounds_(requestedDate);
   let busyIntervals;
@@ -867,7 +886,7 @@ function availability_(e) {
   const occupied = computeOccupiedSlots_({
     workingSlots: workingSlots_(bounds.start, bounds.end, requestedDate),
     busyIntervals: busyIntervals,
-    reservations: reservationRecords_(resources.sheet, schema),
+    reservations: reservations,
     // Server time, canonical constant, same comparison as assertBookableSlot_.
     // A slot inside the lead time is withheld here as well as refused on
     // submit, so the picker never offers an hour the server would reject.
