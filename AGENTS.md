@@ -59,10 +59,10 @@ if present, never cite them as authority in code, a commit, a PR or a skill.
    `/macros/s/<id>/exec` URL. Never log patient data or a raw capability bearer.
 6. Non-production artefacts never enter a Production runtime file.
 7. The reservation schema is append-only, never reordered or renamed. Count
-   carefully: `RESERVATION_HEADERS` is **58** V2 lifecycle columns, addressed by
+   carefully: `RESERVATION_HEADERS` is **65** V2 lifecycle columns, addressed by
    name; the live sheet is `v7_compat` and physically wider, because it still
    carries its legacy Google Form and Flow columns. The physical width is not the
-   schema width.
+   schema width. `PRODUCTION_RC_RUNBOOK.md` §2.3a owns the current append plan.
 8. No deploy, clasp push, trigger install, `wrangler` publish, provider E2E,
    real charge, real refund, real email or Production write without explicit human
    authorization **for that specific action**. Approval of one step never carries to
