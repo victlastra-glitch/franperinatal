@@ -99,7 +99,7 @@ function createHold(h, n, date, time) {
   const created = h.context.createFlowPayment_({ postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey: idempotencyKey(n), serviceType: 'initial',
     modality: 'online', date, time, name: 'Synthetic', email: PATIENT_EMAIL,
-    phone: '', patientRut: '', reason: '', message: '',
+    phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
   }) } });
   if (!created.ok) throw new Error('fixture hold rejected: ' + JSON.stringify(created));
   return h.currentRows().find((row) => row.idempotency_key === idempotencyKey(n));
