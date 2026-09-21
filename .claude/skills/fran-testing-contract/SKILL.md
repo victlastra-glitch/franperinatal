@@ -44,6 +44,7 @@ workstation clock or that needs dates bumped each week. The two policy suites sh
 | Deployable fileset / clasp | `clasp-fileset-release-gate`, `clasp-staging-release-gate`, `scripts/assert-production-clasp-staging-gate.mjs` |
 | Runtime files or nonprod risk | `scripts/assert-production-contamination-firewall.mjs` |
 | `.html` / `assets/**` | contamination firewall, `test-manage-contract` and `test-manage-cancellation-ui` if `manage.html`, plus browser verification |
+| EPDS: `recursos/test-edimburgo.html`, `assets/epds-scoring.js` | `scripts/test-epds-interpretation.mjs` (matriz clínica + mutaciones), `scripts/test-epds-browser.mjs` (UX, teclado y privacidad de red) |
 | Agent instructions or skills | `node scripts/assert-agent-skills-parity.mjs` |
 | Release candidate | the full list in the canonical doc |
 

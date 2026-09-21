@@ -474,7 +474,7 @@ const bookTooSoon = () => availabilityHarness.context.createFlowPayment_({
   postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey: 'fran-booking-cccccc01-e89b-12d3-a456-426614174000',
     serviceType: 'initial', modality: 'online', date: '2026-09-25', time: '10:00',
-    name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+    name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
   }) },
 });
 assert.throws(bookTooSoon, /REQUEST_REJECTED/);
@@ -487,7 +487,7 @@ const bookBoundary = availabilityHarness.context.createFlowPayment_({
   postData: { contents: JSON.stringify({
     action: 'create_flow_payment', idempotencyKey: 'fran-booking-cccccc02-e89b-12d3-a456-426614174000',
     serviceType: 'initial', modality: 'online', date: '2026-09-25', time: '12:00',
-    name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+    name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
   }) },
 });
 check(bookBoundary.ok === true && availabilityHarness.currentRows().length === 1,

@@ -496,13 +496,16 @@ liveSheet._headers.forEach(() => {});
 const liveInspect = compat.inspectReservationSchema_(liveSheet, { sheetName: 'reservations' });
 check(liveInspect.kind === 'v7_compat', 'the live shape inspects as v7_compat');
 check(liveInspect.physicalHeaders.length === 90, 'PHYSICAL_SHEET_COLUMNS is 90');
-check(phase.HEADERS.length === 58, 'V2_LOGICAL_COLUMNS is 58 in this release');
+check(phase.HEADERS.length === 65, 'V2_LOGICAL_COLUMNS is 65 in this release');
 
 // This is the pre-migration state: the appended column does not exist yet, so
 // business writes must be refused while the dry run still works.
 const liveMissing = phase.HEADERS.filter((header) => liveInspect.physicalHeaders.indexOf(header) === -1);
-check(JSON.stringify(liveMissing) === JSON.stringify(['transaction_amount_clp']),
-  'exactly the column this release appends is missing');
+check(JSON.stringify(liveMissing) === JSON.stringify([
+  'transaction_amount_clp',
+  'patient_name', 'patient_phone', 'patient_motivo', 'patient_notes',
+  'billing_rut', 'billing_address', 'billing_comuna',
+]), 'exactly the columns this release appends are missing');
 assert.throws(() => compat.assertSchema_(liveSheet), /SCHEMA_NOT_READY/);
 assertions += 1;
 

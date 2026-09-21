@@ -46,17 +46,25 @@ const emailFor = (h, record, eventType) => {
 };
 
 // ---------------------------------------------------------------------------
-// Schema: append-only, column 58.
+// Schema: append-only. transaction_amount_clp is column 58 and stays there; a
+// later release appended the administrative/billing columns AFTER it, which is
+// what append-only means. The assertion is its INDEX, not "is last": pinning it
+// to the tail would make every future append look like a violation.
 // ---------------------------------------------------------------------------
 const base = buildHarness(null);
 const headers = base.phase.HEADERS;
-check(headers.length === 58, 'schema is 58 columns after the append-only addition');
-check(headers[headers.length - 1] === 'transaction_amount_clp',
-  'transaction_amount_clp is appended last, never inserted');
+check(headers.length === 65, 'schema is 65 columns after the append-only additions');
+check(headers.indexOf('transaction_amount_clp') === 57,
+  'transaction_amount_clp is column 58, never inserted or moved');
+check(JSON.stringify(headers.slice(57)) === JSON.stringify([
+  'transaction_amount_clp',
+  'patient_name', 'patient_phone', 'patient_motivo', 'patient_notes',
+  'billing_rut', 'billing_address', 'billing_comuna',
+]), 'everything added since column 58 sits after it, in append order');
 check(new Set(headers).size === headers.length, 'no duplicate column names');
 ['reservation_id', 'commerce_order', 'payment_status', 'refund_status', 'created_at', 'updated_at']
-  .forEach((column) => check(headers.indexOf(column) !== -1 && headers.indexOf(column) < headers.length - 1,
-    'pre-existing column "' + column + '" keeps its position ahead of the appended one'));
+  .forEach((column) => check(headers.indexOf(column) !== -1 && headers.indexOf(column) < 57,
+    'pre-existing column "' + column + '" keeps its position ahead of the appended ones'));
 
 // ---------------------------------------------------------------------------
 // The three accessors, in isolation.
@@ -179,7 +187,7 @@ c.setNow(Date.parse(c.phase.startAt_('2026-09-24', '15:00')) - 10 * DAY_MS);
 const cCreated = c.context.createFlowPayment_({ postData: { contents: JSON.stringify({
   action: 'create_flow_payment', idempotencyKey: 'fran-booking-bbbbbb72-e89b-12d3-a456-426614174000',
   serviceType: 'initial', modality: 'online', date: '2026-09-24', time: '15:00',
-  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
 }) } });
 check(cCreated.ok === true, 'C: the reservation was created');
 const cRow = () => c.currentRows().find((row) => row.reservation_id === c.currentRows()[0].reservation_id);
@@ -292,7 +300,7 @@ g.setNow(Date.parse(g.phase.startAt_('2026-09-30', '11:00')) - 10 * DAY_MS);
 const gCreated = g.context.createFlowPayment_({ postData: { contents: JSON.stringify({
   action: 'create_flow_payment', idempotencyKey: 'fran-booking-bbbbbb50-e89b-12d3-a456-426614174000',
   serviceType: 'initial', modality: 'online', date: '2026-09-30', time: '11:00',
-  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
 }) } });
 check(gCreated.ok === true, 'G(b): the booking was created');
 const gRow = () => g.rowFor(50);
@@ -322,7 +330,7 @@ gLane.setNow(Date.parse(gLane.phase.startAt_('2026-09-30', '12:00')) - 10 * DAY_
 gLane.context.createFlowPayment_({ postData: { contents: JSON.stringify({
   action: 'create_flow_payment', idempotencyKey: 'fran-booking-bbbbbb51-e89b-12d3-a456-426614174000',
   serviceType: 'initial', modality: 'online', date: '2026-09-30', time: '12:00',
-  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
 }) } });
 const laneRow = gLane.rowFor(51);
 laneRow.transaction_amount_clp = '500';          // as a 500-lane reservation reads
@@ -338,7 +346,7 @@ gLegacy.setNow(Date.parse(gLegacy.phase.startAt_('2026-09-30', '13:00')) - 10 * 
 gLegacy.context.createFlowPayment_({ postData: { contents: JSON.stringify({
   action: 'create_flow_payment', idempotencyKey: 'fran-booking-bbbbbb52-e89b-12d3-a456-426614174000',
   serviceType: 'initial', modality: 'online', date: '2026-09-30', time: '13:00',
-  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '', reason: '', message: '',
+  name: 'Synthetic', email: 'paciente@example.test', phone: '', patientRut: '11.111.111-1', address: 'Calle Sintetica 123', comuna: 'Providencia', reason: '', message: '',
 }) } });
 const legacyRow = gLegacy.rowFor(52);
 legacyRow.transaction_amount_clp = '';
@@ -571,7 +579,7 @@ console.log('TRANSACTION_AMOUNT_INTEGRITY=PASS assertions=' + assertions);
 console.log('REFUND_USES_TRANSACTION_AMOUNT=PASS');
 console.log('EMAIL_USES_TRANSACTION_AMOUNT=PASS');
 console.log('PROVIDER_AMOUNT_RECONCILIATION=PASS');
-console.log('SCHEMA_COLUMNS=58 APPEND_ONLY=YES');
+console.log('SCHEMA_COLUMNS=65 APPEND_ONLY=YES');
 console.log('CATALOG_PRICE_CLP=50000 TRANSACTION_AMOUNT_SOURCE=transaction_amount_clp');
 console.log('CATALOG_FALLBACK_ON_EXISTING_PAYMENT=NO');
 console.log('MISSING_PROVIDER_CURRENCY_FAILS_CLOSED=YES');

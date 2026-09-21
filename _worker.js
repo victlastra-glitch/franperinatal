@@ -95,12 +95,19 @@ async function handleAvailability(request, env) {
   return jsonResp({ ok: true, slots: slots }, 200);
 }
 
-const CREATE_FIELDS = new Set(['idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'patientRut', 'reason', 'message']);
+// The create contract. `patientRut`, `address` and `comuna` are billing details
+// the post-session boleta needs: forwarded upstream, stored on the reservation,
+// and absent from every response allowlist and every log line in this file.
+const CREATE_FIELDS = new Set(['idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone', 'patientRut', 'address', 'comuna', 'reason', 'message']);
+// Retired input keys: tolerated so a browser holding a previous booking.js
+// across a deploy is not rejected mid-booking, and dropped rather than
+// forwarded. Empty today; the mechanism stays so retiring a key stays cheap.
+const CREATE_RETIRED_FIELDS = new Set([]);
 
 function validCreatePayload(value) {
   if (!value || Array.isArray(value) || typeof value !== 'object') return null;
   const keys = Object.keys(value);
-  if (keys.some((key) => !CREATE_FIELDS.has(key))) return null;
+  if (keys.some((key) => !CREATE_FIELDS.has(key) && !CREATE_RETIRED_FIELDS.has(key))) return null;
   const payload = {};
   for (const key of CREATE_FIELDS) {
     const field = value[key] == null ? '' : String(value[key]).trim();

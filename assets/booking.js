@@ -1,5 +1,5 @@
 ﻿// ============================================================
-// BOOKING FLOW — 7 steps, state machine with live summary
+// BOOKING FLOW — 6 wizard steps + success, state machine with live summary
 // v19 PRODUCTION (Web 04.9 cutover): Flow API integration.
 // Promoted from the Web 04.x preview track; all preview URLs scrubbed.
 // ============================================================
@@ -12,10 +12,15 @@
     createFlowPayment: '/api/create-flow-payment',
   });
 
+  // La única modalidad publicada es online. Dejó de ser un paso del asistente
+  // (era una sola opción ya marcada que aun así pedía "Continuar"); sigue
+  // siendo el mismo valor en el payload de /api/create-flow-payment.
+  const MODALITY_ONLINE = Object.freeze({ value: "online", label: "Online" });
+
   const state = {
     step: 1,
     service: null,
-    modality: { value: "online", label: "Online" },
+    modality: MODALITY_ONLINE,
     date: null,       // Date object
     time: null,       // "10:00"
     form: {},
@@ -84,16 +89,16 @@
           bookedSlots = slots;
           slotsLoaded = true;
           overviewFailed = false;
-          if (state.step === 3) renderCalendar();
-          if (state.step === 4) renderSlots();
+          if (state.step === 2) renderCalendar();
+          if (state.step === 3) renderSlots();
           return;
         }
       }
     } catch (_) {}
     overviewFailed = true;
     slotsLoaded = true;
-    if (state.step === 3) renderCalendar();
-    if (state.step === 4) renderSlots();
+    if (state.step === 2) renderCalendar();
+    if (state.step === 3) renderSlots();
   }
 
   /**
@@ -124,7 +129,7 @@
     } catch (_) {}
     if (!ok) confirmedDates.delete(iso);
     pendingDates.delete(iso);
-    if (state.step === 4) renderSlots();
+    if (state.step === 3) renderSlots();
     return ok;
   }
   fetchOverview();
@@ -166,14 +171,36 @@
   }
 
   // ------- Step 1: Service -------
-  // Usamos pointerdown en el label contenedor porque ese evento dispara ANTES que change.
-  // click en el input llega DESPUÉS del change cuando el input está dentro de un label.
-  let serviceClickedByPointer = false;
+  // El paso consiste en UNA elección sin ambigüedad, así que elegir es avanzar:
+  // no hay un "Continuar" que confirme lo que la persona ya dijo.
+  //
+  // Puntero: usamos pointerdown en el label contenedor porque ese evento dispara
+  // ANTES que change (click en el input llega DESPUÉS del change cuando el input
+  // vive dentro de un label).
+  //
+  // Teclado: las flechas recorren el radiogroup SIN avanzar —hace falta poder
+  // mirar las dos opciones— y Enter/Espacio confirman y avanzan, que es el
+  // equivalente exacto del clic.
+  let serviceChosenByGesture = false;
 
   stage.querySelectorAll('input[name="service"]').forEach(inp => {
     const labelService = inp.closest('label') || inp.parentElement;
     labelService.addEventListener("pointerdown", () => {
-      serviceClickedByPointer = true;
+      serviceChosenByGesture = true;
+    });
+    inp.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " " && event.key !== "Spacebar") return;
+      event.preventDefault();
+      serviceChosenByGesture = true;
+      if (inp.checked) {
+        // Espacio sobre un radio ya marcado no emite change: avanzamos igual.
+        updateSummary();
+        serviceChosenByGesture = false;
+        scheduleAdvance(2);
+        return;
+      }
+      inp.checked = true;
+      inp.dispatchEvent(new Event("change", { bubbles: true }));
     });
     inp.addEventListener("change", () => {
       state.service = {
@@ -182,43 +209,17 @@
         duration: inp.dataset.duration,
         price: inp.dataset.price,
       };
-      enableNext(1);
       updateSummary();
-      if (serviceClickedByPointer) {
-        serviceClickedByPointer = false;
+      if (serviceChosenByGesture) {
+        serviceChosenByGesture = false;
         scheduleAdvance(2);
       }
     });
   });
 
-  // ------- Step 2: modalidad online -------
-  let modalityClickedByPointer = false;
-
-  stage.querySelectorAll('input[name="modality"]').forEach(inp => {
-    const labelModality = inp.closest('label') || inp.parentElement;
-    labelModality.addEventListener("pointerdown", () => {
-      modalityClickedByPointer = true;
-    });
-    inp.addEventListener("change", () => {
-      const previousValue = state.modality && state.modality.value;
-      state.modality = { value: inp.value, label: inp.dataset.label };
-      if (previousValue && previousValue !== inp.value) {
-        state.date = null;
-        state.time = null;
-      }
-      enableNext(2);
-      updateSummary();
-      if (modalityClickedByPointer) {
-        modalityClickedByPointer = false;
-        scheduleAdvance(3);
-      }
-    });
-  });
-  // La única modalidad publicada es online, por lo que el paso queda listo
-  // sin requerir una interacción adicional de la persona usuaria.
-  enableNext(2);
-
-  // ------- Web 04.11: helpers para RUT chileno (validación módulo 11) -------
+  // ------- Helpers para RUT chileno (validación módulo 11) -------
+  // Cortesía para la persona que escribe: el servidor vuelve a decidir sobre el
+  // mismo RUT en parseCreatePayload_ y su veredicto es el único que manda.
   function cleanRut(rut) {
     return String(rut || '').replace(/[\s.\-]/g, '').toUpperCase();
   }
@@ -255,13 +256,11 @@
     }
     return formatted + '-' + dv;
   }
-  // Limpiar validity custom del RUT cuando el usuario edita
-  const _rutInputEl = document.getElementById("f-rut");
-  if (_rutInputEl) {
-    _rutInputEl.addEventListener("input", function() {
-      _rutInputEl.setCustomValidity("");
-    });
-  }
+  // Limpiar validity custom mientras se edita cualquier campo de boleta.
+  ['f-rut', 'f-address', 'f-comuna'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('input', function () { el.setCustomValidity(''); });
+  });
 
   // ------- Step 3: Calendar -------
   let calYear, calMonth;
@@ -390,9 +389,8 @@
         // el paso de hora la muestre. La vista general sólo atenúa el calendario.
         fetchDate(iso, false);
         renderCalendar();
-        enableNext(3);
         updateSummary();
-        scheduleAdvance(4); // autoavance al paso de horario
+        scheduleAdvance(3); // elegir el día avanza al paso de horario
       });
       grid.appendChild(btn);
     }
@@ -417,15 +415,14 @@
     // el servidor va a rechazar.
     if (!confirmedDates.has(isoForGuard)) {
       state.time = null;
-      enableNext(4, false);
       // Una sola lectura autoritativa por fecha, y ningún reintento automático.
       // La versión anterior volvía a llamar a fetchDate() desde aquí cada vez
       // que la fecha no estaba confirmada, y como fetchDate() termina llamando
       // a renderSlots(), un endpoint caído se convertía en un bucle de
       // peticiones sin límite (incidente 2026-09-18). Si la fecha nunca se ha
-      // pedido — por ejemplo al volver al paso 4 sin pasar por el calendario —
-      // se arranca aquí exactamente una vez; si ya se pidió y falló, el
-      // reintento lo decide la paciente con un botón explícito.
+      // pedido — por ejemplo al volver al paso de horario sin pasar por el
+      // calendario — se arranca aquí exactamente una vez; si ya se pidió y
+      // falló, el reintento lo decide la paciente con un botón explícito.
       if (!pendingDates.has(isoForGuard) && !attemptedDates.has(isoForGuard)) {
         fetchDate(isoForGuard, true);
       }
@@ -485,41 +482,37 @@
       btn.addEventListener("click", () => {
         state.time = s;
         renderSlots();
-        enableNext(4);
         updateSummary();
-        scheduleAdvance(5); // autoavance al formulario de datos
+        scheduleAdvance(4); // elegir la hora avanza al formulario de datos
       });
       host.appendChild(btn);
     });
   }
 
-  // ------- Step 5: captura formulario -------
-  // Web 04.11: RUT y Teléfono ahora obligatorios. RUT con validación módulo 11.
+  // ------- Step 4: captura datos personales -------
+  // Teléfono obligatorio. El RUT y la dirección viven en el paso siguiente:
+  // son datos de boleta, no de contacto, y separarlos deja cada paso corto.
   function captureForm() {
     const f = document.getElementById("bk-form");
     const fd = new FormData(f);
     const phoneRaw    = fd.get("phone") || "";
     const phoneDigits = phoneRaw.replace(/\D/g, "");
     const phoneEl     = document.getElementById("f-phone");
-    const rutRaw      = fd.get("patient_rut") || "";
-    const rutEl       = document.getElementById("f-rut");
     const nameEl      = document.getElementById("f-name");
     const emailEl     = document.getElementById("f-email");
 
     // Limpiar validity previo en todos los campos relevantes
     if (phoneEl) phoneEl.setCustomValidity("");
-    if (rutEl)   rutEl.setCustomValidity("");
     if (nameEl)  nameEl.setCustomValidity("");
     if (emailEl) emailEl.setCustomValidity("");
 
-    state.form = {
+    state.form = Object.assign({}, state.form, {
       name:             fd.get("name"),
       email:            fd.get("email"),
       phone:            phoneRaw,
-      patientRut:       rutRaw,
       motivo_principal: fd.get("motivo_principal") || "",
       reason:           fd.get("reason") || "",
-    };
+    });
     // A changed form is a new booking attempt. Retries from step 6 retain the
     // same opaque key and cannot derive an identity from patient data.
     state.idempotencyKey = null;
@@ -527,7 +520,6 @@
     const nameVal  = (state.form.name  || "").trim();
     const emailVal = (state.form.email || "").trim();
     const phoneTrimmed = String(phoneRaw).trim();
-    const rutTrimmed   = String(rutRaw).trim();
     let hasError = false;
 
     if (!nameVal) {
@@ -546,14 +538,6 @@
       if (phoneEl) phoneEl.setCustomValidity("Ingresa un teléfono válido con al menos 9 números.");
       hasError = true;
     }
-    // RUT: obligatorio + validación módulo 11 (acepta con/sin puntos o guion)
-    if (!rutTrimmed) {
-      if (rutEl) rutEl.setCustomValidity("Ingresa un RUT válido para emisión de boleta.");
-      hasError = true;
-    } else if (!isValidChileanRut(rutTrimmed)) {
-      if (rutEl) rutEl.setCustomValidity("Ingresa un RUT válido para emisión de boleta.");
-      hasError = true;
-    }
 
     if (hasError) return false;
     return f.checkValidity();
@@ -563,6 +547,65 @@
     cancelScheduledAdvance();
     if (!captureForm()) {
       document.getElementById("bk-form").reportValidity();
+      return false;
+    }
+    go(5);
+    return true;
+  }
+
+  // ------- Step 5: captura datos de boleta -------
+  // Los tres campos que la boleta de honorarios posterior necesita. El RUT se
+  // valida con módulo 11 aquí sólo para avisar antes de enviar; la decisión
+  // vuelve a tomarse en el servidor.
+  function captureBilling() {
+    const f = document.getElementById("bk-billing");
+    const fd = new FormData(f);
+    const rutRaw     = fd.get("patient_rut") || "";
+    const addressRaw = fd.get("address") || "";
+    const comunaRaw  = fd.get("comuna") || "";
+    const rutEl     = document.getElementById("f-rut");
+    const addressEl = document.getElementById("f-address");
+    const comunaEl  = document.getElementById("f-comuna");
+
+    if (rutEl)     rutEl.setCustomValidity("");
+    if (addressEl) addressEl.setCustomValidity("");
+    if (comunaEl)  comunaEl.setCustomValidity("");
+
+    state.form = Object.assign({}, state.form, {
+      patientRut: rutRaw,
+      address:    String(addressRaw).trim(),
+      comuna:     String(comunaRaw).trim(),
+    });
+    // Cambiar los datos es un intento de reserva nuevo.
+    state.idempotencyKey = null;
+
+    const rutTrimmed = String(rutRaw).trim();
+    let hasError = false;
+
+    if (!rutTrimmed) {
+      if (rutEl) rutEl.setCustomValidity("Ingresa tu RUT para la emisión de la boleta.");
+      hasError = true;
+    } else if (!isValidChileanRut(rutTrimmed)) {
+      if (rutEl) rutEl.setCustomValidity("Revisa tu RUT: el dígito verificador no calza.");
+      hasError = true;
+    }
+    if (!state.form.address) {
+      if (addressEl) addressEl.setCustomValidity("Ingresa tu dirección.");
+      hasError = true;
+    }
+    if (!state.form.comuna) {
+      if (comunaEl) comunaEl.setCustomValidity("Ingresa tu comuna.");
+      hasError = true;
+    }
+
+    if (hasError) return false;
+    return f.checkValidity();
+  }
+
+  function submitBillingStep() {
+    cancelScheduledAdvance();
+    if (!captureBilling()) {
+      document.getElementById("bk-billing").reportValidity();
       return false;
     }
     go(6);
@@ -580,12 +623,19 @@
       else if (a === "prev") go(state.step - 1);
       else if (a === "submit-form") {
         submitFormStep();
+      } else if (a === "submit-billing") {
+        submitBillingStep();
       } else if (a === "confirm") {
         await confirmReservation(btn);
       } else if (a === "restart") {
-        Object.assign(state, { step: 1, service: null, modality: null, date: null, time: null, form: {}, reservationId: null, confirmation: null, idempotencyKey: null });
-        document.querySelectorAll('input[name="service"], input[name="modality"]').forEach(i => i.checked = false);
+        // modality vuelve a su constante, no a null: fillReview() y fillSuccess()
+        // leen state.modality.label y un null los rompía en la segunda reserva.
+        Object.assign(state, { step: 1, service: null, modality: MODALITY_ONLINE, date: null, time: null, form: {}, reservationId: null, confirmation: null, idempotencyKey: null });
+        document.querySelectorAll('input[name="service"]').forEach(i => { i.checked = false; });
+        const step1Actions = stage.querySelector('[data-step1-actions]');
+        if (step1Actions) step1Actions.hidden = true;
         document.getElementById("bk-form").reset();
+        document.getElementById("bk-billing").reset();
         go(1);
       }
     });
@@ -618,18 +668,12 @@
     const fechaISO = dateKeyFromDate(state.date);
     const horaISO  = (state.time || '').toString();
 
-    // Web 04.11: RUT obligatorio (ya validado en captureForm con dígito verificador).
-    // Enviamos el formato canónico con puntos y guion: 12.345.678-9.
-    const rutEl = document.getElementById('f-rut');
-    const rutRawForSend = rutEl ? (rutEl.value || '').trim() : '';
+    // RUT en formato canónico (12.345.678-9) cuando pasa módulo 11; en caso
+    // contrario tal cual se escribió, y el servidor lo rechaza.
+    const rutRawForSend = (state.form.patientRut || '').trim();
     const patientRut = rutRawForSend && isValidChileanRut(rutRawForSend)
       ? formatRut(rutRawForSend)
       : rutRawForSend;
-
-    const motivoParts = [
-      state.form.motivo_principal,
-      state.form.reason,
-    ].map(s => (s || '').trim()).filter(s => s.length > 0);
 
     const payload = {
       idempotencyKey: bookingIdempotencyKey(),
@@ -641,11 +685,16 @@
       email:       state.form.email,
       phone:       state.form.phone,
       patientRut:  patientRut,
-      reason:      motivoParts.join(' — '),
+      address:     state.form.address || '',
+      comuna:      state.form.comuna || '',
+      // Dos campos distintos, guardados por separado: el motivo elegido y lo
+      // que la persona escribió. Antes viajaban concatenados en `reason`.
+      reason:      state.form.motivo_principal || '',
       message:     state.form.reason || '',
     };
 
-    // Funnel event only: no name, email, phone, RUT, free text or token.
+    // Funnel event only: no name, email, phone, RUT, dirección, comuna, free
+    // text or token — sólo tipo de sesión y modalidad.
     if (typeof window.fbTrack === 'function') {
       window.fbTrack('payment_started', {
         service_type: serviceType,
@@ -667,14 +716,16 @@
         if (code === 'SLOT_TAKEN')         msg = 'Ese horario ya fue reservado. Elige otro para continuar.';
         else if (code === 'INVALID_PHONE') msg = 'Ingresa un teléfono válido con al menos 9 números.';
         else if (code === 'PHONE_REQUIRED') msg = 'Ingresa un teléfono de contacto.';
-        else if (code === 'PATIENT_RUT_REQUIRED') msg = 'Ingresa tu RUT para emisión de boleta.';
-        else if (code === 'INVALID_PATIENT_RUT')  msg = 'Ingresa un RUT válido para emisión de boleta.';
+        else if (code === 'PATIENT_RUT_REQUIRED') msg = 'Ingresa tu RUT para la emisión de la boleta.';
+        else if (code === 'INVALID_PATIENT_RUT')  msg = 'Revisa tu RUT: el dígito verificador no calza.';
+        else if (code === 'BILLING_ADDRESS_REQUIRED') msg = 'Ingresa tu dirección para la emisión de la boleta.';
+        else if (code === 'BILLING_COMUNA_REQUIRED')  msg = 'Ingresa tu comuna para la emisión de la boleta.';
         else if (code === 'ONLINE_ONLY') msg = 'La atención se realiza exclusivamente online.';
         else if (code === 'INVALID_SERVICE') msg = 'Servicio no válido. Recarga la página.';
         else if (code === 'INVALID_DATETIME') msg = 'Fecha u hora inválida. Vuelve a elegir.';
         else if (code === 'MISSING_REQUIRED') msg = result.message || 'Completa nombre y correo.';
         else if (code === 'FLOW_CREATE_FAILED') msg = 'No pudimos iniciar el pago en Flow. Revisa tus datos o intenta nuevamente en unos minutos.';
-        else if (code === 'CONFIG_MISSING') msg = 'Configuración pendiente. Contáctanos por WhatsApp.';
+        else if (code === 'CONFIG_MISSING') msg = 'Configuración pendiente. Escríbenos a hola@franciscabustos.cl.';
         else if (code === 'SERVER_ERROR')   msg = 'Tuvimos un problema en el servidor. Intenta nuevamente o escríbenos.';
         else msg = result.message || result.error || 'No pudimos iniciar el pago. Intenta nuevamente.';
 
@@ -693,12 +744,15 @@
           const isoTaken = state.date ? dateKeyFromDate(state.date) : '';
           state.time = null;
           confirmedDates.delete(isoTaken);
-          enableNext(4, false);
           updateSummary();
           fetchDate(isoTaken, true);
-          setTimeout(() => go(4), 1500);
-        } else if (code === 'PATIENT_RUT_REQUIRED' || code === 'INVALID_PATIENT_RUT' || code === 'PHONE_REQUIRED') {
-          // Volver al formulario de datos
+          setTimeout(() => go(3), 1500);
+        } else if (code === 'PHONE_REQUIRED') {
+          // Volver al formulario de datos personales
+          setTimeout(() => go(4), 1200);
+        } else if (code === 'PATIENT_RUT_REQUIRED' || code === 'INVALID_PATIENT_RUT'
+          || code === 'BILLING_ADDRESS_REQUIRED' || code === 'BILLING_COMUNA_REQUIRED') {
+          // Volver al formulario de boleta
           setTimeout(() => go(5), 1200);
         }
         return;
@@ -729,32 +783,38 @@
     }
   }
 
-  function enableNext(stepNum, enabled) {
-    const btn = stage.querySelector(`.bk-step[data-step="${stepNum}"] [data-action="next"]`);
-    if (btn) btn.disabled = enabled === false;
-  }
-
-  function go(n) {
+  function go(n, opts) {
     cancelScheduledAdvance(); // cancelar timers al navegar manualmente
     if (n < 1 || n > 7) return;
+    // Render inicial: la página abre arriba, con el h1 y la nota de contexto
+    // visibles bajo la barra fija. Desplazar y enfocar sólo corresponde a una
+    // transición iniciada por la persona; en la carga, el scroll automático
+    // metía la cabecera bajo la navegación y el foco programático saltaba
+    // por encima del enlace de salto y del propio título.
+    const initial = !!(opts && opts.initial);
     state.step = n;
     stage.querySelectorAll(".bk-step").forEach(sec => {
       sec.hidden = Number(sec.dataset.step) !== n;
     });
-    if (n === 3) renderCalendar();
-    if (n === 4) renderSlots();
+    if (n === 2) renderCalendar();
+    if (n === 3) renderSlots();
     if (n === 6) fillReview();
     if (n === 7) fillSuccess();
-    // Ocultar resumen en paso 7
+    // Ocultar resumen en el paso final
     summary.style.display = n === 7 ? "none" : "";
+    if (initial) return;
     // Scroll suave al inicio del formulario
-    stage.scrollIntoView ? window.scrollTo({ top: stage.offsetTop - 120, behavior: "smooth" }) : null;
-    // Mover el foco al primer control interactivo del paso (accesibilidad)
-    // No enfocamos <h2> para evitar el focus-ring visual que parece "texto seleccionado"
+    if (typeof window.scrollTo === "function") window.scrollTo({ top: stage.offsetTop - 120, behavior: "smooth" });
+    // El foco va al encabezado del paso, no al primer control: quien llega por
+    // teclado o lector de pantalla necesita oír PRIMERO en qué paso está. El
+    // anillo de foco no se dibuja porque :focus-visible no se activa en un
+    // enfoque programático sobre un contenedor.
     const currentStep = stage.querySelector(`.bk-step[data-step="${n}"]`);
     if (currentStep) {
-      const focusTarget = currentStep.querySelector('input, button, select, textarea');
+      const heading = currentStep.querySelector('.bk-step-head h2, h2');
+      const focusTarget = heading || currentStep.querySelector('input, button, select, textarea');
       if (focusTarget) {
+        if (heading && !heading.hasAttribute('tabindex')) heading.setAttribute('tabindex', '-1');
         window.setTimeout(() => focusTarget.focus(), 0);
       }
     }
@@ -776,6 +836,11 @@
     set("time", state.time);
     set("duration", state.service && state.service.duration, "—");
     set("price", state.service && state.service.price, "—");
+    // Un solo origen para el monto: el data-price del servicio elegido alimenta
+    // la fila "Valor" y el total. Con una sola sesión por reserva son el mismo
+    // número; antes el total quedaba en "—" aunque el valor ya se mostrara.
+    const totalEl = summary.querySelector(".bk-summary-total-val");
+    if (totalEl) totalEl.textContent = (state.service && state.service.price) || "—";
   }
   updateSummary();
 
@@ -796,17 +861,16 @@
     document.getElementById("rv-name").textContent = state.form.name;
     document.getElementById("rv-email").textContent = state.form.email;
     document.getElementById("rv-phone").textContent = state.form.phone;
-    // Web 04.12: mostrar RUT del paciente en el resumen (formato canónico
-    // si pasa validación módulo 11; en caso contrario, raw — captureForm()
-    // ya impidió llegar hasta acá con un RUT inválido).
-    const rutReviewEl = document.getElementById("rv-rut");
-    if (rutReviewEl) {
-      const rutRaw = (state.form.patientRut || "").trim();
-      rutReviewEl.textContent = rutRaw
-        ? (isValidChileanRut(rutRaw) ? formatRut(rutRaw) : rutRaw)
-        : "—";
-    }
-    document.getElementById("rv-reason").textContent = state.form.reason;
+    document.getElementById("rv-motivo").textContent = state.form.motivo_principal || "—";
+    // Formato canónico si pasa módulo 11; captureBilling() ya impidió llegar
+    // hasta acá con un RUT inválido.
+    const rutRaw = (state.form.patientRut || "").trim();
+    document.getElementById("rv-rut").textContent = rutRaw
+      ? (isValidChileanRut(rutRaw) ? formatRut(rutRaw) : rutRaw)
+      : "—";
+    document.getElementById("rv-address").textContent = state.form.address || "—";
+    document.getElementById("rv-comuna").textContent = state.form.comuna || "—";
+    document.getElementById("rv-reason").textContent = state.form.reason || "—";
   }
 
   function fillSuccess() {
@@ -815,9 +879,10 @@
     const confirmation = state.confirmation || {};
     const emailPatientSent = confirmation.emailPatientSent !== false;
     const emailMessageEl = document.getElementById("sx-email-message");
+    const channelEl = document.getElementById("sx-channel");
     document.getElementById("sx-name").textContent = firstName;
     document.getElementById("sx-when").textContent = `el ${when}`;
-    document.getElementById("sx-channel").textContent = "link seguro de la sesión";
+    if (channelEl) channelEl.textContent = "link seguro de la sesión";
     document.getElementById("sx-date").textContent = state.date.toLocaleDateString("es-CL", { day: "numeric", month: "long", year: "numeric" });
     document.getElementById("sx-time").textContent = state.time + " h";
     document.getElementById("sx-mod").textContent = state.modality.label;
@@ -825,7 +890,7 @@
     if (emailMessageEl) {
       emailMessageEl.textContent = emailPatientSent
         ? 'Te envié un email con los detalles de tu reserva, el '
-        : 'Tu reserva quedó agendada, pero hubo un problema al enviar el email. Si no lo recibes, escríbenos por WhatsApp o a hola@franciscabustos.cl para reenviarlo. Allí encontrarás el ';
+        : 'Tu reserva quedó agendada, pero hubo un problema al enviar el email. Si no lo recibes, escríbenos a hola@franciscabustos.cl para reenviarlo. Allí encontrarás el ';
     }
 
     // Email mock
@@ -845,15 +910,49 @@
   };
 
   // Pre-fill servicio desde query param (?servicio=...)
+  //
+  // El producto de reserva expone exactamente dos tipos de sesion: "primera" y
+  // "seguimiento" (serviceType 'initial' / 'followup' en el servidor). Los
+  // enlaces tematicos del sitio (duelo, vinculo, ansiedad...) NO son tipos de
+  // sesion: son puertas de entrada, y todas inician una primera sesion.
+  // Antes, 'duelo' y 'vinculo' apuntaban a valores inexistentes y el prefill
+  // quedaba en silencio sin seleccionar nada.
+  //
+  // El contexto tematico se conserva en el campo que el contrato ya tiene,
+  // 'motivo_principal' (opcional, elegible por la paciente), sin crear tipos de
+  // sesion nuevos ni alterar precio, duracion, disponibilidad ni pago.
   const params = new URLSearchParams(location.search);
-  const svcParam = params.get("servicio");
-  const SVC_MAP = { ansiedad: "primera", depresion: "primera", adaptacion: "primera", duelo: "duelo", vinculo: "vinculo", acompanamiento: "primera" };
-  if (svcParam && SVC_MAP[svcParam]) {
-    const target = document.querySelector(`input[name="service"][value="${SVC_MAP[svcParam]}"]`);
-    // dispatchEvent sin autoavance (no hubo click del usuario)
-    if (target) { target.checked = true; target.dispatchEvent(new Event("change")); }
+  const svcParam = (params.get("servicio") || "").toLowerCase();
+  const SVC_MAP = {
+    ansiedad:       { service: "primera", motivo: "Ansiedad perinatal" },
+    depresion:      { service: "primera", motivo: "Depresión posparto" },
+    duelo:          { service: "primera", motivo: "Duelo gestacional o perinatal" },
+    vinculo:        { service: "primera", motivo: "Vínculo madre-bebé" },
+    adaptacion:     { service: "primera", motivo: "Matrescencia" },
+    acompanamiento: { service: "primera", motivo: "" },
+  };
+  const svcEntry = SVC_MAP[svcParam];
+  if (svcEntry) {
+    const target = document.querySelector(`input[name="service"][value="${svcEntry.service}"]`);
+    // Sin autoavance: la persona no eligió el tipo de sesión, lo eligió el
+    // enlace, y los dos tipos no son intercambiables (initial vs followup en el
+    // servidor). Se muestra la elección y se le da un "Continuar" explícito,
+    // que es el único caso en que ese control existe.
+    if (target) {
+      target.checked = true;
+      target.dispatchEvent(new Event("change"));
+      const step1Actions = document.querySelector('[data-step1-actions]');
+      if (step1Actions) step1Actions.hidden = false;
+    }
+    if (svcEntry.motivo) {
+      const motivo = document.getElementById("f-motivo");
+      // Solo si la opcion existe realmente en el select; nunca inventar una.
+      if (motivo && Array.from(motivo.options).some(o => o.value === svcEntry.motivo)) {
+        motivo.value = svcEntry.motivo;
+      }
+    }
   }
 
-  // Init
-  go(1);
+  // Init — sin scroll ni foco programático: ver go().
+  go(1, { initial: true });
 })();

@@ -45,6 +45,8 @@ var V7_HEADER_ALIASES = Object.freeze({
   status: Object.freeze(['status', 'estado']),
   cancelledAt: Object.freeze(['cancelledat', 'cancelled_at', 'cancelado', 'fecha cancelacion']),
   replacedByReservationId: Object.freeze(['replacedbyreservationid', 'replaced_by_reservation_id', 'reemplazado por']),
+  // Historical column only. The live sheet still carries it for rows written
+  // before RUT collection was retired; nothing writes it any more.
   patientRut: Object.freeze(['patientrut', 'patient_rut', 'rut', 'rut paciente']),
 });
 var V7_TO_V2_FIELD = Object.freeze({
@@ -154,6 +156,15 @@ var RESERVATION_HEADERS = Object.freeze([
   // Append-only column 58. The immutable amount bound to this reservation's payment
   // order, captured from the catalog price at order creation and never re-derived.
   'transaction_amount_clp',
+  // Append-only columns 59-65. The administrative record of the person who booked,
+  // and the billing details the post-session boleta de honorarios needs.
+  //
+  // `billing_*` rather than `patient_rut`: the live v7_compat sheet still carries a
+  // legacy `patientRut` column whose alias set already owns `patient_rut`, and two
+  // physical columns resolving to the same alias is an ambiguity, not a schema.
+  // These are new canonical columns; the legacy one stays untouched and unread.
+  'patient_name', 'patient_phone', 'patient_motivo', 'patient_notes',
+  'billing_rut', 'billing_address', 'billing_comuna',
 ]);
 var NOTIFICATION_OUTBOX_HEADERS = Object.freeze([
   'logical_key', 'reservation_id', 'event_type', 'notification_version', 'state',
@@ -175,10 +186,17 @@ var NOTIFICATION_OUTBOX_TERMINAL_STATES = Object.freeze(['sent', 'superseded']);
 // repoint the Web App to the previously verified permanent version, which does
 // not contain it.
 var IMMEDIATE_NOTIFICATION_DISPATCH_ENABLED = true;
+// The create contract. `patientRut`, `address` and `comuna` are the billing
+// details the post-session boleta de honorarios needs; they are stored on the
+// reservation and never forwarded to Flow, Calendar or any response allowlist.
 const CREATE_FLOW_FIELDS = Object.freeze([
   'idempotencyKey', 'serviceType', 'modality', 'date', 'time', 'name', 'email', 'phone',
-  'patientRut', 'reason', 'message',
+  'patientRut', 'address', 'comuna', 'reason', 'message',
 ]);
+// Retired input keys: accepted but never read into the payload, so a browser
+// holding a previous booking.js across a deploy is not rejected mid-booking.
+// Empty today; the mechanism stays so retiring a key never needs new plumbing.
+const CREATE_FLOW_RETIRED_FIELDS = Object.freeze([]);
 var ACTIVE_SLOT_STATES = Object.freeze([
   LIFECYCLE.BOOKING_STATUS.INITIATED,
   LIFECYCLE.BOOKING_STATUS.PAYMENT_PENDING,
@@ -926,15 +944,64 @@ function parseCreatePayload_(e) {
   const raw = String((e && e.postData && e.postData.contents) || ''); if (!raw || raw.length > 4096) fail_('REQUEST_REJECTED');
   let candidate; try { candidate = JSON.parse(raw); } catch (_) { fail_('REQUEST_REJECTED'); }
   if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) fail_('REQUEST_REJECTED');
-  if (Object.keys(candidate).some(function(key) { return key !== 'action' && CREATE_FLOW_FIELDS.indexOf(key) === -1; })) fail_('REQUEST_REJECTED');
+  if (Object.keys(candidate).some(function(key) {
+    return key !== 'action' && CREATE_FLOW_FIELDS.indexOf(key) === -1 && CREATE_FLOW_RETIRED_FIELDS.indexOf(key) === -1;
+  })) fail_('REQUEST_REJECTED');
   if (candidate.action !== 'create_flow_payment') fail_('REQUEST_REJECTED');
   const payload = {}; CREATE_FLOW_FIELDS.forEach(function(key) { payload[key] = String(candidate[key] || '').trim(); });
   if (!validIdempotencyKey_(payload.idempotencyKey)) fail_('IDEMPOTENCY_KEY_REJECTED');
   if (!/^(initial|followup)$/.test(payload.serviceType) || !/^(online|presencial)$/.test(payload.modality)
     || !/^\d{4}-\d{2}-\d{2}$/.test(payload.date) || !/^\d{2}:\d{2}$/.test(payload.time)) fail_('REQUEST_REJECTED');
   if (!payload.name || payload.name.length > 80 || !payload.email || payload.email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(payload.email)) fail_('REQUEST_REJECTED');
-  ['phone', 'patientRut', 'reason', 'message'].forEach(function(key) { if (payload[key].length > 500) fail_('REQUEST_REJECTED'); });
+  ['phone', 'patientRut', 'address', 'comuna', 'reason', 'message'].forEach(function(key) { if (payload[key].length > 500) fail_('REQUEST_REJECTED'); });
+  // Billing details are the reason this reservation can later produce a boleta.
+  // The browser checks them as a courtesy; this is where they are decided. A
+  // blank or malformed RUT fails closed rather than creating a record whose
+  // stated purpose it cannot serve.
+  if (!payload.patientRut) fail_('PATIENT_RUT_REQUIRED');
+  if (!validChileanRut_(payload.patientRut)) fail_('INVALID_PATIENT_RUT');
+  payload.patientRut = formatChileanRut_(payload.patientRut);
+  if (!payload.address) fail_('BILLING_ADDRESS_REQUIRED');
+  if (!payload.comuna) fail_('BILLING_COMUNA_REQUIRED');
   return payload;
+}
+
+/**
+ * Chilean RUT, modulo 11. Server authority for the create contract; the same
+ * rule is repeated in assets/booking.js only as a client-side courtesy, exactly
+ * as the phone check is, and a browser verdict never reaches this decision.
+ */
+function cleanChileanRut_(value) {
+  return String(value || '').replace(/[\s.\-]/g, '').toUpperCase();
+}
+function validChileanRut_(value) {
+  const clean = cleanChileanRut_(value);
+  if (clean.length < 8 || clean.length > 9) return false;
+  const body = clean.slice(0, -1);
+  const dv = clean.slice(-1);
+  if (!/^\d+$/.test(body) || !/^[\dK]$/.test(dv)) return false;
+  if (body.length < 7) return false;
+  let sum = 0;
+  let mul = 2;
+  for (let i = body.length - 1; i >= 0; i -= 1) {
+    sum += parseInt(body[i], 10) * mul;
+    mul = mul === 7 ? 2 : mul + 1;
+  }
+  const mod = 11 - (sum % 11);
+  const expected = mod === 11 ? '0' : (mod === 10 ? 'K' : String(mod));
+  return dv === expected;
+}
+function formatChileanRut_(value) {
+  const clean = cleanChileanRut_(value);
+  if (clean.length < 2) return String(value || '');
+  const body = clean.slice(0, -1);
+  const dv = clean.slice(-1);
+  let formatted = '';
+  for (let i = 0; i < body.length; i += 1) {
+    if (i > 0 && (body.length - i) % 3 === 0) formatted += '.';
+    formatted += body[i];
+  }
+  return formatted + '-' + dv;
 }
 function validIdempotencyKey_(value) { return new RegExp('^' + PRODUCTION.idempotencyNamespace + '-[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$', 'i').test(String(value || '')); }
 
@@ -967,7 +1034,12 @@ function reserveOnce_(sheet, schema, payload, calendarGateway) {
   const now = new Date().toISOString();
   const reservation = { ok: true, idempotency_key: payload.idempotencyKey,
     reservation_id: makeOpaqueId_('reservation', payload.idempotencyKey), service_type: payload.serviceType,
-    modality: payload.modality, patient_email: payload.email, original_start_at: requestedStart,
+    modality: payload.modality, patient_email: payload.email,
+    patient_name: payload.name, patient_phone: payload.phone,
+    patient_motivo: payload.reason, patient_notes: payload.message,
+    billing_rut: payload.patientRut, billing_address: payload.address,
+    billing_comuna: payload.comuna,
+    original_start_at: requestedStart,
     current_start_at: requestedStart, current_end_at: requestedEnd,
     slot_hold_expires_at: slotHoldExpiryIso_(),
     booking_status: LIFECYCLE.BOOKING_STATUS.INITIATED, payment_status: LIFECYCLE.PAYMENT_STATUS.NOT_STARTED,

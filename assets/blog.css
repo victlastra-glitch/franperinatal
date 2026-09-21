@@ -2,147 +2,137 @@
    BLOG · Hub + artículos
    ============================================================ */
 
-/* ---------- Hero blog hub ---------- */
-.blog-hero {
-  padding: clamp(80px, 12vw, 140px) 0 clamp(56px, 8vw, 88px);
-  border-bottom: 1px solid var(--line);
-}
-.blog-hero-inner {
-  max-width: 1200px; margin: 0 auto;
-  padding: 0 clamp(24px, 4vw, 48px);
-  display: grid; grid-template-columns: 1fr;
-  gap: 48px;
-}
-.blog-hero h1 {
-  font-family: var(--serif); font-weight: 300;
-  font-size: clamp(52px, 8vw, 104px);
-  line-height: 0.98; letter-spacing: -0.02em;
-  max-width: 14ch;
-  text-wrap: balance;
-}
-.blog-hero h1 em { font-style: italic; font-weight: 300; }
-.blog-hero .lede {
-  font-family: var(--sans);
-  font-size: clamp(17px, 1.4vw, 20px); line-height: 1.55;
-  color: var(--ink-2);
-  max-width: 56ch;
-  margin-top: 20px;
-}
+/* ---------- Índice del hub ----------
+   v3.2 §12 — el hub dejó de ser una grilla de tarjetas CMS (tres columnas con
+   huecos irregulares al final de cada fila, un "Leer artículo →" repetido doce
+   veces y cadenas "categoría · fecha · 8 min") y pasa a ser un índice editorial
+   en filas con filete. La jerarquía la dan alineación, filete y aire; el titular
+   es el enlace. La apertura usa .page-header, el mismo componente que el resto
+   de las rutas internas, y el índice vive en .container: un solo contenedor,
+   un solo gutter, un solo shell para todo el sitio. */
+.blog-list { padding-bottom: var(--section-gap); }
 
-/* ---------- Article cards ---------- */
-.blog-list {
-  padding: clamp(64px, 10vw, 120px) 0;
-}
-.blog-list-inner {
-  max-width: 1200px; margin: 0 auto;
-  padding: 0 clamp(24px, 4vw, 48px);
-}
 .blog-filter-row {
-  display: flex; flex-wrap: wrap; gap: 10px;
-  margin-bottom: 48px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--line);
+  display: flex; flex-wrap: wrap; gap: 4px 22px; align-items: center;
+  margin-bottom: clamp(20px, 2.5vw, 32px);
+  padding-bottom: 12px;
+}
+/* Taxonomía textual, sin píldoras: el estado activo se marca con subrayado y
+   tinta, que es como una publicación señala su sección. */
+.blog-filter-label {
+  font-family: var(--sans); font-size: 11px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink-3);
+  align-self: center; margin-right: 4px;
 }
 .blog-filter {
   font-family: var(--sans);
-  font-size: 12px; letter-spacing: .08em;
-  padding: 8px 14px;
+  font-size: 13.5px; letter-spacing: .01em;
+  min-height: 44px; padding: 8px 2px;    /* v3.2 standalone target */
+  display: inline-flex; align-items: center;
   background: transparent;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  color: var(--ink-2);
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  color: var(--ink-3);
   cursor: pointer;
-  transition: border-color .14s ease, color .14s ease, background .14s ease;
+  transition: color .14s ease, border-color .14s ease;
 }
-.blog-filter:hover { border-color: var(--ink); color: var(--ink); }
-.blog-filter.active {
-  background: var(--ink); color: var(--paper); border-color: var(--ink);
-}
+.blog-filter:hover { color: var(--ink); border-bottom-color: var(--line-strong); }
+.blog-filter:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.blog-filter.active { color: var(--ink); border-bottom-color: var(--accent); }
 
-.blog-posts {
+.blog-index { border-top: 1px solid var(--line); }
+
+.blog-entry {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
-  gap: clamp(32px, 4vw, 48px) clamp(24px, 3vw, 36px);
+  grid-template-columns: minmax(150px, 0.62fr) minmax(0, 2.38fr);
+  gap: clamp(14px, 2.6vw, 44px);
+  padding: clamp(24px, 2.6vw, 34px) 0;
+  border-bottom: 1px solid var(--line);
+  text-decoration: none; color: inherit;
+  transition: background-color .16s ease;
 }
-.blog-post-card {
-  display: flex; flex-direction: column;
-  background: transparent;
-  text-decoration: none;
-  color: inherit;
-  transition: transform .25s ease;
+.blog-entry:hover {
+  background: color-mix(in srgb, var(--bg-2) 45%, transparent);
+  box-shadow: 0 0 0 clamp(10px, 1.4vw, 20px) color-mix(in srgb, var(--bg-2) 45%, transparent);
 }
-.blog-post-card:hover { transform: translateY(-3px); }
-.blog-post-card-img {
-  aspect-ratio: 4 / 3;
-  background: var(--paper-deep, #EDE4D6);
-  position: relative;
-  overflow: hidden;
-  margin-bottom: 20px;
-}
-.blog-post-card-img img {
-  width: 100%; height: 100%; object-fit: cover;
-  transition: transform .4s ease;
-}
-.blog-post-card:hover .blog-post-card-img img { transform: scale(1.03); }
-.blog-post-card-meta {
-  display: flex; gap: 10px; align-items: center;
+.blog-entry:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+
+/* Metadatos separados por alineación, no por puntuación: rótulo, fecha y
+   tiempo de lectura se apilan en su propia columna y no forman cadena. */
+.blog-entry-meta {
+  display: flex; flex-direction: column; gap: 7px;
   font-family: var(--sans);
   font-size: 11px; letter-spacing: .15em;
   text-transform: uppercase; font-weight: 500;
-  color: var(--ink-3);
-  margin-bottom: 12px;
+  color: var(--ink-3); line-height: 1.45;
+  align-self: start;
 }
-.blog-post-card-meta .category { color: var(--accent-deep); }
-.blog-post-card-meta .dot { color: var(--line-strong, var(--ink-3)); }
-.blog-post-card h2 {
-  font-family: var(--serif); font-weight: 300;
-  font-size: clamp(22px, 2.2vw, 28px);
-  line-height: 1.15; letter-spacing: -0.01em;
-  color: var(--ink);
-  text-wrap: balance;
-}
-.blog-post-card .dek {
-  margin-top: 12px;
-  font-size: 14.5px; line-height: 1.55;
-  color: var(--ink-2);
-}
-.blog-post-card .read-more {
-  margin-top: 18px;
-  font-family: var(--sans);
-  font-size: 12px; letter-spacing: .12em;
-  text-transform: uppercase; font-weight: 500;
-  color: var(--ink);
-  display: inline-flex; align-items: center; gap: 6px;
-}
-.blog-post-card .read-more::after {
-  content: "→"; transition: transform .2s ease;
-}
-.blog-post-card:hover .read-more::after { transform: translateX(4px); }
+.blog-entry-cat { color: var(--accent-deep); }
+.blog-entry-read { color: var(--ink-3); }
 
-/* Feature the first card */
-.blog-post-card.feature {
-  grid-column: 1 / -1;
-  display: grid;
-  grid-template-columns: 1.1fr 0.9fr;
-  gap: clamp(32px, 5vw, 72px);
-  align-items: center;
+.blog-entry h2 {
+  font-family: var(--serif); font-weight: 300;
+  font-size: clamp(21px, 1.85vw, 27px);
+  line-height: 1.2; letter-spacing: -0.012em;
+  color: var(--ink);
+  text-wrap: pretty;
+  transition: color .14s ease;
 }
-.blog-post-card.feature .blog-post-card-img {
-  aspect-ratio: 4 / 3; margin: 0;
+
+/* A partir de 1000px el cuerpo se abre en titular | bajada. Apiladas, las dos
+   dejaban vacío el tercio derecho de cada fila y estiraban el índice: la fila
+   completa pasó de ~150px a ~105px de alto sin encoger la tipografía. */
+@media (min-width: 1000px) {
+  .blog-entry-body {
+    display: grid; grid-template-columns: 1.1fr 1fr;
+    gap: clamp(24px, 3vw, 48px); align-items: start;
+  }
+  .blog-entry .dek { margin-top: 3px; }
+  .blog-entry--lead .dek,
+  .blog-entry.is-first .dek { margin-top: 8px; }
 }
-.blog-post-card.feature h2 {
-  font-size: clamp(32px, 4.5vw, 56px);
-  line-height: 1.02;
-  max-width: 16ch;
+.blog-entry:hover h2 { color: var(--malva-deep); }
+.blog-entry .dek {
+  margin-top: 10px;
+  font-size: 15px; line-height: 1.6;
+  color: var(--ink-2);
+  max-width: 62ch;
 }
-.blog-post-card.feature .dek {
-  font-size: 17px;
-  max-width: 50ch;
-  margin-top: 20px;
+
+/* La primera fila visible abre el índice: misma gramática, más escala. */
+.blog-entry--lead,
+.blog-entry.is-first { padding-top: clamp(20px, 2vw, 28px); }
+.blog-entry--lead h2,
+.blog-entry.is-first h2 {
+  font-size: clamp(27px, 3vw, 40px);
+  line-height: 1.08; letter-spacing: -0.02em;
+  max-width: 22ch;
 }
-@media (max-width: 860px) {
-  .blog-post-card.feature { grid-template-columns: 1fr; }
-  .blog-post-card.feature h2 { font-size: clamp(28px, 5vw, 40px); }
+.blog-entry--lead .dek,
+.blog-entry.is-first .dek {
+  margin-top: 16px; font-size: 16.5px; max-width: 54ch;
+}
+
+.blog-empty {
+  margin: 32px 0 0; font-size: 15px; color: var(--ink-2); line-height: 1.6;
+}
+.blog-empty-reset {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; color: var(--malva-deep);
+  text-decoration: underline; text-underline-offset: 3px;
+}
+
+@media (max-width: 760px) {
+  .blog-entry { grid-template-columns: 1fr; gap: 12px; }
+  .blog-entry-meta {
+    flex-direction: row; flex-wrap: wrap;
+    gap: 4px clamp(16px, 5vw, 28px);
+  }
+  .blog-entry h2 { max-width: none; }
+  .blog-entry--lead h2,
+  .blog-entry.is-first h2 { max-width: none; }
+  .blog-entry:hover { background: transparent; box-shadow: none; }
 }
 
 /* ---------- Article page ---------- */
@@ -156,13 +146,17 @@
   color: var(--ink-3);
   margin-bottom: 40px;
 }
-.article-breadcrumb a { color: var(--ink-3); text-decoration: none; }
+.article-breadcrumb a {
+  color: var(--ink-3); text-decoration: none;
+  min-height: 44px; display: inline-flex; align-items: center;  /* v3.2 target */
+}
 .article-breadcrumb a:hover { color: var(--ink); }
 .article-breadcrumb span { margin: 0 8px; }
 
 .article-header { margin-bottom: 56px; }
 .article-meta {
-  display: flex; gap: 12px; align-items: center;
+  display: flex; flex-wrap: wrap;
+  gap: 6px clamp(18px, 2.4vw, 30px); align-items: baseline;
   font-family: var(--sans);
   font-size: 11px; letter-spacing: .18em;
   text-transform: uppercase; font-weight: 500;
@@ -200,6 +194,9 @@
 }
 .article-author img {
   width: 48px; height: 48px; border-radius: 50%;
+  /* Elemento flex: sin esto, en anchos estrechos el retrato cedía ancho a la
+     línea de credencial y se dibujaba como un óvalo de ~38px (medido a 390px). */
+  flex: 0 0 48px;
   object-fit: cover;
   background: var(--paper-deep, #EDE4D6);
 }
@@ -258,14 +255,14 @@
 }
 .article-body strong { font-weight: 600; color: var(--ink); }
 .article-body em { font-style: italic; }
-.article-body a {
-  color: var(--ink);
+.article-body a:not(.btn):not(.article-cta-button) {
+  color: var(--malva-deep);
   text-decoration: underline;
   text-decoration-color: var(--accent-deep);
   text-decoration-thickness: 1px;
   text-underline-offset: 3px;
 }
-.article-body a:hover { text-decoration-thickness: 2px; }
+.article-body a:not(.btn):not(.article-cta-button):hover { text-decoration-thickness: 2px; }
 .article-body ul, .article-body ol {
   margin: 0 0 28px; padding-left: 24px;
 }
@@ -293,7 +290,7 @@
   color: var(--ink-2);
 }
 .article-callout strong { font-weight: 600; color: var(--ink); }
-.article-callout h4 {
+.article-callout h3 {
   font-family: var(--sans);
   font-size: 11px; letter-spacing: .2em;
   text-transform: uppercase; font-weight: 600;
@@ -360,18 +357,6 @@
   display: none;
   content: none;
 }
-.article-cta .btn-primary {
-  background: #6d4454;
-  border-color: #6d4454;
-  color: #fff;
-  box-shadow: 0 16px 32px rgba(109, 68, 84, .18);
-}
-.article-cta .btn-primary:hover {
-  background: #593645;
-  border-color: #593645;
-  color: #fff;
-  box-shadow: 0 18px 34px rgba(109, 68, 84, .22);
-}
 .article-cta .btn-ghost,
 .article-cta .btn-secondary {
   background: transparent;
@@ -415,7 +400,7 @@
   font-size: 11px;
   letter-spacing: .18em;
   text-transform: uppercase;
-  color: #6d4454;
+  color: var(--malva-deep);
   margin: 0 0 14px;
   text-align: left;
 }
@@ -441,14 +426,14 @@
 .article-related-simple a {
   display: block;
   padding: 16px 0;
-  color: #231f1c;
+  color: var(--ink);
   text-decoration: none;
   font-family: var(--serif, Georgia, serif);
   font-size: 18px;
   line-height: 1.35;
 }
 .article-related-simple a:hover {
-  color: #6d4454;
+  color: var(--malva-deep);
 }
 @media (max-width: 640px) {
   .article-related-grid { grid-template-columns: 1fr; }
@@ -532,3 +517,155 @@
     -webkit-hyphens: manual;
   }
 }
+
+/* ========================================
+ * FAQ dentro del artículo
+ * Estaba sin estilar: <details>/<summary> nativos, con objetivos táctiles
+ * bajo 44px y sin jerarquía editorial. Sistema de filetes, sin cards.
+ * ======================================== */
+.article-faq {
+  margin: 56px 0 8px;
+  padding-top: 40px;
+  border-top: 1px solid var(--line);
+}
+.article-faq h2 {
+  font-family: var(--serif);
+  font-weight: 300;
+  font-size: clamp(26px, 3.4vw, 34px);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  margin: 0 0 10px;
+}
+.article-faq details { border-bottom: 1px solid var(--line); }
+.article-faq summary {
+  list-style: none;
+  cursor: pointer;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  min-height: 44px;
+  padding: 18px 0;
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: 19px;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  transition: color .2s ease;
+}
+.article-faq summary::-webkit-details-marker { display: none; }
+.article-faq summary::after {
+  content: "+";
+  font-family: var(--sans);
+  font-size: 19px;
+  line-height: 1.32;
+  color: var(--malva-deep);
+  flex-shrink: 0;
+}
+.article-faq details[open] summary::after { content: "\2013"; }
+.article-faq summary:hover { color: var(--malva-deep); }
+.article-body .article-faq p {
+  margin: 0 0 24px;
+  font-size: 16.5px;
+  line-height: 1.62;
+  color: var(--ink-2);
+  max-width: 58ch;
+}
+
+/* ============================================================
+   v3.2 §8 — ONE GOVERNED ARTICLE TEMPLATE
+   Replaces 7 divergent per-post <style> blocks (10 of 12 posts).
+   Footer overrides deliberately NOT carried over: every post now closes
+   with the canonical footer, which is what made posts feel like a
+   different site. The end CTA becomes a ruled statement, not a card.
+   ============================================================ */
+.article-wrap {
+  width: min(100%, 800px); max-width: 800px; box-sizing: border-box;
+  padding-top: clamp(44px, 5vw, 72px);
+}
+.article-header { margin-bottom: clamp(42px, 5vw, 56px); }
+.article-header h1 {
+  font-size: clamp(38px, 5.2vw, 60px);
+  line-height: 1.04; letter-spacing: -0.018em; max-width: 13.5ch;
+}
+.article-lede {
+  margin-top: 24px;
+  font-family: var(--serif); font-size: clamp(19px, 2vw, 23px);
+  line-height: 1.45; color: var(--ink-2); max-width: 58ch;
+  padding-left: 18px; border-left: 2px solid var(--malva-deep);
+}
+/* v3.2 — En varias entradillas el <strong> abarca frases enteras (217 de 505
+   caracteres en «Trauma de parto»). A peso 700 eso deja de ser énfasis y se
+   vuelve un bloque macizo entre el título y el cuerpo. El énfasis pasa a
+   darse por tinta, no por grosor: la entradilla es --ink-2 y el destacado
+   sube a --ink. El texto clínico no se toca. */
+.article-lede strong {
+  font-weight: 500;
+  color: var(--ink);
+}
+/* End CTA — ruled close, no gradient panel, no radius, no shadow */
+.article-cta-card {
+  margin: 52px 0 44px; padding: 32px 0 0;
+  background: none; border: 0; border-top: 1px solid var(--line);
+  border-radius: 0; box-shadow: none;
+}
+.article-cta-card .eyebrow { color: var(--malva-deep); }
+.article-cta-card h3 {
+  font-family: var(--serif); font-size: clamp(25px, 3vw, 34px);
+  font-weight: 300; line-height: 1.14; letter-spacing: -0.012em;
+  margin: 12px 0; color: var(--ink); text-wrap: balance; max-width: 22ch;
+}
+/* PRIMARY action is warm ink, per the CTA system; malva stays the accent */
+.article-body a.article-cta-button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+  min-height: 48px; padding: 13px 24px; border-radius: 999px;
+  background: var(--ink); color: var(--bg); border: 1px solid var(--ink);
+  font-family: var(--sans); font-size: 15px; font-weight: 500;
+  text-decoration: none;
+}
+.article-body a.article-cta-button:hover { background: #0f0c0a; }
+.article-related h2 {
+  font-family: var(--sans); font-size: 11px; letter-spacing: .22em;
+  text-transform: uppercase; font-weight: 500; color: var(--ink-2); margin: 0 0 28px;
+}
+.article-related-grid a {
+  display: flex; flex-direction: column; gap: 8px;
+  text-decoration: none; color: inherit;
+  border-top: 1px solid var(--line);
+  padding: 18px 0 4px;
+  transition: color .14s ease;
+}
+.article-related-grid a span {
+  font-family: var(--sans); font-size: 11px; letter-spacing: .15em;
+  text-transform: uppercase; font-weight: 500; color: var(--accent-deep);
+}
+.article-related-grid a strong {
+  font-family: var(--serif); font-weight: 300;
+  font-size: 20px; line-height: 1.24; letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.article-related-grid a:hover strong { color: var(--malva-deep); }
+.article-related-grid a:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+.article-disclaimer {
+  margin-top: 56px; padding-top: 28px;
+  border-top: 1px solid var(--line); color: var(--ink-2);
+}
+@media (max-width: 640px) {
+  .article-wrap { width: 100%; max-width: 100%; padding-inline: 22px; }
+  .article-header h1 { font-size: clamp(34px, 10vw, 42px); max-width: 15ch; }
+  .article-meta { flex-wrap: wrap; row-gap: 8px; }
+  .article-lede, .article-body { width: 100%; max-width: 100%; box-sizing: border-box; }
+  .article-lede, .article-body p, .article-body li {
+    max-width: calc(100vw - 44px); box-sizing: border-box; overflow-wrap: break-word;
+  }
+  .article-body a.article-cta-button { width: 100%; white-space: normal; text-align: center; }
+}
+
+/* ============================================================
+   Índice editorial — v3.2
+   Sólo existen dos retratos para todo el sitio. Repetirlos en las doce
+   entradas no aportaba información: convertía el índice en un catálogo.
+   Una imagen destacada, y el resto se sostiene en tipografía.
+   ============================================================ */

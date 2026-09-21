@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
 <meta name="theme-color" content="#FAF6F0" />
 
 <title>Blog clínico · Salud mental perinatal — Francisca Bustos</title>
@@ -15,16 +16,16 @@
 <meta property="og:description" content="Artículos sobre depresión postparto, ansiedad perinatal y maternidad, escritos con base clínica." />
 <meta property="og:url" content="https://franciscabustos.cl/blog" />
 
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='20'%20fill='%238A5A6B'/%3E%3Ctext%20x='50'%20y='69'%20text-anchor='middle'%20font-family='Fraunces,Georgia,serif'%20font-style='italic'%20font-size='54'%20fill='%23FAF6F0'%3Efb%3C/text%3E%3C/svg%3E" />
 
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 
-<link rel="stylesheet" href="assets/styles.css?v=3" />
+<link rel="stylesheet" href="assets/styles.css?v=4" />
 <link rel="stylesheet" href="assets/pages.css?v=1" />
-<link rel="stylesheet" href="assets/blog.css?v=1" />
+<link rel="stylesheet" href="assets/blog.css?v=5" />
 
 <script type="application/ld+json">
 {
@@ -64,370 +65,276 @@
 </head>
 <body>
 
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+
 <!-- =================== NAV =================== -->
 <header class="nav">
-  <a href="/" class="nav-brand">
-    
-    <span class="nav-brand-text">
-      <strong>Francisca Bustos</strong>
-      <span>Psicología perinatal</span>
-    </span>
-  </a>
-  <nav class="nav-links" aria-label="Principal">
+  <div class="nav-inner">
+    <a class="brand" href="/" aria-label="Francisca Bustos M. · Inicio">
+      <span class="brand-name"><span class="brand-line">Francisca</span> <span class="brand-line">Bustos M.</span><small>Psicóloga Clínica · Perinatal</small></span>
+    </a>
+    <nav class="nav-links" aria-label="Principal">
+      <a class="nav-link" href="/">Inicio</a>
+      <a class="nav-link" href="/sobre-mi">Sobre mí</a>
+      <a class="nav-link" href="/servicios">Servicios</a>
+      <a class="nav-link" href="/faq">Preguntas</a>
+      <a class="nav-link" href="/contacto">Contacto</a>
+    </nav>
+    <div class="nav-actions">
+      <a href="/reserva" class="btn btn-primary">Reservar sesión <span class="arrow" aria-hidden="true">→</span></a>
+      <button class="nav-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 12h18M3 17h18"/></svg></button>
+    </div>
+  </div>
+  <div class="nav-panel" id="nav-panel" aria-label="Menú">
     <a href="/">Inicio</a>
     <a href="/sobre-mi">Sobre mí</a>
     <a href="/servicios">Servicios</a>
     <a href="/faq">Preguntas</a>
     <a href="/contacto">Contacto</a>
-  </nav>
-  <a href="/reserva" class="btn btn-primary nav-cta">Reservar sesión</a>
-  <button class="nav-burger" aria-label="Abrir menú" aria-expanded="false" aria-controls="nav-panel">
-    <span></span><span></span><span></span>
-  </button>
-  <div class="nav-panel" id="nav-panel" role="menu">
-    <a href="/">Inicio</a>
-    <a href="/sobre-mi">Sobre mí</a>
-    <a href="/servicios">Servicios</a>
-    <a href="/faq">Preguntas</a>
-    <a href="/contacto">Contacto</a>
-    <a href="/reserva" class="btn btn-primary btn-lg">Reservar primera sesión →</a>
+    <a href="/reserva" class="btn btn-primary btn-lg">Reservar sesión →</a>
   </div>
 </header>
 
-<!-- =================== HERO =================== -->
-<section class="blog-hero">
-  <div class="blog-hero-inner">
-    <div class="reveal">
-      <div class="eyebrow eyebrow-mark">Blog clínico</div>
-      <h1>Leer también es<br/><em>cuidarse</em>.</h1>
-      <p class="lede">
-        Artículos breves y con base clínica sobre depresión postparto,
-        ansiedad perinatal, baby blues, lactancia, trauma de parto
-        y las transiciones emocionales de la maternidad.
-        Escritos para que puedas entender lo que te está pasando.
-      </p>
-    </div>
+<main id="contenido">
+
+
+<!-- =================== APERTURA ===================
+     Misma apertura de capítulo que /sobre-mi, /servicios, /faq y /contacto:
+     el blog es una sección más del sitio, no una publicación con su propia
+     identidad. Antes abría con un hero propio, contenedor propio (1200px) y
+     gutters propios, y por eso leía como otra plantilla. -->
+<section class="page-header">
+  <div class="container">
+    <div class="eyebrow eyebrow-mark reveal">Blog clínico</div>
+    <h1 class="reveal mt-3">Leer también es <em class="ital">cuidarse</em>.</h1>
+    <p class="lede reveal mt-4">
+      Artículos breves y con base clínica sobre depresión postparto, ansiedad
+      perinatal, baby blues, lactancia, trauma de parto y las transiciones
+      emocionales de la maternidad. Escritos para que puedas entender lo que
+      te está pasando.
+    </p>
   </div>
 </section>
 
-<!-- =================== LIST =================== -->
-<section class="blog-list">
-  <div class="blog-list-inner">
+<!-- =================== ÍNDICE ===================
+     Índice editorial en filas con filete, no una grilla de tarjetas CMS. La
+     grilla de tres columnas dejaba huecos irregulares al final de cada fila,
+     repetía "Leer artículo →" doce veces y encadenaba metadatos con puntos
+     medios. Aquí el rótulo, la fecha y el tiempo de lectura se separan por
+     alineación, y el titular es el enlace. -->
+<section class="section blog-list">
+  <div class="container">
 
-    <div class="blog-filter-row" role="tablist" aria-label="Filtrar por tema">
-      <button class="blog-filter active" data-filter="all">Todos</button>
-      <button class="blog-filter" data-filter="depresion">Depresión postparto</button>
-      <button class="blog-filter" data-filter="ansiedad">Ansiedad perinatal</button>
-      <button class="blog-filter" data-filter="maternidad">Maternidad</button>
-      <button class="blog-filter" data-filter="vinculo">Vínculo y apego</button>
+    <div class="blog-filter-row" role="group" aria-label="Filtrar por tema">
+      <span class="blog-filter-label">Temas</span>
+      <button type="button" class="blog-filter active" data-filter="all" aria-pressed="true">Todos</button>
+      <button type="button" class="blog-filter" data-filter="embarazo" aria-pressed="false">Embarazo y ansiedad</button>
+      <button type="button" class="blog-filter" data-filter="postparto" aria-pressed="false">Postparto</button>
+      <button type="button" class="blog-filter" data-filter="duelo" aria-pressed="false">Duelo gestacional y perinatal</button>
+      <button type="button" class="blog-filter" data-filter="maternidad" aria-pressed="false">Matrescencia y maternidad</button>
+      <button type="button" class="blog-filter" data-filter="vinculo" aria-pressed="false">Vínculo madre-bebé</button>
     </div>
 
-    <div class="blog-posts">
-
-      <!-- FEATURE -->
-      <a href="/blog/ansiedad-en-el-embarazo" class="blog-post-card feature reveal" data-cat="ansiedad maternidad">
-        <div class="blog-post-card-img">
-          <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
+    <div class="blog-index" id="blog-index">
+      <a href="/blog/ansiedad-en-el-embarazo" class="blog-entry blog-entry--lead" data-cat="embarazo">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Ansiedad perinatal / Embarazo</span>
+        <time datetime="2026-05-21">21 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
         </div>
-        <div>
-          <div class="blog-post-card-meta">
-            <span class="category">Ansiedad perinatal / Embarazo</span>
-            <span class="dot">·</span>
-            <time datetime="2026-05-21">21 mayo 2026</time>
-            <span class="dot">·</span>
-            <span>8 min</span>
-          </div>
+        <div class="blog-entry-body">
           <h2>Ansiedad en el embarazo: cuándo es esperable y cuándo pedir apoyo</h2>
-          <p class="dek">
-            Una guía para distinguir preocupación esperable, señales de ansiedad y cuándo buscar acompañamiento perinatal.
-          </p>
-          <span class="read-more">Leer artículo</span>
+          <p class="dek">Sentir preocupación durante el embarazo puede ser frecuente, pero a veces la ansiedad interfiere con el descanso, el ánimo o la vida diaria. Cuándo pedir apoyo.</p>
         </div>
       </a>
-
-
-<!-- FEATURE -->
-<a href="/blog/primera-sesion-psicologa-perinatal" class="blog-post-card feature reveal" data-cat="maternidad">
-  <div class="blog-post-card-img">
-    <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
-  </div>
-  <div>
-    <div class="blog-post-card-meta">
-      <span class="category">Ruta de atención · Psicología perinatal</span>
-      <span class="dot">·</span>
-      <time datetime="2026-05-23">23 mayo 2026</time>
-      <span class="dot">·</span>
-      <span>8 min</span>
-    </div>
-    <h2>Primera sesión con psicóloga perinatal: qué esperar y cómo prepararte</h2>
-    <p class="dek">
-      Una guía para saber qué ocurre en una primera sesión, cómo se conversa el encuadre y cómo prepararte sin presión.
-    </p>
-    <span class="read-more">Leer artículo</span>
-  </div>
-</a>
-
-
-<!-- FEATURE -->
-<a href="/blog/trauma-de-parto" class="blog-post-card feature reveal" data-cat="maternidad depresion ansiedad">
-  <div class="blog-post-card-img">
-    <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
-  </div>
-  <div>
-    <div class="blog-post-card-meta">
-      <span class="category">Parto / Salud mental perinatal</span>
-      <span class="dot">·</span>
-      <time datetime="2026-05-23">23 mayo 2026</time>
-      <span class="dot">·</span>
-      <span>8 min</span>
-    </div>
-    <h2>Trauma de parto: cuando la experiencia del parto sigue doliendo</h2>
-    <p class="dek">
-      Una guía para distinguir parto difícil, parto vivido como traumático y cuándo conviene pedir apoyo profesional.
-    </p>
-    <span class="read-more">Leer artículo</span>
-  </div>
-</a>
-
-<!-- FEATURE -->
-<a href="/blog/fertilidad-y-salud-mental" class="blog-post-card feature reveal" data-cat="maternidad ansiedad">
-  <div class="blog-post-card-img">
-    <img src="assets/images/francisca/francisca-hero-web-1.webp" alt="Francisca Bustos, psicóloga perinatal" loading="lazy" width="1448" height="1086">
-  </div>
-  <div>
-    <div class="blog-post-card-meta">
-      <span class="category">Fertilidad / Salud mental perinatal</span>
-      <span class="dot">·</span>
-      <time datetime="2026-05-23">23 mayo 2026</time>
-      <span class="dot">·</span>
-      <span>8 min</span>
-    </div>
-    <h2>Fertilidad y salud mental: cómo atravesar la búsqueda sin perderte de vista</h2>
-    <p class="dek">
-      Una guía para cuidar la dimensión emocional de la búsqueda de embarazo y los tratamientos de fertilidad.
-    </p>
-    <span class="read-more">Leer artículo</span>
-  </div>
-</a>
-
-<!-- FEATURE -->
-<a href="/blog/acompanar-perdida-gestacional" class="blog-post-card feature reveal" data-cat="duelo maternidad">
-  <div class="blog-post-card-img">
-    <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
-  </div>
-  <div>
-    <div class="blog-post-card-meta">
-      <span class="category">Duelo gestacional / Acompañamiento</span>
-      <span class="dot">·</span>
-      <time datetime="2026-05-23">23 mayo 2026</time>
-      <span class="dot">·</span>
-      <span>7 min</span>
-    </div>
-    <h2>Cómo acompañar a alguien tras una pérdida gestacional</h2>
-    <p class="dek">
-      Qué decir, qué evitar y cómo estar presente cuando alguien cercano atraviesa una pérdida gestacional.
-    </p>
-    <span class="read-more">Leer artículo</span>
-  </div>
-</a>
-
-
-<!-- FEATURE -->
-<a href="/blog/ansiedad-postparto" class="blog-post-card feature reveal" data-cat="ansiedad depresion maternidad">
-  <div class="blog-post-card-img">
-    <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
-  </div>
-  <div>
-    <div class="blog-post-card-meta">
-      <span class="category">Ansiedad perinatal / Postparto</span>
-      <span class="dot">·</span>
-      <time datetime="2026-05-22">22 mayo 2026</time>
-      <span class="dot">·</span>
-      <span>8 min</span>
-    </div>
-    <h2>Ansiedad posparto: cuándo la preocupación empieza a ocupar demasiado espacio</h2>
-    <p class="dek">
-      Una guía para reconocer cuándo la preocupación posparto ocupa demasiado espacio y cuándo pedir acompañamiento perinatal.
-    </p>
-    <span class="read-more">Leer artículo</span>
-  </div>
-</a>
-
-      <!-- FEATURE -->
-      <a href="/blog/duelo-gestacional-apoyo-psicologico" class="blog-post-card feature reveal" data-cat="duelo maternidad">
-        <div class="blog-post-card-img">
-          <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
+      <a href="/blog/primera-sesion-psicologa-perinatal" class="blog-entry" data-cat="maternidad">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Ruta de atención · Psicología perinatal</span>
+        <time datetime="2026-05-23">23 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
         </div>
-        <div>
-          <div class="blog-post-card-meta">
-            <span class="category">Duelo gestacional · Salud mental perinatal</span>
-            <span>8 min</span>
-          </div>
+        <div class="blog-entry-body">
+          <h2>Primera sesión con psicóloga perinatal: qué esperar y cómo prepararte</h2>
+          <p class="dek">Cómo es la primera sesión con una psicóloga perinatal: encuadre, duración, privacidad, modalidad y cómo prepararte sin presión.</p>
+        </div>
+      </a>
+      <a href="/blog/trauma-de-parto" class="blog-entry" data-cat="postparto">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Parto / Salud mental perinatal</span>
+        <time datetime="2026-05-23">23 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
+        </div>
+        <div class="blog-entry-body">
+          <h2>Trauma de parto: cuando la experiencia del parto sigue doliendo</h2>
+          <p class="dek">Cuando la experiencia del parto sigue doliendo: cómo distinguir un parto difícil de un trauma, qué señales conviene mirar y cuándo buscar apoyo profesional.</p>
+        </div>
+      </a>
+      <a href="/blog/fertilidad-y-salud-mental" class="blog-entry" data-cat="embarazo">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Fertilidad / Salud mental perinatal</span>
+        <time datetime="2026-05-23">23 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
+        </div>
+        <div class="blog-entry-body">
+          <h2>Fertilidad y salud mental: cómo atravesar la búsqueda sin perderte de vista</h2>
+          <p class="dek">La búsqueda de embarazo y los tratamientos de fertilidad piden cuidado emocional. Cómo atravesar el proceso sin perderte de vista y cuándo pedir apoyo.</p>
+        </div>
+      </a>
+      <a href="/blog/acompanar-perdida-gestacional" class="blog-entry" data-cat="duelo">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Duelo gestacional / Acompañamiento</span>
+        <time datetime="2026-05-23">23 mayo 2026</time>
+          <span class="blog-entry-read">7 min de lectura</span>
+        </div>
+        <div class="blog-entry-body">
+          <h2>Cómo acompañar a alguien tras una pérdida gestacional</h2>
+          <p class="dek">Qué decir, qué evitar y cómo estar presente cuando alguien cercano atraviesa una pérdida gestacional.</p>
+        </div>
+      </a>
+      <a href="/blog/ansiedad-postparto" class="blog-entry" data-cat="embarazo postparto">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Ansiedad perinatal / Postparto</span>
+        <time datetime="2026-05-22">22 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
+        </div>
+        <div class="blog-entry-body">
+          <h2>Ansiedad posparto: cuándo la preocupación empieza a ocupar demasiado espacio</h2>
+          <p class="dek">La ansiedad posparto va más allá de la preocupación. Cómo reconocerla, por qué pasa desapercibida y cuándo buscar acompañamiento perinatal.</p>
+        </div>
+      </a>
+      <a href="/blog/duelo-gestacional-apoyo-psicologico" class="blog-entry" data-cat="duelo">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Duelo gestacional · Salud mental perinatal</span>
+        <time datetime="2026-05-20">20 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
+        </div>
+        <div class="blog-entry-body">
           <h2>Duelo gestacional: cómo atravesar una pérdida y cuándo pedir apoyo psicológico</h2>
-          <p class="dek">
-            Una guía cuidadosa para nombrar la pérdida gestacional, entender qué puede sentirse
-            y cuándo buscar acompañamiento psicológico.
-          </p>
-          <span class="read-more">Leer artículo</span>
+          <p class="dek">El duelo gestacional puede remover profundamente. Qué puede sentirse tras una pérdida, qué ayuda y cuándo buscar acompañamiento psicológico perinatal.</p>
         </div>
       </a>
-
-      <!-- FEATURE -->
-      <a href="/blog/matrescencia-que-es" class="blog-post-card feature reveal" data-cat="maternidad">
-        <div class="blog-post-card-img">
-          <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
+      <a href="/blog/matrescencia-que-es" class="blog-entry" data-cat="maternidad">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Maternidad · Salud mental perinatal</span>
+        <time datetime="2026-05-19">19 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
         </div>
-        <div>
-          <div class="blog-post-card-meta">
-            <span class="category">Maternidad · Salud mental perinatal</span>
-            <span class="dot">·</span>
-            <time datetime="2026-05-19">19 mayo 2026</time>
-            <span class="dot">·</span>
-            <span>8 min</span>
-          </div>
+        <div class="blog-entry-body">
           <h2>Matrescencia: qué es, por qué remueve tanto y qué esperar</h2>
-          <p class="dek">
-            Una guía para comprender la transformación emocional, corporal y de identidad
-            que puede aparecer al convertirse en madre.
-          </p>
-          <span class="read-more">Leer artículo</span>
+          <p class="dek">La matrescencia es la transformación emocional, corporal y de identidad al convertirse en madre. Qué es, por qué remueve tanto y qué esperar.</p>
         </div>
       </a>
-
-
-<!-- FEATURE -->
-<a href="/blog/vinculo-madre-bebe" class="blog-post-card feature reveal" data-cat="maternidad vinculo depresion ansiedad">
-  <div class="blog-post-card-img">
-    <img src="assets/images/francisca/francisca-hero-web-1.webp" alt="Francisca Bustos, psicóloga perinatal" loading="lazy" width="1448" height="1086">
-  </div>
-  <div>
-    <div class="blog-post-card-meta">
-      <span class="category">Maternidad / Salud mental perinatal</span>
-      <span class="dot">·</span>
-      <time datetime="2026-05-22">22 mayo 2026</time>
-      <span class="dot">·</span>
-      <span>8 min</span>
-    </div>
-    <h2>Vínculo madre-bebé: qué es, cómo se construye y cuándo pedir apoyo</h2>
-    <p class="dek">
-      Una guía para entender cómo se construye el vínculo madre-bebé, qué puede dificultarlo y cuándo pedir apoyo.
-    </p>
-    <span class="read-more">Leer artículo</span>
-  </div>
-</a>
-
-      <!-- FEATURE -->
-      <a href="/blog/test-edimburgo-que-mide" class="blog-post-card feature reveal" data-cat="depresion maternidad">
-        <div class="blog-post-card-img">
-          <img src="assets/images/francisca/francisca-hero-web-1.webp" alt="Francisca Bustos, psicóloga perinatal" loading="lazy" width="1448" height="1086">
+      <a href="/blog/vinculo-madre-bebe" class="blog-entry" data-cat="postparto maternidad vinculo">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Maternidad / Salud mental perinatal</span>
+        <time datetime="2026-05-22">22 mayo 2026</time>
+          <span class="blog-entry-read">8 min de lectura</span>
         </div>
-        <div>
-          <div class="blog-post-card-meta">
-            <span class="category">Recursos · Salud mental perinatal</span>
-            <span class="dot">·</span>
-            <time datetime="2026-05-18">18 mayo 2026</time>
-            <span class="dot">·</span>
-            <span>9 min</span>
-          </div>
+        <div class="blog-entry-body">
+          <h2>Vínculo madre-bebé: qué es, cómo se construye y cuándo pedir apoyo</h2>
+          <p class="dek">El vínculo madre-bebé no siempre aparece como un flechazo. Cómo se construye, qué puede hacerlo más difícil y cuándo buscar acompañamiento profesional.</p>
+        </div>
+      </a>
+      <a href="/blog/test-edimburgo-que-mide" class="blog-entry" data-cat="postparto">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Recursos · Salud mental perinatal</span>
+        <time datetime="2026-05-18">18 mayo 2026</time>
+          <span class="blog-entry-read">9 min de lectura</span>
+        </div>
+        <div class="blog-entry-body">
           <h2>Test de Edimburgo: qué mide, cómo interpretar el resultado y cuándo consultar</h2>
-          <p class="dek">
-            Una guía clara para entender qué mide la EPDS, cómo se puntúa,
-            qué significa estar sobre el umbral y qué hacer con el resultado.
-          </p>
-          <span class="read-more">Leer artículo</span>
+          <p class="dek">La EPDS es la herramienta más usada para detectar depresión perinatal en Chile. Qué mide, cómo se puntúa, qué significa estar sobre el umbral y qué hacer con el resultado.</p>
         </div>
       </a>
-
-      <!-- FEATURE -->
-      <a href="/blog/sintomas-depresion-postparto" class="blog-post-card feature reveal" data-cat="depresion">
-        <div class="blog-post-card-img">
-          <img src="assets/images/francisca/francisca-hero-web-1.webp" alt="Francisca Bustos, psicóloga perinatal" loading="lazy" width="1448" height="1086">
+      <a href="/blog/sintomas-depresion-postparto" class="blog-entry" data-cat="postparto">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Depresión postparto</span>
+        <time datetime="2025-01-20">20 enero 2025</time>
+          <span class="blog-entry-read">10 min de lectura</span>
         </div>
-        <div>
-          <div class="blog-post-card-meta">
-            <span class="category">Depresión postparto</span>
-            <span class="dot">·</span>
-            <time datetime="2025-01-20">20 enero 2025</time>
-            <span class="dot">·</span>
-            <span>10 min</span>
-          </div>
+        <div class="blog-entry-body">
           <h2>10 síntomas de depresión postparto que no siempre se ven: la guía clínica completa</h2>
-          <p class="dek">
-            No es solo tristeza. La depresión postparto se esconde en la irritabilidad, la
-            hipervigilancia, la sensación de irrealidad. Una guía para reconocerla, con
-            criterios clínicos adaptados a Chile.
-          </p>
-          <span class="read-more">Leer artículo</span>
+          <p class="dek">No es solo tristeza. La depresión postparto se esconde en la irritabilidad, la hipervigilancia, la sensación de irrealidad. Una guía para reconocerla, con criterios clínicos adaptados a Chile.</p>
         </div>
       </a>
-
-      <!-- Card 2 -->
-      <a href="/blog/baby-blues-vs-depresion-postparto" class="blog-post-card reveal" data-cat="depresion maternidad">
-        <div class="blog-post-card-img">
-          <img src="assets/images/francisca/francisca-sobre-mi-web-4.webp" alt="Francisca Bustos en consulta de psicología perinatal" loading="lazy" width="1122" height="1402">
+      <a href="/blog/baby-blues-vs-depresion-postparto" class="blog-entry" data-cat="postparto">
+        <div class="blog-entry-meta">
+          <span class="blog-entry-cat">Depresión postparto</span>
+        <time datetime="2025-01-10">10 enero 2025</time>
+          <span class="blog-entry-read">7 min de lectura</span>
         </div>
-        <div class="blog-post-card-meta">
-          <span class="category">Depresión postparto</span>
-          <span class="dot">·</span>
-          <time datetime="2025-01-10">10 enero 2025</time>
-          <span class="dot">·</span>
-          <span>7 min</span>
+        <div class="blog-entry-body">
+          <h2>Baby blues o depresión postparto: cómo diferenciarlos</h2>
+          <p class="dek">El 80% de las madres experimenta baby blues. Solo el 15% desarrolla depresión postparto. Conocer la diferencia cambia cuándo y cómo pedir ayuda.</p>
         </div>
-        <h2>Baby blues o depresión postparto: cómo diferenciarlos</h2>
-        <p class="dek">
-          El 80% de las madres experimenta baby blues. Solo el 15% desarrolla depresión
-          postparto. Conocer la diferencia cambia cuándo y cómo pedir ayuda.
-        </p>
-        <span class="read-more">Leer artículo</span>
       </a>
+    </div>
 
+    <p class="blog-empty" id="blog-empty" hidden>No hay artículos en este tema por ahora. Vuelve a <button type="button" class="blog-empty-reset" data-filter-reset>ver todos los artículos</button>.</p>
+
+  </div>
+</section>
+
+<!-- =================== CIERRE =================== -->
+<section class="page-closing">
+  <div class="container page-closing-inner">
+    <div>
+      <h2>¿Buscas algo que no está aquí?</h2>
+      <p>Puedes escribirme o reservar una sesión.</p>
+    </div>
+    <div class="page-closing-actions">
+      <a href="/contacto" class="lnk-action">Contacto <span class="arrow" aria-hidden="true">→</span></a>
+      <a href="/reserva" class="lnk-action">Reservar sesión <span class="arrow" aria-hidden="true">→</span></a>
     </div>
   </div>
 </section>
 
 <!-- =================== FOOTER =================== -->
+</main>
+
 <footer class="footer">
   <div class="container">
     <div class="footer-grid">
       <div>
-        <div class="footer-brand-name">Francisca Bustos</div>
-        <p class="footer-tagline">Psicología clínica perinatal</p>
-        <p class="footer-address">
-          Atención online para personas en Chile<br/>
-          +56 9 5766 3038<br/>
-          hola@franciscabustos.cl
+        <div class="footer-brand-name">Francisca Bustos M.</div>
+        <p class="footer-brand-desc">
+          Psicología clínica especializada en salud mental perinatal: embarazo,
+          posparto y matrescencia, y duelo gestacional y perinatal.
         </p>
       </div>
-      <div>
-        <h5>Atención</h5>
-        <ul>
-          <li><a href="/servicios">Servicios</a></li>
-          <li><a href="/depresion-postparto">Depresión postparto</a></li>
-          <li><a href="/ansiedad-perinatal">Ansiedad perinatal</a></li>
-          <li><a href="/recursos/test-edimburgo">Test de Edimburgo</a></li>
-          <li><a href="/guia/10-senales">Guía 10 señales</a></li>
-          <li><a href="/reserva">Reservar sesión</a></li>
-        </ul>
-      </div>
-      <div>
-        <h5>Sobre</h5>
+      <nav class="footer-col" aria-labelledby="ft-seguir">
+        <p class="footer-col-title" id="ft-seguir">Continuar</p>
         <ul>
           <li><a href="/sobre-mi">Sobre mí</a></li>
-          <li><a href="/faq">Preguntas frecuentes</a></li>
-          <li><a href="/contacto">Contacto</a></li>
+          <li><a href="/servicios">Servicios</a></li>
+          <li><a href="/blog">Blog</a></li>
+          <li><a href="/faq">Preguntas</a></li>
+          <li><a href="/recursos/test-edimburgo">Test de Edimburgo</a></li>
+          <li><a href="/guia/10-senales">Guía 10 señales</a></li>
+        </ul>
+      </nav>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-contacto">Contacto</p>
+        <ul aria-labelledby="ft-contacto">
+          <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
+          <li><a href="/contacto">Formulario de contacto</a></li>
+          <li>Atención online por videollamada</li>
         </ul>
       </div>
-      <div>
-        <h5>Recursos</h5>
-        <ul>
-          <li><a href="/recursos/test-edimburgo">Test Edimburgo (EPDS)</a></li>
-          <li><a href="/blog">Blog clínico</a></li>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-respaldo">Respaldo</p>
+        <ul class="footer-creds" aria-labelledby="ft-respaldo">
+          <li><span class="cred-name">Univ. Zaragoza</span></li>
+          <li><span class="cred-name">Superintendencia de Salud</span><span class="cred-reg">Registro 598177</span></li>
+          <li><span class="cred-name">Colegio de Psicólogos CL</span><span class="cred-reg">Registro 12.847</span></li>
         </ul>
       </div>
     </div>
     <div class="footer-bottom">
-      <small>© <span id="yr"></span> Francisca Bustos · Reg. SSS 598177</small>
-      <small>Secreto profesional · Datos protegidos</small>
+      <small>© <span id="yr">2026</span> Francisca Bustos M.</small>
+      <small>Consulta confidencial · Secreto profesional</small>
+      <small><a href="/privacidad">Aviso de privacidad</a></small>
+      <small><button type="button" class="footer-consent-btn" data-consent-open hidden>Preferencias de cookies</button></small>
     </div>
   </div>
 </footer>
@@ -435,73 +342,52 @@
 <script>
 document.getElementById('yr').textContent = new Date().getFullYear();
 
-// Filter
+// Filtro por tema. Actúa sobre las filas del índice; si un tema queda sin
+// artículos se dice, en vez de dejar un índice en blanco sin explicación.
+const blogEmpty = document.getElementById('blog-empty');
+
+function applyBlogFilter(f) {
+  let visible = 0;
+  document.querySelectorAll('.blog-entry').forEach(c => {
+    const cats = (c.dataset.cat || '').split(/\s+/);
+    const show = (f === 'all' || cats.includes(f));
+    c.hidden = !show;
+    if (show) visible += 1;
+  });
+  // La primera fila visible conserva el tratamiento de apertura.
+  const rows = [...document.querySelectorAll('.blog-entry')];
+  rows.forEach(c => { c.classList.remove('is-first'); c.classList.remove('blog-entry--lead'); });
+  const first = rows.find(c => !c.hidden);
+  if (first) first.classList.add('is-first');
+  if (blogEmpty) blogEmpty.hidden = visible !== 0;
+}
+
 document.querySelectorAll('.blog-filter').forEach(b => {
   b.addEventListener('click', () => {
-    document.querySelectorAll('.blog-filter').forEach(x => x.classList.remove('active'));
-    b.classList.add('active');
-    const f = b.dataset.filter;
-    document.querySelectorAll('.blog-post-card').forEach(c => {
-      const cats = (c.dataset.cat || '').split(/\s+/);
-      c.style.display = (f === 'all' || cats.includes(f)) ? '' : 'none';
+    document.querySelectorAll('.blog-filter').forEach(x => {
+      x.classList.remove('active');
+      x.setAttribute('aria-pressed', 'false');
     });
+    b.classList.add('active');
+    b.setAttribute('aria-pressed', 'true');
+    applyBlogFilter(b.dataset.filter);
   });
 });
 
-// Nav burger
-const burger = document.querySelector('.nav-burger');
-const panel  = document.getElementById('nav-panel');
-if (burger && panel) {
-  burger.addEventListener('click', () => {
-    const open = panel.classList.toggle('open');
-    burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+document.querySelectorAll('[data-filter-reset]').forEach(b => {
+  b.addEventListener('click', () => {
+    const all = document.querySelector('.blog-filter[data-filter="all"]');
+    if (all) all.click();
   });
-}
+});
+
+applyBlogFilter('all');
 </script>
 
-<script src="assets/analytics.js?v=1" defer></script>
+<script src="assets/analytics.js?v=4" defer></script>
+<script src="assets/consent.js?v=2" defer></script>
 
 <!-- =================== COOKIE BANNER =================== -->
-<div id="fb-cookie-banner" role="region" aria-label="Aviso de cookies" style="
-  display:none;position:fixed;bottom:0;left:0;right:0;z-index:9999;
-  background:#FDFBF7;border-top:1px solid #E2D8C9;
-  padding:16px 24px;font-family:'Inter',-apple-system,sans-serif;font-size:13.5px;
-  color:#231F1C;line-height:1.55;
-  box-shadow:0 -2px 12px rgba(35,31,28,.07);
-">
-  <div style="max-width:860px;margin:0 auto;display:flex;gap:20px;align-items:center;flex-wrap:wrap;">
-    <p style="margin:0;flex:1;min-width:240px;">
-      Usamos cookies esenciales y, con tu permiso, cookies de análisis para mejorar la experiencia del sitio. Puedes aceptar o continuar solo con las esenciales.
-      <a href="/privacidad" style="color:#8A5A6B;text-decoration:underline;text-underline-offset:2px;">Política de privacidad →</a>
-    </p>
-    <div style="display:flex;gap:10px;flex-shrink:0;">
-      <button id="fb-cookie-reject" style="
-        padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;
-        background:transparent;border:1px solid #C9C0B0;color:#5A534D;font-family:inherit;
-      ">Solo esenciales</button>
-      <button id="fb-cookie-accept" style="
-        padding:8px 18px;border-radius:6px;font-size:13px;cursor:pointer;
-        background:#231F1C;border:1px solid #231F1C;color:#FDFBF7;font-family:inherit;
-      ">Aceptar cookies</button>
-    </div>
-  </div>
-</div>
-<script>
-(function() {
-  var banner = document.getElementById('fb-cookie-banner');
-  if (!banner) return;
-  var consent = '';
-  try { consent = localStorage.getItem('fb_cookie_consent') || ''; } catch(e) {}
-  if (!consent) banner.style.display = '';
-  document.getElementById('fb-cookie-accept').addEventListener('click', function() {
-    banner.style.display = 'none';
-    if (window.FB_acceptCookies) window.FB_acceptCookies();
-  });
-  document.getElementById('fb-cookie-reject').addEventListener('click', function() {
-    banner.style.display = 'none';
-    if (window.FB_rejectCookies) window.FB_rejectCookies();
-  });
-})();
-</script>
+<script src="assets/app.js?v=7" defer></script>
 </body>
 </html>

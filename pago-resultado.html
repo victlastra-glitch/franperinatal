@@ -3,17 +3,18 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<meta name="color-scheme" content="light" />
 <title>Resultado del pago · Francisca Bustos</title>
 <meta name="description" content="Resultado del pago de tu sesión. La hora se confirma una vez aprobado el pago." />
 <meta name="robots" content="noindex,nofollow" />
 <link rel="canonical" href="https://franciscabustos.cl/pago-resultado" />
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23C9A8B3'/%3E%3Cstop offset='1' stop-color='%238A5A6B'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='50' cy='50' r='48' fill='url(%23g)'/%3E%3Ctext x='50' y='66' text-anchor='middle' font-family='Georgia,serif' font-style='italic' font-size='48' fill='%23fff'%3Efb%3C/text%3E%3C/svg%3E" />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20100%20100'%3E%3Crect%20width='100'%20height='100'%20rx='20'%20fill='%238A5A6B'/%3E%3Ctext%20x='50'%20y='69'%20text-anchor='middle'%20font-family='Fraunces,Georgia,serif'%20font-style='italic'%20font-size='54'%20fill='%23FAF6F0'%3Efb%3C/text%3E%3C/svg%3E" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
-<link rel="stylesheet" href="assets/styles.css?v=3" />
-<link rel="stylesheet" href="assets/home.css?v=2" />
+<link rel="stylesheet" href="assets/styles.css?v=4" />
+<link rel="stylesheet" href="assets/home.css?v=5" />
 <link rel="stylesheet" href="assets/pages.css?v=2" />
 <style>
   .pr-shell { padding: 64px 20px 96px; max-width: 640px; margin: 0 auto; text-align: center; }
@@ -27,15 +28,17 @@
   .pr-title { font-family: var(--serif, Georgia, serif); font-size: 28px; font-weight: 300; color: var(--ink, #231F1C); margin: 8px 0 12px; line-height: 1.2; }
   .pr-msg { font-size: 15px; color: var(--ink-2, #5A534D); line-height: 1.6; margin: 0 0 18px; }
   .pr-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
-  .pr-meta { margin-top: 24px; font-size: 13px; color: var(--ink-3, #8A8178); }
+  .pr-meta { margin-top: 24px; font-size: 13px; color: var(--ink-3, #756C63); }
   .pr-meta a { color: inherit; }
 </style>
 </head>
 <body>
 
+<a class="skip-link" href="#contenido">Saltar al contenido</a>
+
 <header class="nav">
   <div class="nav-inner">
-    <a class="brand" href="/"><span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span></a>
+    <a class="brand" href="/"><span class="brand-name"><span class="brand-line">Francisca</span> <span class="brand-line">Bustos M.</span><small>Psicóloga Clínica · Perinatal</small></span></a>
     <nav class="nav-links" aria-label="Principal">
       <a class="nav-link" href="/">Inicio</a>
       <a class="nav-link" href="/sobre-mi">Sobre mí</a>
@@ -46,7 +49,7 @@
   </div>
 </header>
 
-<main class="pr-shell">
+<main id="contenido" class="pr-shell">
 
   <div id="pr-state-loading" class="pr-state is-loading">
     <div class="pr-icon">•••</div>
@@ -57,7 +60,7 @@
   <div id="pr-state-confirmed" class="pr-state is-confirmed" hidden>
     <div class="pr-icon">✓</div>
     <h1 class="pr-title">Reserva confirmada</h1>
-    <p class="pr-msg">Hemos recibido tu pago correctamente. Te enviamos un correo con los detalles de tu sesión, el enlace de Meet (si aplica) y la información administrativa.</p>
+    <p class="pr-msg">Hemos recibido tu pago correctamente. Te enviamos un correo con los detalles de tu sesión y el enlace de Google Meet.</p>
     <div class="pr-actions">
       <a href="/" class="btn btn-primary">Volver al inicio</a>
     </div>
@@ -66,10 +69,10 @@
   <div id="pr-state-pending" class="pr-state is-pending" hidden>
     <div class="pr-icon">…</div>
     <h1 class="pr-title">Estamos verificando tu pago</h1>
-    <p class="pr-msg">Tu pago aún se está procesando. Si pagaste hace pocos minutos, podemos esperar y volver a consultar. Si necesitas ayuda, escríbenos por WhatsApp.</p>
+    <p class="pr-msg">Tu pago aún se está procesando. Si pagaste hace pocos minutos, podemos esperar y volver a consultar. Si necesitas ayuda, escríbenos a hola@franciscabustos.cl.</p>
     <div class="pr-actions">
       <button id="pr-retry-pending" class="btn btn-primary" type="button">Volver a consultar</button>
-      <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">Escribir por WhatsApp</a>
+      <a href="mailto:hola@franciscabustos.cl" class="btn btn-ghost">Escribir a Francisca</a>
     </div>
   </div>
 
@@ -98,7 +101,20 @@
     <p class="pr-msg">Todavía no podemos confirmar ni descartar el pago. Si pagaste hace un momento, espera y vuelve a consultar. No cierres esta página.</p>
     <div class="pr-actions">
       <button id="pr-retry-review" class="btn btn-primary" type="button">Volver a consultar</button>
-      <a href="https://wa.me/56957663038" class="btn btn-ghost" rel="noopener">Escribir por WhatsApp</a>
+      <a href="mailto:hola@franciscabustos.cl" class="btn btn-ghost">Escribir a Francisca</a>
+    </div>
+  </div>
+
+  <!-- Sin token no hay nada que consultar: prometer una verificación en curso
+       ("no cierres esta página", "volver a consultar") sería falso. Este estado
+       no afirma ningún resultado de pago; sólo dice que falta la referencia. -->
+  <div id="pr-state-notoken" class="pr-state is-review" hidden>
+    <div class="pr-icon">i</div>
+    <h1 class="pr-title">No encontramos una referencia de pago</h1>
+    <p class="pr-msg">Esta página muestra el resultado de un pago recién realizado. Si llegaste por un enlace antiguo o recargaste mucho después, la referencia ya no está disponible. Eso no significa que tu pago haya fallado: si recibiste el correo de confirmación, tu hora está reservada.</p>
+    <div class="pr-actions">
+      <a href="/reserva" class="btn btn-primary">Reservar sesión</a>
+      <a href="mailto:hola@franciscabustos.cl" class="btn btn-ghost">Escribir a Francisca</a>
     </div>
   </div>
 
@@ -107,7 +123,8 @@
   </p>
 </main>
 
-<script src="assets/analytics.js?v=2"></script>
+<script src="assets/analytics.js?v=4" defer></script>
+<script src="assets/consent.js?v=2" defer></script>
 <script>
   // Web 04.9 PRODUCTION: payment_status query goes through the Cloudflare
   // proxy /api/payment-status (see _worker.js). The Apps Script Web App URL
@@ -118,7 +135,7 @@
   };
 
   function showState(id) {
-    ['loading','confirmed','pending','failed','expired','review'].forEach(function(s) {
+    ['loading','confirmed','pending','failed','expired','review','notoken'].forEach(function(s) {
       var el = document.getElementById('pr-state-' + s);
       if (el) el.hidden = (s !== id);
     });
@@ -281,7 +298,7 @@
   }
 
   if (!st) {
-    showState('review');
+    showState('notoken');
   } else {
     fetchStatus(st);
     var attempts = 0;
@@ -314,18 +331,49 @@
 </script>
 
 <footer class="footer">
-  <div class="container footer-inner">
-    <div class="footer-brand">
-      <span class="brand-name">Francisca Bustos<small>Psicóloga Perinatal</small></span>
+  <div class="container">
+    <div class="footer-grid">
+      <div>
+        <div class="footer-brand-name">Francisca Bustos M.</div>
+        <p class="footer-brand-desc">
+          Psicología clínica especializada en salud mental perinatal: embarazo,
+          posparto y matrescencia, y duelo gestacional y perinatal.
+        </p>
+      </div>
+      <nav class="footer-col" aria-labelledby="ft-seguir">
+        <p class="footer-col-title" id="ft-seguir">Continuar</p>
+        <ul>
+          <li><a href="/sobre-mi">Sobre mí</a></li>
+          <li><a href="/servicios">Servicios</a></li>
+          <li><a href="/blog">Blog</a></li>
+          <li><a href="/faq">Preguntas</a></li>
+          <li><a href="/recursos/test-edimburgo">Test de Edimburgo</a></li>
+          <li><a href="/guia/10-senales">Guía 10 señales</a></li>
+        </ul>
+      </nav>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-contacto">Contacto</p>
+        <ul aria-labelledby="ft-contacto">
+          <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
+          <li><a href="/contacto">Formulario de contacto</a></li>
+          <li>Atención online por videollamada</li>
+        </ul>
+      </div>
+      <div class="footer-col">
+        <p class="footer-col-title" id="ft-respaldo">Respaldo</p>
+        <ul class="footer-creds" aria-labelledby="ft-respaldo">
+          <li><span class="cred-name">Univ. Zaragoza</span></li>
+          <li><span class="cred-name">Superintendencia de Salud</span><span class="cred-reg">Registro 598177</span></li>
+          <li><span class="cred-name">Colegio de Psicólogos CL</span><span class="cred-reg">Registro 12.847</span></li>
+        </ul>
+      </div>
     </div>
-    <nav class="footer-nav" aria-label="Navegación inferior">
-      <a href="/">Inicio</a>
-      <a href="/sobre-mi">Sobre mí</a>
-      <a href="/servicios">Servicios</a>
-      <a href="/faq">Preguntas frecuentes</a>
-      <a href="/contacto">Contacto</a>
-      <a href="/privacidad">Privacidad</a>
-    </nav>
+    <div class="footer-bottom">
+      <small>© <span id="yr">2026</span> Francisca Bustos M.</small>
+      <small>Consulta confidencial · Secreto profesional</small>
+      <small><a href="/privacidad">Aviso de privacidad</a></small>
+      <small><button type="button" class="footer-consent-btn" data-consent-open hidden>Preferencias de cookies</button></small>
+    </div>
   </div>
 </footer>
 

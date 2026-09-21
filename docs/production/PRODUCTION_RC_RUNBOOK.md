@@ -198,83 +198,115 @@ the Web App. Fix the fileset and re-push.
 
 Operator-only. Never from `doGet` / `doPost`.
 
-1. `productionSchemaMigrationDryRun_()` — header fingerprint, counts, missing
-   V2 columns, outbox presence. No row values. No writes.
-2. `migrateProductionV7SchemaToLifecycleV2_()` — append-only. Never delete,
-   reorder, or rename existing columns. Preserve every historical row. Create
-   or recognize `notification_outbox` independently.
+1. `opProductionSchemaDryRun()` → `productionSchemaMigrationDryRun_()` —
+   header fingerprint, counts, missing V2 columns, outbox presence. No row
+   values. No writes. The dry run always runs first.
+2. `opProductionSchemaMigrate()` → `migrateProductionV7SchemaToLifecycleV2_()`
+   — append-only. Never delete, reorder, or rename existing columns. Preserve
+   every historical row. Create or recognize `notification_outbox`
+   independently.
 3. Run the migrator a second time — `idempotent=true`, zero appended columns.
 4. Confirm legacy v7 statuses remain readable via the adapter.
+
+The underscore-suffixed functions are private to Apps Script and cannot be
+selected in the editor's Run menu; the `op…` wrappers exist for exactly that and
+delegate without adding logic. This release appends seven columns, so follow
+§2.3a rather than this single pass.
 
 Live sheet name stays `Respuestas de formulario 1` unless an equivalent
 existing sheet (`reservations`) is explicitly resolved.
 
-### 2.3a Releases that ADD a reservation column — two-stage bridge
+### 2.3a Releases that ADD a reservation column — the current append
 
 Applies when `RESERVATION_HEADERS` in the release is wider than the live sheet.
 The append itself is safe; what is not safe is running a version that disagrees
 with the sheet about how wide it is.
 
-Every runtime from the BRIDGE release onward carries both halves of the
-append-only contract, so it tolerates a sheet one approved column wider **or**
-narrower than its own header list:
-
 Two different counts, never interchangeable:
 
-| Term | What it means | Value today |
+| Term | What it means | Value for this release |
 | --- | --- | --- |
-| **physical sheet columns** | header cells on the live sheet: the legacy v7 block plus the appended V2 block | 90, becoming 91 |
-| **V2 lifecycle columns** | `RESERVATION_HEADERS`, what the runtime addresses by name | 57 in BRIDGE, 58 in FINAL |
+| **physical sheet columns** | header cells on the live sheet: the legacy v7 block plus the appended V2 block | 90, becoming 97 |
+| **V2 lifecycle columns** | `RESERVATION_HEADERS`, what the runtime addresses by name | 58 in the live Production runtime, 65 in this release |
 
 The live sheet is `v7_compat`, not `v2_native`: its base columns kept the Spanish
 names of the Google Form it grew from, the Flow columns were appended in English,
-and the 57 V2 lifecycle columns were appended after that. The runtime resolves
+and the V2 lifecycle columns were appended after that. The runtime resolves
 V2 columns by name, so the physical width is not something it depends on. Never
 report the physical width as the schema width.
 
+**The seven columns this release appends**, in `RESERVATION_HEADERS` order:
+
+| # | Column |
+| --- | --- |
+| 59 | `patient_name` |
+| 60 | `patient_phone` |
+| 61 | `patient_motivo` |
+| 62 | `patient_notes` |
+| 63 | `billing_rut` |
+| 64 | `billing_address` |
+| 65 | `billing_comuna` |
+
+They carry booking fields the form already collected and the previous schema
+discarded. The append is **append-only**: nothing existing is deleted, reordered
+or renamed, and every historical row is preserved.
+
 | V2 columns on the sheet | Runtime | Result |
 | --- | --- | --- |
-| 57 present | BRIDGE (57 headers) | healthy |
-| 57 present | FINAL (58 headers) | `SCHEMA_NOT_READY` — inspectable and migratable, no business write |
-| 58 present | FINAL (58 headers) | healthy |
-| 58 present | **BRIDGE (57 headers)** | healthy — the extra column is read-through |
+| 58 present | live Production (58 headers) | healthy |
+| 58 present | this release (65 headers) | `SCHEMA_NOT_READY` — inspectable and migratable, no business write |
+| 65 present | this release (65 headers) | healthy |
+| 65 present | **live Production (58 headers)** | healthy — the seven extra columns are read-through |
 
-That last row is the point. It is what makes rollback non-destructive, and it is
-why the bridge must be deployed **before** the sheet is widened. For a
-`v7_compat` sheet the tolerance comes for free, because columns resolve by name;
-the explicit allowlist is what extends the same guarantee to a `v2_native`
-sheet, where width is exact.
+That last row is the point. It is what makes rollback non-destructive: the
+runtime currently on Production stays compatible with the widened `v7_compat`
+sheet, because its columns resolve by name and a wider sheet is a positional
+prefix of itself plus extras. For a `v7_compat` sheet that tolerance comes for
+free; the explicit allowlist is what would extend the same guarantee to a
+`v2_native` sheet, where width is exact.
 
-**Stage 1 — BRIDGE.**
+**No BRIDGE stage is required for this release**, provided the dry run confirms
+the live sheet is `v7_compat`. The bridge existed to give a narrower runtime an
+approved tolerance it did not have by name resolution. Here the rollback target
+is the runtime already deployed, and the table above shows it healthy on the
+widened sheet.
 
-1. Build staging from the bridge commit and push (steps 2–3).
-2. Create the version and repoint the existing Web App (steps 8–9).
-3. Confirm Production is healthy on the sheet as it stands, before any append.
-   Money behaviour
-   is unchanged by design, so the no-charge smoke must look exactly as before.
-4. Record this version. **It is the rollback target for stage 2.**
+**If the dry run reports `v2_native`, or any schema shape other than the
+expected `v7_compat`: STOP.** Do not migrate, do not deploy, do not improvise a
+bridge. Nothing in this runbook claims `v2_native` compatibility for this
+release.
 
-**Stage 2 — widen the sheet, then FINAL.**
+**Sequence — widen the sheet, then deploy.**
 
-1. `productionSchemaMigrationDryRun_()` — read-only. It reports the append plan
-   and the backfill counters. No cell values, no row PII.
-2. Read `amountUnknownActiveRows`. It counts reservations that are paid, not
+1. `opProductionSchemaDryRun()` (wrapping `productionSchemaMigrationDryRun_()`)
+   — read-only, operator-only. It reports the header fingerprint, `kind`, the
+   append plan and the backfill counters. No cell values, no row PII.
+2. Read `kind`. It must be `v7_compat`. Anything else: stop.
+3. Read `missingV2Columns`. It must be **exactly the seven columns above, in
+   that order, and nothing else**. A different set means the sheet is not the
+   sheet this release was built against: stop.
+4. Read `amountUnknownActiveRows`. It counts reservations that are paid, not
    cancelled and still ahead of the clock, and that cannot prove their own amount
-   from stored history. **If it is not zero, stop.** Those bookings would lose
-   their automated refund path, and a patient's refund must not silently become a
-   manual-review ticket. Resolve them before continuing.
-3. `migrateProductionV7SchemaToLifecycleV2_()` — appends the column and backfills
+   from stored history. **It must be 0.** If it is not, stop. Those bookings would
+   lose their automated refund path, and a patient's refund must not silently
+   become a manual-review ticket. Resolve them before continuing.
+5. `opProductionSchemaMigrate()` (wrapping
+   `migrateProductionV7SchemaToLifecycleV2_()`) — the only call that writes.
+   It appends the missing columns in `RESERVATION_HEADERS` order and backfills
    `transaction_amount_clp` from the amount each row already stored in
    `priceClp`. Deterministic, idempotent, never from the catalog price. A row
-   that cannot prove an amount keeps none.
-4. Run it again: `idempotent=true`, `appendedCount=0`,
-   `deterministicAmountBackfilled=0`.
-5. Verify the BRIDGE is still healthy on the widened sheet. It must be, and
-   confirming it is what proves the rollback target is live.
-6. Build staging from the final commit, create the version, repoint.
+   that cannot prove an amount keeps none. Expect `appendedCount=7` and
+   `appended` equal to the seven columns above.
+6. Run `opProductionSchemaMigrate()` a **second** time to prove idempotency:
+   `idempotent=true`, `appendedCount=0`, `deterministicAmountBackfilled=0`, and
+   an unchanged `headerFingerprintAfter`. A second run that appends anything is
+   a defect: stop and roll back the Web App, not the sheet.
+7. Confirm the runtime currently deployed is still healthy on the widened sheet.
+   It must be, and confirming it is what proves the rollback target is live.
+8. Only then build staging from the release commit, create the version, repoint.
 
-**Rollback.** FINAL → BRIDGE, by repointing the Web App. No sheet edit, at any
-point, in either stage. Do not delete, reorder or rename a live column.
+**Rollback.** Repoint the Web App to the previous verified version. No sheet
+edit, at any point. Do not delete, reorder or rename a live column.
 
 ### 2.4 Triggers (after schema verify)
 
@@ -362,9 +394,50 @@ its own newly created triggers plus any incomplete metadata if creation fails.
 
 This RC changes `_worker.js`, `assets/booking.js`, `pago-resultado.html`, and `manage.html`. Pages Direct Upload is the existing mechanism. Do **not** add GitHub Actions.
 
-1. Build a Direct Upload artifact from the RC public tree (`_worker.js`, HTML, `assets/`). Exclude `backend/`, `docs/`, `scripts/`, `.git`.
+1. Build the Direct Upload artifact with
+   `scripts/build-production-pages-artifact.sh <RC_SHA>`. Never assemble it by
+   hand and never from the worktree — see §3a.
 2. Upload to Cloudflare Pages project `franciscabustos` **Production** only after Apps Script Web App points at the new version.
 3. Do not point Preview at Production secrets.
+
+---
+
+## 3a. The Production Pages artifact is built, not assembled
+
+```
+scripts/build-production-pages-artifact.sh <GIT_REF> [OUTPUT_DIR]
+scripts/build-production-pages-artifact.sh --verify <ARTIFACT_DIR> <GIT_REF>
+```
+
+The builder reads the Git tree at the ref, never the worktree, so an
+uncommitted edit, an untracked file or an ignored file cannot reach the edge. It
+writes outside the repository, refuses an output directory inside it, and
+refuses to produce an artifact at all unless every assertion below holds. No ref
+is a usage error, not a default.
+
+| Guarantee | How it fails |
+| --- | --- |
+| `_worker.js` **and** `_routes.json` both present | `release-critical file missing: …` |
+| every root file of the Production surface present | `required Production file missing: …` |
+| nothing from `backend/`, `docs/`, `scripts/`, `.git/`, `.agents/`, `.claude/`, `AGENTS.md`, `CLAUDE.md`, `README.md`, `.gitignore` | `forbidden path in artifact: …` |
+| no file the ref's allowlist does not produce | `unexpected path in artifact: …` |
+| every byte identical to the ref's own blob | `content differs from ref: …` |
+| no symlinks | `artifact contains a symlink: …` |
+
+`_routes.json` is release-critical and paired with `_worker.js`. The NONPROD
+preview builder deliberately omits `_routes.json`; Production must carry both,
+because the Worker without its route manifest either never runs or runs on every
+asset request. Do not reuse the NONPROD allowlist here.
+
+Each build prints `SOURCE_SHA`, `ARTIFACT_DIR`, `MANIFEST_PATH`, `FILE_COUNT`
+and `MANIFEST_SHA256`. The manifest holds sorted relative paths and content
+hashes and nothing else — no directory name, no timestamp — so two builds of one
+ref produce the same file list, the same hashes and the same digest even though
+the directory names differ. Record `SOURCE_SHA`, `FILE_COUNT` and
+`MANIFEST_SHA256` in the release evidence, and run `--verify` against the
+uploaded directory immediately before the upload.
+
+Gate: `node scripts/test-production-pages-artifact.mjs`.
 
 ---
 
@@ -567,7 +640,7 @@ draft and unmerged, separately governed). None depends on the others.
 
 ## 7. Exact rollback
 
-1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it was **v9**; for the current permanent **v20** it is **v18**). Never repoint to `@HEAD`, and never to a TEMP lane version (v19, v21, v22). For a release that appended a reservation column, the rollback target is the BRIDGE version from §2.3a, and no sheet edit is required.
+1. Apps Script: point the existing versioned Web App deployment back to the **immediately previous verified immutable version** (read it from the deployment list before acting — do not assume a number; for the Policy V2 release it was **v9**; for the current permanent **v20** it is **v18**). Never repoint to `@HEAD`, and never to a TEMP lane version (v19, v21, v22). For a release that appended a reservation column, the rollback target is the previous verified version as recorded in §2.3a, and no sheet edit is required — the widened `v7_compat` sheet stays readable by the narrower runtime.
 2. Pages: restore the previous Production deployment in Cloudflare (Deployments → previous Production → Rollback).
 3. Do not change Script Properties or Flow keys as rollback.
 4. Git: do not merge or canonicalize any in-flight release while a rollback is

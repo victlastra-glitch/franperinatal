@@ -7,18 +7,15 @@
      - GA4:            G-LZ9TBN34ZN      ← ACTIVO
      - Google Ads:     AW-18187430553    ← ACTIVO (tag base + Consent Mode v2)
      - Conversión reserva_click: importada desde GA4 (no requiere label directo)
-     - Conversión whatsapp_click: importada desde GA4 (pendiente, se activa cuando el evento fire en el sitio)
      - Meta Pixel:     000000000000000   ← REEMPLAZAR cuando actives Meta Ads
 
    Cómo obtener IDs de Google Ads:
      1. Google Ads → Herramientas → Medición → Conversiones
-     2. Crear conversión "Reserva completada" y "Contacto WhatsApp"
+     2. Crear conversión "Reserva completada"
      3. Copiar los IDs (AW-XXXXXXXX/YYYYYYYYY) aquí
 
    Eventos dispatched:
      - reserva_click        → cada CTA "Reservar primera sesión"
-     - whatsapp_click       → cada CTA WhatsApp
-     - llamada_15min_click  → CTA llamada gratuita
      - formulario_submit    → envío formulario contacto
      - landing_view         → vista landing específica
      - view_service         → vista de una página/área de servicio
@@ -26,9 +23,12 @@
      - payment_started      → solicitud de inicio de pago
      - booking_completed    → pago confirmado y reserva completada
 
-   NOTA COOKIES: GA4 ahora carga con anonymize_ip en TODAS las páginas
-   (privacy-safe, no requiere consentimiento previo bajo ePrivacy Chile).
-   Google Ads usa Consent Mode v2 para máxima compatibilidad.
+   CONSENTIMIENTO (v3.2): la medición opcional NO se inicializa por sí sola.
+   Este archivo sólo declara Consent Mode v2 en 'denied' (no hace red) y espera.
+   GA4 y Google Ads se cargan únicamente cuando existe una decisión explícita
+   'accepted', tomada en el banner canónico (assets/consent.js) o restaurada de
+   una decisión previa. Con 'essentials' no se carga ninguna etiqueta y track()
+   es no-op. Fuente única de la decisión: localStorage 'fb_cookie_consent'.
    ============================================================ */
 
 (function () {
@@ -52,12 +52,14 @@
   /* -------- 1. Google Ads -------- */
   const GADS_ID = 'AW-18187430553';      // ✓ ID real — tag base para Consent Mode v2 y GCLID
   // Conversiones importadas desde GA4 — no se necesitan labels directos
-  // (reserva_click y whatsapp_click llegan a Google Ads vía integración GA4 → Google Ads)
+  // (reserva_click llega a Google Ads vía integración GA4 → Google Ads)
   const GADS_CONV_RESERVA  = null; // reserva_click: vía GA4 import ✓
-  const GADS_CONV_WHATSAPP = null; // whatsapp_click: vía GA4 import (pendiente datos)
   const GADS_ENABLED = true; // ✓ ACTIVO
 
-  if (GADS_ENABLED && !GADS_ID.includes('X')) {
+  function _initAds() {
+    if (window._gadsLoaded) return;
+    if (!GADS_ENABLED || GADS_ID.includes('X')) return;
+    window._gadsLoaded = true;
     const gads = document.createElement('script');
     gads.async = true;
     gads.src = 'https://www.googletagmanager.com/gtag/js?id=' + GADS_ID;
@@ -68,27 +70,18 @@
 
   // Helpers de conversión expuestos globalmente (lp.html y otras páginas los llaman)
   // Las conversiones llegan a Google Ads vía GA4 import — solo necesitamos
-  // disparar el evento GA4 correcto (reserva_click / whatsapp_click).
+  // disparar el evento GA4 correcto (reserva_click).
   window.gadsReserva = function () {
-    if (!GADS_ENABLED) return;
+    if (!GADS_ENABLED || !window._fbMeasurementOn) return;
     window.gtag('event', 'reserva_click', {
       event_category: 'conversion',
       value: 1.0,
       currency: 'CLP'
     });
   };
-  window.gadsWhatsapp = function () {
-    if (!GADS_ENABLED) return;
-    window.gtag('event', 'whatsapp_click', {
-      event_category: 'conversion',
-      value: 0.5,
-      currency: 'CLP'
-    });
-  };
 
   /* -------- 2. Google Analytics 4 -------- */
-  // GA4 SIEMPRE activo con anonymize_ip (privacy-safe, no requiere consentimiento
-  // previo bajo normativa chilena). Permite medir sesiones y conversiones.
+  // GA4 se carga sólo tras una decisión explícita de aceptar medición opcional.
   const GA4_ID = 'G-LZ9TBN34ZN';
   const GA4_ENABLED = true;
 
@@ -106,29 +99,52 @@
     });
   }
 
-  if (GA4_ENABLED) _initGA4();
+  const CONSENT_KEY = 'fb_cookie_consent';
 
-  // Actualizar consent si el usuario acepta el banner (activa cookies personalizadas)
-  window.FB_acceptCookies = function () {
-    try { localStorage.setItem('fb_cookie_consent', 'accepted'); } catch(e) {}
+  function storedConsent() {
+    try { return localStorage.getItem(CONSENT_KEY) || ''; } catch (e) { return ''; }
+  }
+  // Única función que enciende medición opcional. Nada la llama sin decisión.
+  function enableOptionalMeasurement() {
     window.gtag('consent', 'update', {
       'ad_storage':         'granted',
       'analytics_storage':  'granted',
       'ad_user_data':       'granted',
       'ad_personalization': 'granted'
     });
+    if (GA4_ENABLED) _initGA4();
+    _initAds();
+    window._fbMeasurementOn = true;
+  }
+
+  window.FB_hasOptionalMeasurement = function () { return window._fbMeasurementOn === true; };
+
+  window.FB_acceptCookies = function () {
+    try { localStorage.setItem(CONSENT_KEY, 'accepted'); } catch(e) {}
+    enableOptionalMeasurement();
   };
   window.FB_rejectCookies = function () {
-    try { localStorage.setItem('fb_cookie_consent', 'rejected'); } catch(e) {}
-    // consent permanece en 'denied' (default)
+    try { localStorage.setItem(CONSENT_KEY, 'essentials'); } catch(e) {}
+    // Consent Mode permanece en 'denied' y no se carga ninguna etiqueta.
+    // Si la persona revisa su elección y pasa de 'accepted' a 'essentials' en
+    // la misma visita, el consentimiento vuelve a 'denied' y track() pasa a
+    // ser no-op de inmediato; las etiquetas ya descargadas dejan de cargarse
+    // en la siguiente navegación, porque este archivo no las inicializa sin
+    // una decisión 'accepted' almacenada.
+    if (window._fbMeasurementOn) {
+      window.gtag('consent', 'update', {
+        'ad_storage':         'denied',
+        'analytics_storage':  'denied',
+        'ad_user_data':       'denied',
+        'ad_personalization': 'denied'
+      });
+      window._fbMeasurementOn = false;
+    }
   };
 
-  // Auto-actualizar consent si ya aceptó previamente
-  try {
-    if (localStorage.getItem('fb_cookie_consent') === 'accepted') {
-      window.FB_acceptCookies();
-    }
-  } catch(e) {}
+  // Restaurar una decisión previa de aceptar. 'essentials' (y el valor legado
+  // 'rejected') no encienden nada.
+  if (storedConsent() === 'accepted') enableOptionalMeasurement();
 
   /* -------- 2. Meta Pixel -------- */
   const META_PIXEL_ID = '000000000000000'; // ← REEMPLAZAR con Pixel ID real
@@ -209,6 +225,8 @@
   const attribution = getAttribution();
 
   function track(eventName, params) {
+    // Sin medición opcional activa no se emite ningún evento.
+    if (!window._fbMeasurementOn) return;
     const eventParams = Object.assign({}, attribution, params || {});
     window.gtag('event', eventName, eventParams);
     // Meta Pixel custom event
@@ -222,21 +240,6 @@
       el.addEventListener('click', () => track('reserva_click', {
         page: location.pathname,
         text: (el.textContent || '').trim().slice(0, 60)
-      }));
-    });
-
-    // WhatsApp
-    document.querySelectorAll('a[href*="wa.me"], a[href*="api.whatsapp.com"]').forEach(el => {
-      el.addEventListener('click', () => track('whatsapp_click', {
-        page: location.pathname,
-        text: (el.textContent || '').trim().slice(0, 60)
-      }));
-    });
-
-    // Llamada 15 min (CTA secundaria)
-    document.querySelectorAll('[data-cta="llamada-15min"]').forEach(el => {
-      el.addEventListener('click', () => track('llamada_15min_click', {
-        page: location.pathname
       }));
     });
 

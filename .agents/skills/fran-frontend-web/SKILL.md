@@ -9,7 +9,7 @@ description: How web code is written in this repo — hand-authored static HTML 
 
 Static, hand-authored HTML served by Cloudflare Pages, with `_worker.js` in front
 and `_redirects` for routing. Shared behaviour lives in `assets/app.js`,
-`booking.js`, `forms.js`, `analytics.js`, `tweaks.js`; styling in
+`booking.js`, `consent.js`, `analytics.js`, `tweaks.js`; styling in
 `assets/styles.css` plus per-area sheets (`home`, `pages`, `booking`, `blog`,
 `landing`).
 

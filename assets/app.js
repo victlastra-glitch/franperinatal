@@ -1,7 +1,7 @@
-// FranPerinatal — app.js v5
-// Nav con panel mobile, reveal, WhatsApp, forms, smoothing
-// v4: leadmag usa AppsScript_leadmagnet independiente (no Google Forms, no script de agenda)
-// v5: analytics de lead magnet sin PII (no email en GA4/Meta).
+// FranPerinatal — app.js v6
+// Nav con panel mobile, reveal, smoothing
+// v6: la guía se lee directamente desde el sitio; sin captura de correo, sin
+//     llamada a /api/leadmagnet y sin analytics de descarga.
 (function () {
   // ---------- Reveal on scroll ----------
   const all = document.querySelectorAll(".reveal");
@@ -27,121 +27,97 @@
   window.addEventListener("pointerdown", force, { once: true });
 
   // ---------- Mobile nav panel ----------
+  // El panel es un disclosure modal: el foco no debe escaparse al contenido de
+  // fondo mientras esta abierto, Escape lo cierra y el foco vuelve al disparador.
   const burger = document.querySelector(".nav-burger");
   const panel = document.querySelector(".nav-panel");
-  function closePanel() {
-    if (!panel) return;
+
+  function panelFocusables() {
+    if (!panel) return [];
+    return Array.from(panel.querySelectorAll('a[href], button:not([disabled])'))
+      .filter(el => el.offsetParent !== null || el.getClientRects().length);
+  }
+
+  function isOpen() { return !!panel && panel.classList.contains("open"); }
+
+  function closePanel(restoreFocus) {
+    if (!panel || !isOpen()) return;
     panel.classList.remove("open");
-    if (burger) burger.setAttribute("aria-expanded", "false");
+    panel.setAttribute("aria-hidden", "true");
+    if (burger) {
+      burger.setAttribute("aria-expanded", "false");
+      burger.setAttribute("aria-label", "Abrir menú");
+      if (restoreFocus) burger.focus();
+    }
     document.body.style.overflow = "";
   }
-  function togglePanel() {
-    if (!panel) return;
-    const open = panel.classList.toggle("open");
-    if (burger) burger.setAttribute("aria-expanded", open ? "true" : "false");
-    document.body.style.overflow = open ? "hidden" : "";
+
+  function openPanel() {
+    if (!panel || isOpen()) return;
+    panel.classList.add("open");
+    panel.removeAttribute("aria-hidden");
+    if (burger) {
+      burger.setAttribute("aria-expanded", "true");
+      burger.setAttribute("aria-label", "Cerrar menú");
+    }
+    document.body.style.overflow = "hidden";
+    const first = panelFocusables()[0];
+    if (first) window.setTimeout(() => first.focus(), 60);
   }
-  if (burger) burger.addEventListener("click", togglePanel);
-  if (panel) panel.querySelectorAll("a").forEach(a => a.addEventListener("click", closePanel));
-  window.addEventListener("resize", () => { if (window.innerWidth > 960) closePanel(); });
 
-  // ---------- Leadmag form — mismo origen; el Worker controla cualquier upstream ----------
-  const LEADMAG_API_URL = '/api/leadmagnet';
+  function togglePanel() { isOpen() ? closePanel(true) : openPanel(); }
 
-  // Destino del PDF ya creado en guia/
-  const LEADMAG_PDF_URL  = 'guia/10-senales.pdf';
+  if (burger) {
+    // <button> ya activa con Enter/Space via click nativo.
+    burger.addEventListener("click", togglePanel);
+  }
+  if (panel) {
+    panel.setAttribute("aria-hidden", "true");
+    panel.querySelectorAll("a").forEach(a => a.addEventListener("click", () => closePanel(false)));
+  }
 
-  const lmForm = document.querySelector("[data-leadmag-form]");
-  if (lmForm) {
-    lmForm.addEventListener("submit", async (e) => {
-      e.preventDefault();
+  document.addEventListener("keydown", (e) => {
+    if (!isOpen()) return;
+    if (e.key === "Escape") { e.preventDefault(); closePanel(true); return; }
+    if (e.key !== "Tab") return;
+    // Contencion de foco: el panel cubre la pagina, tabular no debe salir de el.
+    const items = panelFocusables();
+    if (!items.length) return;
+    const first = items[0];
+    const last = items[items.length - 1];
+    const active = document.activeElement;
+    if (e.shiftKey && (active === first || active === burger || !panel.contains(active))) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && active === last) {
+      e.preventDefault(); first.focus();
+    }
+  });
 
-      const emailInput = lmForm.querySelector("input[type=email]");
-      const email = (emailInput?.value || "").trim();
+  window.addEventListener("resize", () => { if (window.innerWidth > 960) closePanel(false); });
 
-      // Validación básica en frontend antes de enviar
-      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
-        if (emailInput) {
-          emailInput.setCustomValidity("Ingresa un correo electrónico válido.");
-          emailInput.reportValidity();
-          emailInput.setCustomValidity("");
-        }
-        return;
-      }
-
-      const submitBtn = lmForm.querySelector("button[type=submit]");
-      const okMsg     = lmForm.querySelector("[data-leadmag-ok]");
-      const row       = lmForm.querySelector(".field-row");
-
-      if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = "Enviando…"; }
-
-      let envioCorrecto = false;
-
-      // El Worker decide si esta función está disponible en el ambiente actual.
-      try {
-        const resp = await fetch(LEADMAG_API_URL, {
-          method:  'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body:    JSON.stringify({ action: 'leadmag', email }),
+  // ---------- Una sola acción dominante en el primer viewport ----------
+  // En Home conviven la acción del header y la del hero. Mientras el hero
+  // está a la vista, la del header se mantiene contenida; al dejar atrás el
+  // hero pasa a ser la acción primaria persistente. Sin animación.
+  const heroEl = document.querySelector(".hero");
+  const navEl = document.querySelector("header.nav");
+  if (heroEl && navEl) {
+    navEl.classList.add("nav--hero-visible");
+    try {
+      const hio = new IntersectionObserver((entries) => {
+        entries.forEach((e) => {
+          navEl.classList.toggle("nav--hero-visible", e.isIntersecting);
         });
-        const result = await resp.json().catch(() => ({}));
-        envioCorrecto = !!(result && result.ok);
-      } catch (_) {
-        envioCorrecto = false;
-      }
-
-      // Actualizar mensaje de éxito/fallback según resultado real
-      if (okMsg) {
-        if (envioCorrecto) {
-          okMsg.innerHTML =
-            '<strong>✓ Gracias.</strong> Te enviamos la guía a tu correo y la abriremos ahora. ' +
-            '<a href="' + LEADMAG_PDF_URL + '" target="_blank" rel="noopener" ' +
-            'style="color:var(--accent-deep);text-decoration:underline">Abrirla de nuevo →</a>';
-        } else {
-          okMsg.innerHTML =
-            'No pudimos enviar el correo en este momento, pero puedes leer la guía ahora. ' +
-            '<a href="' + LEADMAG_PDF_URL + '" target="_blank" rel="noopener" ' +
-            'style="color:var(--accent-deep);text-decoration:underline">Abrir la guía →</a>';
-        }
-        okMsg.hidden = false;
-      }
-      if (row) { row.style.display = "none"; }
-
-      // Tracking
-      if (window.fbTrack) {
-        const leadMagnetParams = {
-          lead_magnet_id: 'guia_10_senales',
-          guide_name: 'guia_10_senales',
-          source: 'leadmag_form',
-          page_path: window.location.pathname,
-          event_context: envioCorrecto ? 'leadmag_delivery_success' : 'leadmag_pdf_fallback'
-        };
-        window.fbTrack('descarga_guia', leadMagnetParams);
-        window.fbTrack('submit_form_guia', {
-          lead_magnet_id: leadMagnetParams.lead_magnet_id,
-          guide_name: leadMagnetParams.guide_name,
-          source: leadMagnetParams.source,
-          page_path: leadMagnetParams.page_path,
-          event_context: 'leadmag_form_submitted'
-        });
-      }
-
-      // Abrir PDF en nueva pestaña — siempre, independiente del resultado del correo
-      try { window.open(LEADMAG_PDF_URL, "_blank", "noopener"); } catch (_) {}
-    });
-
-    // Limpiar validación personalizada cuando el usuario edita el campo
-    const lmEmailInput = lmForm.querySelector("input[type=email]");
-    if (lmEmailInput) {
-      lmEmailInput.addEventListener("input", function () { lmEmailInput.setCustomValidity(""); });
+      }, { threshold: 0 });
+      hio.observe(heroEl);
+    } catch (e) {
+      navEl.classList.remove("nav--hero-visible");
     }
   }
 
-  // ---------- Apply tweaks ----------
-  try {
-    const a = localStorage.getItem("fb_accent");
-    const d = localStorage.getItem("fb_density");
-    if (a) document.documentElement.setAttribute("data-accent", a);
-    if (d) document.documentElement.setAttribute("data-density", d);
-  } catch (e) {}
+  // ---------- Guía "10 señales" ----------
+  // No hay formulario: la guía se abre desde el marcado (/guia/10-senales y su
+  // PDF). Mientras /api/leadmagnet no sea una capacidad real, el sitio no pide
+  // un correo ni promete un envío, así que aquí no queda nada que ejecutar.
+
 })();
