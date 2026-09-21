@@ -39,7 +39,7 @@ workstation clock or that needs dates bumped each week. The two policy suites sh
 | `Reconciliation.js` / `CalendarGateway.js` | `calendar-metadata-reconciliation`, `lifecycle-harness`, `calendar-manifest-contract` |
 | Outbox / triggers / retries / immediate dispatch | `notification-outbox-worker`, `notification-outbox-sheet`, `sequential-notification-harness`, `no-drain-notification-harness`, `notification-immediate-dispatch`, `production-trigger-contract` |
 | Email content or templates | `email-design-system-v4`, `lifecycle-email-v2` |
-| `_worker.js` or any `/api/*` route | `scripts/assert-production-worker-structure.mjs _worker.js`, `scripts/test-production-worker-routes.mjs`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/test-manage-contract.mjs`, `preview-host-validation` |
+| `_worker.js`, `_routes.json`, or any `/api/*` route | `scripts/assert-production-worker-structure.mjs _worker.js`, `scripts/test-production-worker-routes.mjs`, `scripts/test-production-payment-status-privacy.mjs`, `scripts/test-manage-contract.mjs`, `preview-host-validation` |
 | Schema / properties / v7 compatibility | `v7-schema-compatibility`, `property-compatibility`, `session-duration-contract`, `production-derived-integration` |
 | Deployable fileset / clasp | `clasp-fileset-release-gate`, `clasp-staging-release-gate`, `scripts/assert-production-clasp-staging-gate.mjs` |
 | Runtime files or nonprod risk | `scripts/assert-production-contamination-firewall.mjs` |

@@ -58,6 +58,11 @@
   // respondió, no sabemos qué está ocupado y no ofrecemos nada.
   const confirmedDates = new Set();
   const pendingDates = new Set();
+  // Fechas para las que YA se disparó una lectura autoritativa en esta sesión,
+  // haya terminado bien o mal. Es lo que permite detener un fallo: sin este
+  // registro renderSlots() no podía distinguir "nunca se preguntó" de "se
+  // preguntó y falló", y volvía a preguntar en cada render.
+  const attemptedDates = new Set();
   let overviewFailed = false;
 
   function readSlots(data) {
@@ -108,6 +113,7 @@
     if (!force && confirmedDates.has(iso)) return true;
     if (pendingDates.has(iso)) return false;
     pendingDates.add(iso);
+    attemptedDates.add(iso);
     let ok = false;
     try {
       const resp = await fetch(BOOKING_API.availability + '?date=' + encodeURIComponent(iso),
@@ -409,14 +415,42 @@
     // el servidor va a rechazar.
     if (!confirmedDates.has(isoForGuard)) {
       state.time = null;
+      // Una sola lectura autoritativa por fecha, y ningún reintento automático.
+      // La versión anterior volvía a llamar a fetchDate() desde aquí cada vez
+      // que la fecha no estaba confirmada, y como fetchDate() termina llamando
+      // a renderSlots(), un endpoint caído se convertía en un bucle de
+      // peticiones sin límite (incidente 2026-09-18). Si la fecha nunca se ha
+      // pedido — por ejemplo al volver al paso de horario sin pasar por el
+      // calendario — se arranca aquí exactamente una vez; si ya se pidió y
+      // falló, el reintento lo decide la paciente con un botón explícito.
+      if (!pendingDates.has(isoForGuard) && !attemptedDates.has(isoForGuard)) {
+        fetchDate(isoForGuard, true);
+      }
+      const inFlight = pendingDates.has(isoForGuard);
       const pending = document.createElement("p");
       pending.className = "bk-slot-msg";
-      pending.style.cssText = "font-size:14px;color:var(--ink-2,#5A534D);line-height:1.6;padding:16px 18px;background:#FAF6F0;border:1px solid var(--line,#E5DED1);border-radius:8px;margin:0;";
-      pending.textContent = pendingDates.has(isoForGuard)
+      pending.style.cssText = "grid-column:1/-1;font-size:14px;color:var(--ink-2,#5A534D);line-height:1.6;padding:16px 18px;background:#FAF6F0;border:1px solid var(--line,#E5DED1);border-radius:8px;margin:0;";
+      pending.textContent = inFlight
         ? "Comprobando horarios disponibles…"
-        : "No pudimos comprobar los horarios de esta fecha. Vuelve a intentarlo en unos segundos o elige otro día.";
+        : "No pudimos comprobar los horarios de esta fecha. Vuelve a intentarlo o elige otro día.";
       host.appendChild(pending);
-      if (!pendingDates.has(isoForGuard)) fetchDate(isoForGuard, true);
+      if (!inFlight) {
+        const retry = document.createElement("button");
+        retry.type = "button";
+        retry.className = "bk-retry";
+        retry.textContent = "Reintentar";
+        retry.style.cssText = "grid-column:1/-1;justify-self:start;margin-top:12px;padding:12px 20px;background:var(--paper,#FFFDF9);border:1px solid var(--ink,#2B2724);border-radius:10px;font:inherit;font-size:14.5px;color:var(--ink,#2B2724);cursor:pointer;";
+        retry.addEventListener("click", function () {
+          // Exactamente una petición por clic: el botón se inhabilita antes de
+          // disparar la lectura y sólo vuelve a existir cuando renderSlots() se
+          // redibuja al terminar ese intento.
+          if (retry.disabled || pendingDates.has(isoForGuard)) return;
+          retry.disabled = true;
+          retry.textContent = "Comprobando…";
+          fetchDate(isoForGuard, true);
+        });
+        host.appendChild(retry);
+      }
       return;
     }
     const dow = state.date.getDay();
