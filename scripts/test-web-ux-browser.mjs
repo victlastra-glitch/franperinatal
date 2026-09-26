@@ -654,12 +654,25 @@ for (const [label, w, h] of VIEWPORTS) {
     h2: [...document.querySelectorAll('section.service-block h2')].map((h) => h.textContent.trim()),
     deep: [...document.querySelectorAll('.service-deepdive a')].map((a) => a.getAttribute('href')),
     anchors: ['ansiedad', 'depresion', 'adaptacion', 'duelo', 'vinculo', 'acompanamiento'].filter((id) => !document.getElementById(id)),
+    // The approved coordination claim: only under its own label, next to the explicit price.
+    coord: (() => {
+      const hits = [...document.querySelectorAll('main *')].filter((el) => el.children.length === 0 && /Sin costo si requieres coordinación/.test(el.textContent));
+      return hits.map((dd) => {
+        const row = dd.closest('div');
+        const dl = dd.closest('dl');
+        return { tag: dd.tagName, label: row && row.querySelector('dt') ? row.querySelector('dt').textContent.trim() : '',
+          section: dd.closest('section') && dd.closest('section').id,
+          price: !!dl && [...dl.querySelectorAll('dd')].some((x) => x !== dd && /\\$50\\.000/.test(x.textContent)) };
+      });
+    })(),
   }))()`);
   check(JSON.stringify(sv.index) === JSON.stringify(['#ansiedad', '#depresion', '#adaptacion', '#duelo']), 'V4.1 the services index names four pillars ' + JSON.stringify(sv.index));
   check(JSON.stringify(sv.pillars) === JSON.stringify(['ansiedad', 'depresion', 'adaptacion', 'duelo']), 'V4.1 four top-level service blocks, in order ' + JSON.stringify(sv.pillars));
   check(JSON.stringify(sv.subs) === JSON.stringify([['vinculo', 'depresion', 1, 0], ['acompanamiento', 'adaptacion', 1, 0]]), 'V4.1 vínculo sits under posparto, acompañamiento under matrescencia, one heading step down, no filled CTA ' + JSON.stringify(sv.subs));
   check(sv.anchors.length === 0, 'V4.1 every pre-existing /servicios anchor still resolves ' + JSON.stringify(sv.anchors));
   check(JSON.stringify(sv.deep) === JSON.stringify(['/ansiedad-perinatal', '/depresion-postparto']), 'V4.1 both deep pages stay linked ' + JSON.stringify(sv.deep));
+  check(sv.coord.length === 1 && sv.coord[0].tag === 'DD' && sv.coord[0].label === 'Coordinación con equipo de salud' && sv.coord[0].section === 'duelo' && sv.coord[0].price,
+    'V4.1 the coordination claim is restored once, labelled as coordination, beside the explicit $50.000 ' + JSON.stringify(sv.coord));
 
   await navigate('/contacto', 'contacto-v41@1440x900');
   const ct = await evaluate(`(() => {
@@ -692,7 +705,7 @@ for (const route of ['/', '/servicios', '/contacto', '/faq', '/sobre-mi', '/rese
   check(!/<meta name="keywords"/i.test(html), 'V4.1 no meta keywords on ' + route);
   check(!/Testimonio anonimizado|Horario de respuesta/i.test(html), 'V4.1 no published testimonial or response-hours promise on ' + route);
   // The first session is paid: no copy may read it as a free, no-commitment chat.
-  check(!/sin compromiso|sin costo si requieres/i.test(html), 'V4.1 no "sin compromiso" framing of the paid session on ' + route);
+  check(!/sin compromiso/i.test(html), 'V4.1 no "sin compromiso" framing of the paid session on ' + route);
   check(/<link rel="canonical"/.test(html), 'V4.1 canonical preserved on ' + route);
   for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
     let ok = true; try { JSON.parse(m[1]); } catch (_) { ok = false; }
