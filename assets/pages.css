@@ -89,7 +89,7 @@
 .services-index { padding-block: var(--section-gap); border-bottom: 1px solid var(--line); }
 .serv-index-list {
   list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px 32px;
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 32px;
 }
 /* Una sola clase de destino: la sección de esta misma página. El título es el
    objetivo; el filete inferior es la única afordancia y se refuerza al hover.
@@ -104,6 +104,16 @@
 }
 .serv-index-list a:hover,
 .serv-index-list a:focus-visible { color: var(--accent-deep); }
+/* V4.1 — las dos áreas que ya no son pilares se nombran una vez, en voz baja,
+   con el pilar que las contiene. */
+.serv-index-also {
+  margin: 20px 0 0; font-size: 14.5px; color: var(--ink-2); line-height: 1.6;
+  max-width: 70ch;
+}
+.serv-index-also a {
+  color: var(--malva-deep); text-decoration: underline; text-underline-offset: 3px;
+  display: inline-block; padding: 10px 0; margin: -10px 0;
+}
 
 /* ---------- Service block ---------- */
 .service-block {
@@ -158,6 +168,25 @@
   margin-top: 40px; display: flex; gap: 24px; align-items: center; flex-wrap: wrap;
 }
 .service-meta { font-size: 13px; color: var(--ink-2); }
+
+/* Subárea dentro de un pilar (vínculo en posparto, acompañamiento en
+   matrescencia): misma columna, un escalón tipográfico abajo y una sola acción
+   de texto, para que no lea como una especialidad del mismo rango. */
+.service-subarea {
+  margin-top: 56px; padding-top: 32px;
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 96px;
+}
+.service-subarea-kicker {
+  display: block; margin-bottom: 14px;
+  font-family: var(--sans); font-weight: 500;
+  font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase;
+  color: var(--ink-3);
+}
+.service-subarea-title { font-size: clamp(22px, 2.4vw, 30px); max-width: 22ch; }
+.service-subarea .lede { font-size: 17px; }
+.service-subarea .service-sub { margin-top: 28px; }
+.service-cta--sub { margin-top: 24px; }
 
 /* ---------- Pricing ---------- */
  /* v3.2 — a price is a fact, not an object with a boundary. Symmetric 3-up of

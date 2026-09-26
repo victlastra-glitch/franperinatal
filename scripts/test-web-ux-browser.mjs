@@ -17,10 +17,13 @@
  *   B  the cookie decision can be reopened and changed from the footer,
  *      without touching unrelated storage and without loading a tag on open;
  *      the first-visit banner reserves its own height so nothing is trapped
- *   C  Home's guide section opens the guide directly: no email field, no
- *      promise of an email, no call to /api/leadmagnet, and the guide page it
- *      points at renders whole, gated by nothing
+ *   C  no call to /api/leadmagnet, and the guide page renders whole, gated by
+ *      nothing (V4.1: the guide is no longer promoted from Home)
  *   D  the *4141 crisis link is a >=44px target at 390px, on Home and on /lp
+ *   V4.1 Home reduced to eight blocks, one hero action, no testimonials or
+ *      scarcity; /servicios leads with four pillars; /contacto publishes no
+ *      phone, address or reply deadline; /reserva's legend is factual; no page
+ *      carries meta keywords; no overflow at 320/375/390/430/768/1024/1440
  *   E  one required/optional convention on /reserva and /contacto
  *   F  no route slug as link text on the booking page
  *   G  every blog filter returns something specific; every card has a date;
@@ -329,25 +332,55 @@ for (const [label, w, h] of VIEWPORTS) {
   await evaluate("localStorage.setItem('qa_sentinel', 'keep'); true");
   await navigate('/', 'home@' + label);
   await noOverflow();
-  const guide = await evaluate(`(() => {
-    const sec = document.querySelector('.leadmag');
-    const links = [...sec.querySelectorAll('a[href]')].map((a) => a.getAttribute('href'));
+  // V4.1 — Home is reduced to eight blocks. The ticker, the warning-signs
+  // section, the testimonials and the guide section are gone from Home (the
+  // guide itself stays, checked further down), and nothing replaces them.
+  const home = await evaluate(`(() => {
+    const main = document.querySelector('main');
+    const hero = document.querySelector('.hero');
+    const heroRect = hero.getBoundingClientRect();
+    const inFirstViewport = (el) => { const r = el.getBoundingClientRect(); return r.width > 0 && r.top < window.innerHeight && r.bottom > 0; };
+    const malvaFirst = [...hero.querySelectorAll('*')].filter((el) => inFirstViewport(el) && /rgb\\(109, 68, 84\\)|rgb\\(138, 90, 107\\)/.test(getComputedStyle(el).color) && el.textContent.trim()).length;
     return {
-      fields: sec.querySelectorAll('input, textarea, form, button').length,
-      links,
-      opensGuide: links.filter((h) => /^\\/guia\\/10-senales/.test(h)).length,
-      promise: /enviar|enviamos|enviaremos|envío|a tu correo|ingresa tu correo|recibirla|recibir la guía|suscri|newsletter|spam|te la mandamos/i.test(sec.textContent),
-      handlers: !!sec.querySelector('[onclick], [onkeydown], [data-leadmag-form]'),
+      sections: [...main.children].filter((n) => n.tagName === 'SECTION').map((n) => n.className.split(' ').filter((c) => c !== 'section')[0]),
+      removed: ['.hero-ticker', '.warning', '.testi-editorial', '.leadmag', '.approach', 'form', 'input'].filter((q) => main.querySelector(q)),
+      heroPrimary: hero.querySelectorAll('.btn-primary, .btn-accent').length,
+      heroActions: hero.querySelectorAll('a.btn, button').length,
+      h1: document.querySelector('h1').textContent.replace(/\\s+/g, ' ').trim(),
+      meta: [...hero.querySelectorAll('.hero-meta dd')].map((d) => d.textContent.trim()),
+      malvaFirst,
+      trust: [...document.querySelectorAll('.trust-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ').trim()),
+      specs: [...document.querySelectorAll('.spec-card')].map((c) => [c.querySelector('h3').textContent.trim(), c.querySelector('a').getAttribute('href')]),
+      faqs: [...document.querySelectorAll('.faq-brief summary')].map((x) => x.textContent.trim()),
+      faqLink: !!document.querySelector('.faq-brief a[href="/faq"]'),
+      final: [...document.querySelectorAll('.final-cta a')].map((x) => [x.className, x.getAttribute('href'), x.textContent.replace(/\\s+/g, ' ').trim()]),
+      pressure: /[úu]ltimos? cupos?|pocas horas|quedan pocos|no te quedes sin|d[ií]a h[áa]bil/i.test(main.textContent),
+      testimony: /Camila, 34|Antonia, 31|Magdalena, 37|Javiera, 29/.test(document.body.innerHTML),
     };
   })()`);
-  check(guide.fields === 0, 'C the guide section carries no form, input or submit control (' + guide.fields + ')');
-  check(guide.opensGuide >= 2 && guide.links.every((h) => /^\/guia\/10-senales/.test(h)), 'C every action in the section opens the guide itself ' + JSON.stringify(guide.links));
-  check(!guide.promise, 'C no copy in the section promises an email delivery or a subscription');
-  check(!guide.handlers, 'C no residual lead-capture handler in the markup');
+  check(JSON.stringify(home.sections) === JSON.stringify(['hero', 'trust', 'specialties', 'about-preview', 'process', 'faq-brief', 'final-cta']),
+    'V4.1 Home carries exactly hero, trust, reasons, Francisca, process, FAQ, final CTA ' + JSON.stringify(home.sections));
+  check(home.removed.length === 0, 'V4.1 no ticker, warning, testimonial, guide or form block on Home ' + JSON.stringify(home.removed));
+  check(!home.testimony, 'V4.1 no patient testimonial is published on Home');
+  check(home.heroPrimary === 1 && home.heroActions === 1, 'V4.1 the hero has one action and it is the only filled one (' + home.heroPrimary + '/' + home.heroActions + ')');
+  check(/^Psicología perinatal para el embarazo, el posparto y la transición a la maternidad\.$/.test(home.h1), 'V4.1 the hero states the proposed H1 ("' + home.h1.slice(0, 40) + '…")');
+  check(JSON.stringify(home.meta) === JSON.stringify(['Duelo gestacional y perinatal', '50 min', 'Online', '$50.000']), 'V4.1 hero practical meta ' + JSON.stringify(home.meta));
+  check(home.malvaFirst <= 1, 'V4.1 malva text appears at most once in the hero (' + home.malvaFirst + ')');
+  check(home.trust.length === 4 && /6\+ años/.test(home.trust[0]) && /Universidad de Zaragoza/.test(home.trust[1]) && /598177/.test(home.trust[2]) && /12\.847/.test(home.trust[3]), 'V4.1 the four trust facts are reproduced ' + JSON.stringify(home.trust));
+  check(JSON.stringify(home.specs) === JSON.stringify([
+    ['Embarazo y ansiedad perinatal', '/ansiedad-perinatal'],
+    ['Posparto y salud mental materna', '/depresion-postparto'],
+    ['Matrescencia y transición a la maternidad', '/servicios#adaptacion'],
+    ['Duelo gestacional y perinatal', '/servicios#duelo']]), 'V4.1 four reasons to consult, each routed ' + JSON.stringify(home.specs));
+  check(JSON.stringify(home.faqs) === JSON.stringify(['¿Necesito un diagnóstico para consultar?', '¿Cómo es la primera sesión?', '¿La atención es online?']) && home.faqLink, 'V4.1 three decision questions and a link to /faq');
+  check(home.final.length === 2 && /btn-primary/.test(home.final[0][0]) && home.final[0][1] === '/reserva'
+    && !home.final[1][0].split(' ').includes('btn') && home.final[1][1] === '/contacto' && /Escribir antes de reservar/.test(home.final[1][2]), 'V4.1 final CTA: one filled action plus a text link ' + JSON.stringify(home.final));
+  check(!home.pressure, 'V4.1 no scarcity or response-time promise on Home');
   check(await evaluate("document.querySelectorAll('script[src*=\"forms.js\"]').length === 0"), 'forms.js is no longer loaded');
-  const crisis = await evaluate("(() => { const a = document.querySelector('.warning-note a[href=\"tel:*4141\"]'); const r = a.getBoundingClientRect(); return { h: r.height, text: a.textContent.trim(), lineH: document.querySelector('.warning-note').getBoundingClientRect().height }; })()");
-  check(crisis.h >= 44, 'D crisis link target >= 44px (' + crisis.h.toFixed(1) + 'px)');
-  check(crisis.text === '*4141', 'D crisis resource text preserved');
+  // The crisis resource survives the removal of the warning-signs section.
+  const crisis = await evaluate("(() => { const a = document.querySelector('.crisis-note a[href=\"tel:*4141\"]'); if (!a) return null; const r = a.getBoundingClientRect(); const note = a.closest('.crisis-note').textContent; return { h: r.height, text: a.textContent.trim(), routing: /Línea de Prevención del Suicidio/.test(note) && /servicio de urgencia/.test(note) }; })()");
+  check(!!crisis && crisis.h >= 44, 'D crisis link target >= 44px (' + (crisis ? crisis.h.toFixed(1) : 'missing') + 'px)');
+  check(!!crisis && crisis.text === '*4141' && crisis.routing, 'D crisis resource text and routing preserved');
 
   // B — first visit: banner present, reserves its own height, footer link reachable.
   const banner = await evaluate(`(() => {
@@ -534,7 +567,7 @@ for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
 }
 check(!apiCalls.some((c) => /leadmagnet/.test(c)), 'C no /api/leadmagnet request was made from any page');
 
-// --- The guide itself, now the destination the Home section promises ----------------
+// --- The guide itself: still a public resource, no longer promoted from Home -------
 for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
   await setViewport(w, h);
   await navigate('/guia/10-senales', 'guia@' + label);
@@ -606,6 +639,108 @@ for (const [label, w, h] of VIEWPORTS) {
       check(!!res && res.status < 400, 'link resolves: ' + href + ' (' + (res ? res.status : 'no response') + ')');
     }
   }
+}
+
+// --- V4.1: services pillars, contact cleanup, factual availability, SEO hygiene --
+{
+  await setViewport(1440, 900);
+  await navigate('/servicios', 'servicios@1440x900');
+  const sv = await evaluate(`(() => ({
+    index: [...document.querySelectorAll('.serv-index-list a')].map((a) => a.getAttribute('href')),
+    pillars: [...document.querySelectorAll('section.service-block')].map((s) => s.id),
+    subs: [...document.querySelectorAll('.service-subarea')].map((d) => [d.id, d.closest('section').id, d.querySelector('h3') ? 1 : 0, d.querySelectorAll('.btn-primary').length]),
+    h2: [...document.querySelectorAll('section.service-block h2')].map((h) => h.textContent.trim()),
+    deep: [...document.querySelectorAll('.service-deepdive a')].map((a) => a.getAttribute('href')),
+    anchors: ['ansiedad', 'depresion', 'adaptacion', 'duelo', 'vinculo', 'acompanamiento'].filter((id) => !document.getElementById(id)),
+  }))()`);
+  check(JSON.stringify(sv.index) === JSON.stringify(['#ansiedad', '#depresion', '#adaptacion', '#duelo']), 'V4.1 the services index names four pillars ' + JSON.stringify(sv.index));
+  check(JSON.stringify(sv.pillars) === JSON.stringify(['ansiedad', 'depresion', 'adaptacion', 'duelo']), 'V4.1 four top-level service blocks, in order ' + JSON.stringify(sv.pillars));
+  check(JSON.stringify(sv.subs) === JSON.stringify([['vinculo', 'depresion', 1, 0], ['acompanamiento', 'adaptacion', 1, 0]]), 'V4.1 vínculo sits under posparto, acompañamiento under matrescencia, one heading step down, no filled CTA ' + JSON.stringify(sv.subs));
+  check(sv.anchors.length === 0, 'V4.1 every pre-existing /servicios anchor still resolves ' + JSON.stringify(sv.anchors));
+  check(JSON.stringify(sv.deep) === JSON.stringify(['/ansiedad-perinatal', '/depresion-postparto']), 'V4.1 both deep pages stay linked ' + JSON.stringify(sv.deep));
+
+  await navigate('/contacto', 'contacto-v41@1440x900');
+  const ct = await evaluate(`(() => {
+    const text = document.body.innerHTML;
+    const ld = [...document.querySelectorAll('script[type="application/ld+json"]')].map((n) => n.textContent).join(' ');
+    return {
+      wa: /wa\\.me|whatsapp/i.test(text), phone: /56957663038|\\+56 ?9 ?5766/.test(text) || /telephone/.test(ld),
+      sla: /d[ií]a h[áa]bil|Respondo en|Te responderé en|hoursAvailable|Horario de respuesta/i.test(text),
+      address: /Las Condes|PostalAddress|streetAddress/i.test(text),
+      billing: document.querySelectorAll('#contact-form [name*="rut" i], #contact-form [name="address"], #contact-form [name="comuna"]').length,
+      sensitive: /no compartas antecedentes cl[ií]nicos sensibles/.test(document.querySelector('#contact-form').textContent),
+      form: !!document.querySelector('#contact-form button[type="submit"]'),
+      email: !!document.querySelector('a[href="mailto:hola@franciscabustos.cl"]'),
+      crisis: /\\*4141/.test(document.querySelector('main').textContent),
+    };
+  })()`);
+  check(!ct.wa && !ct.phone, 'V4.1 /contacto publishes no WhatsApp and no phone, markup or JSON-LD');
+  check(!ct.sla, 'V4.1 /contacto promises no reply deadline or response hours');
+  check(!ct.address && ct.billing === 0, 'V4.1 /contacto carries no address and no billing field');
+  check(ct.form && ct.email && ct.sensitive && ct.crisis, 'V4.1 /contacto keeps the form, the email, the sensitive-data warning and the crisis line');
+
+  await navigate('/reserva', 'reserva-v41@1440x900');
+  const legend = await evaluate("[...document.querySelectorAll('.bk-cal-legend .bk-legend')].map((l) => l.textContent.trim())");
+  check(JSON.stringify(legend) === JSON.stringify(['Disponible', '1–2 horarios', 'Sin horarios']), 'V4.1 the calendar legend is factual ' + JSON.stringify(legend));
+  check(!(await evaluate("/[úu]ltimos? cupos?|pocas horas/i.test(document.body.textContent)")), 'V4.1 no scarcity wording on /reserva');
+}
+for (const route of ['/', '/servicios', '/contacto', '/faq', '/sobre-mi', '/reserva', '/ansiedad-perinatal', '/depresion-postparto',
+  '/blog/sintomas-depresion-postparto', '/blog/baby-blues-vs-depresion-postparto', '/recursos/test-edimburgo', '/privacidad']) {
+  const html = await (await fetch(ORIGIN + route)).text();
+  check(!/<meta name="keywords"/i.test(html), 'V4.1 no meta keywords on ' + route);
+  check(/<link rel="canonical"/.test(html), 'V4.1 canonical preserved on ' + route);
+  for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
+    let ok = true; try { JSON.parse(m[1]); } catch (_) { ok = false; }
+    check(ok, 'V4.1 JSON-LD still parses on ' + route);
+  }
+}
+const SWEEP = [320, 375, 390, 430, 768, 1024, 1440];
+for (const route of ['/', '/servicios', '/contacto', '/reserva']) {
+  for (const w of SWEEP) {
+    await setViewport(w, w < 700 ? 844 : 900);
+    await navigate(route, route + '@' + w);
+    await evaluate("localStorage.setItem('fb_cookie_consent', 'essentials'); true");
+    await navigate(route, route + '@' + w);
+    await noOverflow();
+    const lay = await evaluate(`(() => {
+      const nav = document.querySelector('.nav-inner').getBoundingClientRect();
+      const brand = document.querySelector('.brand').getBoundingClientRect();
+      const h1 = document.querySelector('h1').getBoundingClientRect();
+      const wide = [...document.querySelectorAll('main h1, main h2, main h3, main p, main a, main li, main img')]
+        .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 0 && (r.right > window.innerWidth + 1 || r.left < -1); })
+        .map((el) => el.tagName + '.' + el.className).slice(0, 4);
+      return { navH: nav.height, brandOk: brand.width > 0 && brand.right <= window.innerWidth, h1Ok: h1.width > 0 && h1.right <= window.innerWidth, wide };
+    })()`);
+    check(lay.brandOk && lay.h1Ok, 'V4.1 wordmark and h1 inside the viewport');
+    check(lay.wide.length === 0, 'V4.1 no element escapes the viewport ' + JSON.stringify(lay.wide));
+    if (route === '/') {
+      const pic = await evaluate(`(async () => {
+        const img = document.querySelector('.hero-portrait img');
+        if (!img.complete) await new Promise((r) => { img.onload = r; img.onerror = r; setTimeout(r, 3000); });
+        const r = img.getBoundingClientRect();
+        return { w: r.width, h: r.height, natural: img.naturalWidth };
+      })()`);
+      check(pic.natural > 0 && pic.w > 200 && pic.h / pic.w > 1.2 && pic.h / pic.w < 1.3, 'V4.1 hero portrait decoded, 4:5 plate (' + Math.round(pic.w) + 'x' + Math.round(pic.h) + ')');
+      if (w >= 1024) {
+        const above = await evaluate("(() => { const a = document.querySelector('.hero .btn-primary').getBoundingClientRect(); return a.bottom <= window.innerHeight; })()");
+        check(above, 'V4.1 the hero action is inside the first viewport');
+      }
+    }
+    await shot('v41' + (route === '/' ? '-home' : route.replace(/\//g, '-')) + '-' + w);
+  }
+}
+// Keyboard: the first Tab stops land on the skip link, the wordmark and the nav, visibly.
+{
+  await setViewport(1440, 900);
+  await navigate('/', 'home-keyboard@1440x900');
+  const stops = [];
+  for (let i = 0; i < 4; i += 1) {
+    await pressKey('Tab', 'Tab', 9);
+    await sleep(60);
+    stops.push(await evaluate("(() => { const el = document.activeElement; const cs = getComputedStyle(el); return [el.tagName, el.getAttribute('href') || el.className, cs.outlineStyle !== 'none' && parseFloat(cs.outlineWidth) >= 2]; })()"));
+  }
+  check(stops[0][1] === '#contenido', 'V4.1 first Tab reaches the skip link ' + JSON.stringify(stops[0]));
+  check(stops.slice(1).every((x) => x[2]), 'V4.1 every early focus stop draws a visible outline ' + JSON.stringify(stops));
 }
 
 // --- Wrap up --------------------------------------------------------------------

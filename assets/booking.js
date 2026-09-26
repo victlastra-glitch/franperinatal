@@ -350,8 +350,10 @@
       .filter(b => (b.date || b.fecha) === iso)
       .map(b => normalizeSlotHour(b.time || b.hora));
     const remaining = SLOTS_WEEKDAY.filter((hour) => !takenHours.includes(hour) && !isSlotTooSoon(d, hour));
+    // Estado fáctico, derivado sólo del recuento real: "1–2 horarios" no es un
+    // mensaje de escasez, es lo que queda ese día según la vista general.
     if (remaining.length === 0) return "none";
-    if (remaining.length === 1) return "few";
+    if (remaining.length <= 2) return "few";
     return "avail";
   }
 

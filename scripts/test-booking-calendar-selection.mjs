@@ -726,6 +726,41 @@ function failingPerDatePage(extra) {
 }
 
 // ---------------------------------------------------------------------------
+// N. V4.1 — the partial state is a factual count, "1–2 horarios", derived only
+//    from what the overview reported occupied. It is never scarcity copy.
+// ---------------------------------------------------------------------------
+const HOURS = ['10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+const occupy = (date, n) => HOURS.slice(0, n).map((time) => ({ date, time }));
+const COUNT_DAYS = { two: '2026-09-22', one: '2026-09-23', three: '2026-09-25', zero: '2026-09-28' };
+const COUNT_OVERVIEW = [...occupy(COUNT_DAYS.two, 7), ...occupy(COUNT_DAYS.one, 8), ...occupy(COUNT_DAYS.three, 6), ...occupy(COUNT_DAYS.zero, 9)];
+const countPage = (patches) => buildPage({ respond: (url) => (isOverview(url) ? jsonOk(COUNT_OVERVIEW) : never()), patches });
+{
+  const page = countPage();
+  await page.openCalendar();
+  await page.tick();
+  await page.openCalendar();
+  check(page.day(COUNT_DAYS.two).dataset.state === 'few', 'N: two free hours read as the partial state');
+  check(page.day(COUNT_DAYS.one).dataset.state === 'few', 'N: one free hour reads as the same partial state');
+  check(page.day(COUNT_DAYS.three).dataset.state === 'avail', 'N: three free hours read as available');
+  check(page.day(COUNT_DAYS.zero).dataset.state === 'none' && page.day(COUNT_DAYS.zero).disabled, 'N: no free hour reads as none, and is not selectable');
+  check(page.day(TARGET).dataset.state === 'avail', 'N: a day with nothing occupied reads as available');
+  const legend = [...pageHtml.matchAll(/<span class="bk-legend"><span class="dot dot-(\w+)"><\/span>([^<]+)<\/span>/g)].map((m) => m[1] + ':' + m[2]);
+  check(JSON.stringify(legend) === JSON.stringify(['avail:Disponible', 'few:1–2 horarios', 'none:Sin horarios']),
+    'N: the legend names each state factually ' + JSON.stringify(legend));
+  check(!/[ÚU]ltimo cupo|[úu]ltimos cupos|pocas horas/.test(pageHtml), 'N: no scarcity wording anywhere on /reserva');
+}
+{
+  // M12 — the old single-slot threshold: a two-hour day would be shown as
+  //       fully available, contradicting the "1–2 horarios" legend.
+  const mutant = countPage([['if (remaining.length <= 2) return "few";', 'if (remaining.length === 1) return "few";']]);
+  await mutant.openCalendar();
+  await mutant.tick();
+  await mutant.openCalendar();
+  check(mutant.day(COUNT_DAYS.two).dataset.state === 'avail',
+    'M12: with the old threshold a two-hour day is not flagged, so assertion N is load-bearing');
+}
+
+// ---------------------------------------------------------------------------
 const GATE = 'if (!slotsLoaded || overviewFailed) return "unknown";';
 const DISABLE = 'if (state_ === "past" || state_ === "none" || state_ === "empty") btn.disabled = true;';
 const SLOTS_GATE = 'if (!state.date) return;';
@@ -882,4 +917,5 @@ console.log('SUMMARY_TOTAL_SOURCE=SERVICE_PRICE');
 console.log('FAILED_ATTEMPT_REQUEST_COUNT=1');
 console.log('AUTOMATIC_RETRY_REQUESTS=0');
 console.log('MANUAL_RETRY_REQUEST_COUNT=1');
-console.log('ADVERSARIAL_MUTANTS_DETECTED=11');
+console.log('PARTIAL_AVAILABILITY_STATE=1-2_HOURS_DERIVED');
+console.log('ADVERSARIAL_MUTANTS_DETECTED=12');
