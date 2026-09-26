@@ -364,7 +364,7 @@ for (const [label, w, h] of VIEWPORTS) {
   check(!home.testimony, 'V4.1 no patient testimonial is published on Home');
   check(home.heroPrimary === 1 && home.heroActions === 1, 'V4.1 the hero has one action and it is the only filled one (' + home.heroPrimary + '/' + home.heroActions + ')');
   check(/^Psicología perinatal para el embarazo, el posparto y la transición a la maternidad\.$/.test(home.h1), 'V4.1 the hero states the proposed H1 ("' + home.h1.slice(0, 40) + '…")');
-  check(JSON.stringify(home.meta) === JSON.stringify(['Duelo gestacional y perinatal', '50 min', 'Online', '$50.000']), 'V4.1 hero practical meta ' + JSON.stringify(home.meta));
+  check(JSON.stringify(home.meta) === JSON.stringify(['Online', '50 min', '$50.000']), 'V4.1 hero practical meta ' + JSON.stringify(home.meta));
   check(home.malvaFirst <= 1, 'V4.1 malva text appears at most once in the hero (' + home.malvaFirst + ')');
   check(home.trust.length === 4 && /6\+ años/.test(home.trust[0]) && /Universidad de Zaragoza/.test(home.trust[1]) && /598177/.test(home.trust[2]) && /12\.847/.test(home.trust[3]), 'V4.1 the four trust facts are reproduced ' + JSON.stringify(home.trust));
   check(JSON.stringify(home.specs) === JSON.stringify([
@@ -585,6 +585,8 @@ for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
   check(g.signals === 10, 'C the guide still carries its ten signals (' + g.signals + ')');
   check(g.crisis, 'C the guide keeps its *4141 crisis resource');
   check(g.forms === 0, 'C the guide asks for nothing before it can be read');
+  const skip = await evaluate("(() => { const a = document.querySelector('.skip-link'); const before = a.getBoundingClientRect().bottom; a.focus(); const after = a.getBoundingClientRect().top; const target = !!document.getElementById(a.getAttribute('href').slice(1)); a.blur(); return { before, after, target }; })()");
+  check(skip.before <= 0 && skip.after >= 0 && skip.target, 'the guide skip link stays off-screen until focused and resolves ' + JSON.stringify(skip));
   check(g.broken === 0, 'no broken image on the guide');
   await shot('guia-' + label);
 }
@@ -688,6 +690,9 @@ for (const route of ['/', '/servicios', '/contacto', '/faq', '/sobre-mi', '/rese
   '/blog/sintomas-depresion-postparto', '/blog/baby-blues-vs-depresion-postparto', '/recursos/test-edimburgo', '/privacidad']) {
   const html = await (await fetch(ORIGIN + route)).text();
   check(!/<meta name="keywords"/i.test(html), 'V4.1 no meta keywords on ' + route);
+  check(!/Testimonio anonimizado|Horario de respuesta/i.test(html), 'V4.1 no published testimonial or response-hours promise on ' + route);
+  // The first session is paid: no copy may read it as a free, no-commitment chat.
+  check(!/sin compromiso|sin costo si requieres/i.test(html), 'V4.1 no "sin compromiso" framing of the paid session on ' + route);
   check(/<link rel="canonical"/.test(html), 'V4.1 canonical preserved on ' + route);
   for (const m of html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g)) {
     let ok = true; try { JSON.parse(m[1]); } catch (_) { ok = false; }

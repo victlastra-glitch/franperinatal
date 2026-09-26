@@ -644,7 +644,8 @@ em.ital { font-family: var(--serif); font-style: italic; font-weight: 300; }
 /* ---------- CTA SYSTEM · subordination ----------
    SECONDARY may stand alone on a low-conversion/utility surface; beside a
    PRIMARY it is always subordinate. No sixth role. */
-.cta-pair { display: flex; flex-wrap: wrap; gap: 12px; align-items: stretch; }
+/* V4.1 — una acción rellena y, si hace falta, una salida de texto (como en Home). */
+.cta-pair { display: flex; flex-wrap: wrap; gap: 12px 28px; align-items: center; }
 .cta-pair .btn-ghost { font-weight: 400; }
 
 /* ---------- CREDENTIAL SYSTEM ----------
