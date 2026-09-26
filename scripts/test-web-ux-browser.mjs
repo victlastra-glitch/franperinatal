@@ -699,6 +699,23 @@ for (const [label, w, h] of VIEWPORTS) {
   check(JSON.stringify(legend) === JSON.stringify(['Disponible', '1–2 horarios', 'Sin horarios']), 'V4.1 the calendar legend is factual ' + JSON.stringify(legend));
   check(!(await evaluate("/[úu]ltimos? cupos?|pocas horas/i.test(document.body.textContent)")), 'V4.1 no scarcity wording on /reserva');
 }
+// V4.2 — every page on the shared header carries the same navigation model.
+for (const route of ['/', '/sobre-mi', '/servicios', '/ansiedad-perinatal', '/depresion-postparto', '/faq', '/contacto', '/blog',
+  '/recursos/test-edimburgo', '/reserva', '/privacidad', '/404', '/manage', '/pago', '/pago-resultado',
+  '/blog/trauma-de-parto', '/blog/fertilidad-y-salud-mental', '/blog/acompanar-perdida-gestacional', '/blog/vinculo-madre-bebe']) {
+  const html = await (await fetch(ORIGIN + route)).text();
+  const desk = (html.match(/<nav class="nav-links"[^>]*>([\s\S]*?)<\/nav>/) || [])[1] || '';
+  const panel = (html.match(/<div class="nav-panel" id="nav-panel"[^>]*>([\s\S]*?)<\/div>/) || [])[1];
+  const labels = (frag) => [...frag.matchAll(/<a [^>]*>([^<]+)<\/a>/g)].map((m) => m[1].trim());
+  check(JSON.stringify(labels(desk)) === JSON.stringify(['Sobre mí', 'Servicios', 'Preguntas']), 'V4.2 desktop nav markup on ' + route + ' ' + JSON.stringify(labels(desk)));
+  if (panel !== undefined) {
+    check(JSON.stringify(labels(panel)) === JSON.stringify(['Sobre mí', 'Servicios', 'Preguntas', 'Contacto']) && !/class="[^"]*btn/.test(panel), 'V4.2 menu panel markup on ' + route + ' ' + JSON.stringify(labels(panel)));
+  }
+  for (const href of [...(desk + (panel || '')).matchAll(/href="([^"]+)"/g)].map((m) => m[1])) {
+    const res = await fetch(ORIGIN + href);
+    check(res.status === 200, 'V4.2 nav link resolves on ' + route + ': ' + href + ' (' + res.status + ')');
+  }
+}
 for (const route of ['/', '/servicios', '/contacto', '/faq', '/sobre-mi', '/reserva', '/ansiedad-perinatal', '/depresion-postparto',
   '/blog/sintomas-depresion-postparto', '/blog/baby-blues-vs-depresion-postparto', '/recursos/test-edimburgo', '/privacidad']) {
   const html = await (await fetch(ORIGIN + route)).text();
@@ -730,6 +747,34 @@ for (const route of ['/', '/servicios', '/contacto', '/reserva']) {
       return { navH: nav.height, brandOk: brand.width > 0 && brand.right <= window.innerWidth, h1Ok: h1.width > 0 && h1.right <= window.innerWidth, wide };
     })()`);
     check(lay.brandOk && lay.h1Ok, 'V4.1 wordmark and h1 inside the viewport');
+    // V4.2 navigation contract: the wordmark is Home; desktop names three
+    // decisions plus the booking action; mobile keeps booking in the header
+    // and lists Contacto only in the panel, with no second booking button.
+    const nav = await evaluate(`(() => {
+      const vis = (el) => { const r = el.getBoundingClientRect(); const cs = getComputedStyle(el); return r.width > 0 && r.height > 0 && cs.visibility !== 'hidden' && cs.display !== 'none'; };
+      const header = document.querySelector('header.nav');
+      const texts = [...header.querySelectorAll('.nav-links a')].filter(vis).map((a) => a.textContent.trim());
+      const actions = [...header.querySelectorAll('.nav-actions a.btn, .nav-actions .nav-current')].filter(vis).map((a) => [a.tagName, a.getAttribute('href'), a.textContent.replace(/\\s+/g, ' ').trim()]);
+      const panel = header.querySelector('.nav-panel');
+      return { brand: header.querySelector('.brand').getAttribute('href'), texts, actions,
+        burger: vis(header.querySelector('.nav-burger')),
+        panel: panel ? [...panel.querySelectorAll('a')].map((a) => [a.getAttribute('href'), a.textContent.trim(), a.className]) : null,
+        homeText: [...header.querySelectorAll('a')].some((a) => a.textContent.trim() === 'Inicio') };
+    })()`);
+    check(nav.brand === '/', 'V4.2 the wordmark links to /');
+    check(!nav.homeText, 'V4.2 no "Inicio" text link in the header');
+    check(JSON.stringify(nav.panel && nav.panel.map((x) => x[1])) === JSON.stringify(['Sobre mí', 'Servicios', 'Preguntas', 'Contacto']) && nav.panel.every((x) => !x[2].split(' ').some((c) => c === 'btn' || c.startsWith('btn-'))),
+      'V4.2 the menu panel lists Sobre mí, Servicios, Preguntas, Contacto and no booking button ' + JSON.stringify(nav.panel));
+    if (w > 960) {
+      check(JSON.stringify(nav.texts) === JSON.stringify(['Sobre mí', 'Servicios', 'Preguntas']) && !nav.burger, 'V4.2 desktop shows exactly three text links ' + JSON.stringify(nav.texts));
+    } else {
+      check(nav.texts.length === 0 && nav.burger, 'V4.2 below 960px the text links collapse into the menu trigger');
+    }
+    if (route === '/reserva') {
+      check(nav.actions.every((a) => a[0] !== 'A'), 'V4.2 /reserva keeps its current-state label instead of a booking link ' + JSON.stringify(nav.actions));
+    } else {
+      check(nav.actions.length === 1 && nav.actions[0][1] === '/reserva' && /^Reservar sesión/.test(nav.actions[0][2]), 'V4.2 the booking action is visible in the header ' + JSON.stringify(nav.actions));
+    }
     check(lay.wide.length === 0, 'V4.1 no element escapes the viewport ' + JSON.stringify(lay.wide));
     if (route === '/') {
       const pic = await evaluate(`(async () => {
