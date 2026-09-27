@@ -348,6 +348,16 @@ for (const [label, w, h] of VIEWPORTS) {
       heroActions: hero.querySelectorAll('a.btn, button').length,
       h1: document.querySelector('h1').textContent.replace(/\\s+/g, ' ').trim(),
       meta: [...hero.querySelectorAll('.hero-meta dd')].map((d) => d.textContent.trim()),
+      heroPrice: /\\$\\s*50\\.000/.test(hero.textContent),
+      processPrice: [...document.querySelectorAll('.process-details .pd-item')].map((i) => [i.querySelector('dt').textContent.trim(), i.querySelector('dd').textContent.trim()]).filter((kv) => kv[1] === '$50.000'),
+      processBeforeFinal: (() => { const pd = document.querySelector('.process-details'); const fc = document.querySelector('.final-cta'); return !!pd && !!fc && !!(pd.compareDocumentPosition(fc) & Node.DOCUMENT_POSITION_FOLLOWING); })(),
+      footer: (() => {
+        const f = document.querySelector('footer.footer');
+        const groups = [...f.querySelectorAll('.footer-col')].map((c) => [c.querySelector('.footer-col-title').textContent.trim(), [...c.querySelectorAll('a')].map((a) => a.getAttribute('href'))]);
+        const rules = [...f.querySelectorAll('*')].filter((el) => parseFloat(getComputedStyle(el).borderTopWidth) > 0).length;
+        return { groups, creds: [...f.querySelectorAll('.footer-creds li')].map((li) => li.textContent.replace(/\\s+/g, ' ').trim()), rules,
+          modality: /videollamada/i.test(f.textContent), privacy: !!f.querySelector('.footer-bottom a[href="/privacidad"]') };
+      })(),
       malvaFirst,
       trust: [...document.querySelectorAll('.trust-list li')].map((li) => li.textContent.replace(/\\s+/g, ' ').trim()),
       specs: [...document.querySelectorAll('.spec-card')].map((c) => [c.querySelector('h3').textContent.trim(), c.querySelector('a').getAttribute('href')]),
@@ -364,7 +374,17 @@ for (const [label, w, h] of VIEWPORTS) {
   check(!home.testimony, 'V4.1 no patient testimonial is published on Home');
   check(home.heroPrimary === 1 && home.heroActions === 1, 'V4.1 the hero has one action and it is the only filled one (' + home.heroPrimary + '/' + home.heroActions + ')');
   check(/^Psicología perinatal para el embarazo, el posparto y la transición a la maternidad\.$/.test(home.h1), 'V4.1 the hero states the proposed H1 ("' + home.h1.slice(0, 40) + '…")');
-  check(JSON.stringify(home.meta) === JSON.stringify(['Online', '50 min', '$50.000']), 'V4.1 hero practical meta ' + JSON.stringify(home.meta));
+  // V4.2 — the price leaves the first impression but stays on Home, in
+  // "Cómo funciona", ahead of the final booking CTA.
+  check(JSON.stringify(home.meta) === JSON.stringify(['Online', '50 min']), 'V4.2 hero practical meta is logistics only ' + JSON.stringify(home.meta));
+  check(!home.heroPrice, 'V4.2 the hero does not state the price');
+  check(home.processPrice.length === 1 && home.processBeforeFinal, 'V4.2 the $50.000 value is stated in "Cómo funciona", before the final CTA ' + JSON.stringify(home.processPrice));
+  check(JSON.stringify(home.footer.groups) === JSON.stringify([
+    ['Explorar', ['/sobre-mi', '/servicios', '/faq']],
+    ['Recursos', ['/blog', '/recursos/test-edimburgo', '/guia/10-senales']],
+    ['Contacto', ['mailto:hola@franciscabustos.cl', '/contacto']]]), 'V4.2 footer groups ' + JSON.stringify(home.footer.groups));
+  check(JSON.stringify(home.footer.creds) === JSON.stringify(['Univ. Zaragoza', 'Superintendencia de Salud · Registro 598177', 'Colegio de Psicólogos CL · Registro 12.847']), 'V4.2 footer credentials ' + JSON.stringify(home.footer.creds));
+  check(home.footer.rules === 1 && !home.footer.modality && home.footer.privacy, 'V4.2 footer has one divider, no modality line, and keeps /privacidad (rules=' + home.footer.rules + ')');
   check(home.malvaFirst <= 1, 'V4.1 malva text appears at most once in the hero (' + home.malvaFirst + ')');
   check(home.trust.length === 4 && /6\+ años/.test(home.trust[0]) && /Universidad de Zaragoza/.test(home.trust[1]) && /598177/.test(home.trust[2]) && /12\.847/.test(home.trust[3]), 'V4.1 the four trust facts are reproduced ' + JSON.stringify(home.trust));
   check(JSON.stringify(home.specs) === JSON.stringify([

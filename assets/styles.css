@@ -406,46 +406,40 @@ em.ital { font-family: var(--serif); font-style: italic; font-weight: 300; }
 .footer {
   background: var(--ink);
   color: color-mix(in srgb, var(--bg) 90%, transparent);
-  padding: 72px 0 32px;
-  padding-bottom: calc(32px + env(safe-area-inset-bottom));
+  padding: 64px 0 20px;
+  padding-bottom: calc(20px + env(safe-area-inset-bottom));
 }
- /* v3.2 §12 — editorial closure, not a sitemap. Four asymmetric zones:
-    Brand · Continue · Contact/modality · Credentials (full-width ledger). */
+ /* V4.2 — editorial closure, not a sitemap. One grid (Brand · Explorar ·
+    Recursos · Contacto), then a single rule over a ledger of credentials
+    and legal. The three link groups size to their content; the brand block
+    takes the remaining width. */
 .footer-grid {
   display: grid;
-  grid-template-columns: 2.3fr 1fr 1fr 1.15fr;
-  gap: clamp(32px, 4vw, 64px);
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  gap: 32px clamp(40px, 5vw, 88px);
   padding-bottom: 48px;
-}
-/* Credentials zone closes the footer as a full-width ledger under a rule */
-.footer-grid > .footer-col:last-child {
-  grid-column: 1 / -1;
-  margin-top: 8px; padding-top: 32px;
-  border-top: 1px solid rgba(250, 246, 240, 0.14);
-}
-.footer-grid > .footer-col:last-child ul {
-  display: grid; gap: 10px clamp(24px, 4vw, 64px);
-  grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), auto));
-  justify-content: start;
-}
-.footer-grid > .footer-col:last-child li {
-  font-size: 13px;
-  color: color-mix(in srgb, var(--bg) 68%, transparent);
-  letter-spacing: .01em;
 }
 .footer-brand-name {
   font-family: var(--serif); font-size: 32px; font-weight: 300;
   color: var(--bg); letter-spacing: -0.02em;
 }
+.footer-brand-role {
+  font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.18em;
+  text-transform: uppercase; font-weight: 500;
+  color: color-mix(in srgb, var(--bg) 65%, transparent);
+  margin: 10px 0 0;
+}
 .footer-brand-desc {
   color: color-mix(in srgb, var(--bg) 75%, transparent);
-  font-size: 15px; margin-top: 18px; max-width: 34ch; line-height: 1.65;
+  font-size: 15px; margin-top: 16px; max-width: 34ch; line-height: 1.65;
 }
 .footer-col h5 {
   font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.18em; text-transform: uppercase;
   color: color-mix(in srgb, var(--bg) 65%, transparent); margin: 0 0 20px; font-weight: 500;
 }
-.footer-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 14px; }
+/* Each link is already a 44px target; stacking them without an extra gap
+   still leaves ~29px between lines of 15px text. */
+.footer-col ul { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 0; }
 .footer-col a, .footer-col li {
   color: color-mix(in srgb, var(--bg) 88%, transparent);
   font-size: 15px; line-height: 1.4; transition: color .2s ease;
@@ -456,10 +450,11 @@ em.ital { font-family: var(--serif); font-style: italic; font-weight: 300; }
   min-height: 44px; display: inline-flex; align-items: center;
 }
 .footer-col a:hover { color: var(--bg); }
+/* Same ledger as the credentials, under the same rule: no second divider. */
 .footer-bottom {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 40px; padding-top: 24px;
-  border-top: 1px solid rgba(250, 246, 240, 0.10);
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 0 clamp(24px, 4vw, 56px);
+  margin-top: 12px;
   font-size: 12.5px;
   color: color-mix(in srgb, var(--bg) 58%, transparent);
   letter-spacing: 0.02em;
@@ -543,8 +538,9 @@ em.ital { font-family: var(--serif); font-style: italic; font-weight: 300; }
 @media (max-width: 960px) {
   .nav-links { display: none; }
   .nav-burger { display: inline-flex; }
-  .footer-grid { grid-template-columns: 1fr 1fr; gap: 40px; }
-  .footer-bottom { flex-direction: column; gap: 12px; align-items: flex-start; }
+  .footer-grid { grid-template-columns: repeat(3, auto); justify-content: start; gap: 28px clamp(40px, 7vw, 72px); }
+  .footer-brand { grid-column: 1 / -1; }
+  .footer-bottom { flex-direction: column; gap: 4px 0; align-items: flex-start; }
 }
 /* Logo mobile: el descriptor se oculta (no se encoge bajo el mínimo de 11px)
    y el wordmark se apila con el markup de dos líneas, no con word-spacing. */
@@ -565,7 +561,12 @@ em.ital { font-family: var(--serif); font-style: italic; font-weight: 300; }
   :root {
     --fs-h1: 44px; --fs-h2: 32px; --fs-display: 60px;
   }
-  .footer-grid { grid-template-columns: 1fr; gap: 32px; padding-bottom: 40px; }
+  /* Explorar y Recursos comparten fila; Contacto (el correo es la línea más
+     larga) y la marca ocupan el ancho completo. */
+  .footer { padding-top: 48px; }
+  .footer-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 20px; padding-bottom: 32px; }
+  .footer-col--contact { grid-column: 1 / -1; }
+  .footer-bottom { margin-top: 20px; }
   .nav-inner { height: 64px; }
   .nav-panel { top: 64px; }
 }
@@ -870,16 +871,36 @@ body { padding-bottom: var(--consent-h, 0px); }
   font-family: var(--sans); font-size: 11.5px; letter-spacing: 0.18em;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--bg) 65%, transparent);
-  margin: 0 0 20px; font-weight: 500;
+  margin: 0 0 6px; font-weight: 500;
 }
-.footer-creds { gap: 10px clamp(24px, 4vw, 64px); }
+/* Credenciales: una fila bajo el único filete del pie; cada registro en una
+   línea, institución · número. */
+.footer-creds {
+  list-style: none; margin: 0; padding: 28px 0 0;
+  border-top: 1px solid rgba(250, 246, 240, 0.14);
+  display: flex; flex-wrap: wrap; align-items: baseline;
+  gap: 10px clamp(24px, 4vw, 56px);
+}
+.footer-creds li { display: flex; flex-wrap: wrap; align-items: baseline; }
 .footer-creds .cred-name {
-  display: block; text-transform: uppercase; letter-spacing: .12em;
+  text-transform: uppercase; letter-spacing: .12em;
   font-size: 11.5px; color: color-mix(in srgb, var(--bg) 82%, transparent);
 }
+.footer-creds .cred-sep {
+  margin-inline: .6em;
+  color: color-mix(in srgb, var(--bg) 58%, transparent);
+}
 .footer-creds .cred-reg {
-  display: block; margin-top: 3px;
   font-size: 12.5px; color: color-mix(in srgb, var(--bg) 58%, transparent);
+}
+/* Institución y registro no caben en una línea a 390px: se apilan, sin
+   separador colgando al final de la línea. */
+@media (max-width: 640px) {
+  .footer-creds { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .footer-creds li { display: block; }
+  .footer-creds .cred-name, .footer-creds .cred-reg { display: block; }
+  .footer-creds .cred-reg { margin-top: 3px; }
+  .footer-creds .cred-sep { display: none; }
 }
 
 /* Estado "estás aquí" en la barra: reemplaza a la acción primaria cuando

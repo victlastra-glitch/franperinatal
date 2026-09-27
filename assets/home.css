@@ -39,10 +39,12 @@
 .hero-copy .lede { margin-top: 28px; max-width: 46ch; font-size: clamp(17px, 1.4vw, 19.5px); }
 .hero-ctas { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 36px; align-items: stretch; }
 
-/* Información práctica: sólo datos operativos (modalidad, duración, valor),
-   en una fila bajo un filete, en tipo de texto. */
+/* Información práctica: sólo logística (modalidad, duración), en una fila
+   bajo un filete, en tipo de texto. V4.2: el valor ya no está en el primer
+   viewport; se publica en "Cómo funciona" (.process-details), antes de
+   reservar. Dos columnas del ancho de su contenido, sin celda vacía. */
 .hero-meta {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;
+  display: grid; grid-template-columns: repeat(2, max-content); gap: 20px clamp(40px, 5vw, 64px);
   margin: 48px 0 0; padding: 22px 0 0;
   border-top: 1px solid var(--line);
   max-width: 440px;
@@ -296,7 +298,7 @@
   .hero-copy .lede { font-size: 17px; }
   .hero-ctas { flex-direction: column; gap: 10px; }
   .hero-ctas .btn-lg { width: 100%; min-width: 0; padding: 14px 18px; font-size: 15px; }
-  .hero-meta { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 16px; margin-top: 36px; padding-top: 18px; }
+  .hero-meta { gap: 16px 48px; margin-top: 36px; padding-top: 18px; }
 
   .spec-grid { grid-template-columns: 1fr; }
   .trust-val { font-size: 13.5px; }
