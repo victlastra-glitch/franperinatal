@@ -121,10 +121,8 @@
   </p>
 </main>
 
-<!-- Sin medición en esta página: la URL lleva el portador ?st= del pago.
-     analytics.js y consent.js no se cargan (igual que /manage y /pago), así
-     que el bloque de conversión de más abajo termina en su guarda sin enviar
-     nada. assets/analytics.js además se niega a inicializarse en esta ruta. -->
+<script src="assets/analytics.js?v=4" defer></script>
+<script src="assets/consent.js?v=2" defer></script>
 <script>
   // Web 04.9 PRODUCTION: payment_status query goes through the Cloudflare
   // proxy /api/payment-status (see _worker.js). The Apps Script Web App URL

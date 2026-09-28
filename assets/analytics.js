@@ -29,15 +29,6 @@
    'accepted', tomada en el banner canónico (assets/consent.js) o restaurada de
    una decisión previa. Con 'essentials' no se carga ninguna etiqueta y track()
    es no-op. Fuente única de la decisión: localStorage 'fb_cookie_consent'.
-
-   URL (P0 2026-09-28): la medición nunca recibe la query ni el fragmento de una
-   dirección de este sitio. Una URL como /reserva?servicio=duelo revela un
-   motivo de consulta, y /pago-resultado?st=… o /manage?token=… llevan un
-   portador. GA4 y Google Ads reciben page_location = origin + pathname y un
-   page_referrer igual de recortado, fijados explícitamente antes de cualquier
-   'config'. En las rutas de pago y de gestión la medición no se inicializa,
-   aunque la decisión almacenada sea 'accepted'.
-   Test: scripts/test-analytics-url-privacy.mjs
    ============================================================ */
 
 (function () {
@@ -58,30 +49,6 @@
     'region':              ['CL']
   });
 
-  /* -------- 0b. Dirección que ve la medición: sin query ni fragmento -------- */
-  // Rutas con portadores (token, st) o estado de un pago: sin medición.
-  const NO_MEASUREMENT_ROUTE = /^\/(?:manage|pago|pago-resultado)(?:\.html)?\/?$/;
-  const MEASUREMENT_ALLOWED = !NO_MEASUREMENT_ROUTE.test(window.location.pathname);
-
-  function sanitizedPageLocation() {
-    return window.location.origin + window.location.pathname;
-  }
-
-  // Referente propio: origin + pathname. Referente externo: sólo su origin.
-  function sanitizedPageReferrer() {
-    if (!document.referrer) return '';
-    try {
-      const ref = new URL(document.referrer);
-      return ref.origin === window.location.origin ? ref.origin + ref.pathname : ref.origin + '/';
-    } catch (_) {
-      return '';
-    }
-  }
-
-  function pageFields() {
-    return { page_location: sanitizedPageLocation(), page_referrer: sanitizedPageReferrer() };
-  }
-
   /* -------- 1. Google Ads -------- */
   const GADS_ID = 'AW-18187430553';      // ✓ ID real — tag base para Consent Mode v2 y GCLID
   // Conversiones importadas desde GA4 — no se necesitan labels directos
@@ -98,7 +65,7 @@
     gads.src = 'https://www.googletagmanager.com/gtag/js?id=' + GADS_ID;
     document.head.appendChild(gads);
     window.gtag('js', new Date());
-    window.gtag('config', GADS_ID, pageFields());
+    window.gtag('config', GADS_ID);
   }
 
   // Helpers de conversión expuestos globalmente (lp.html y otras páginas los llaman)
@@ -126,10 +93,10 @@
     gs.src = 'https://www.googletagmanager.com/gtag/js?id=' + GA4_ID;
     document.head.appendChild(gs);
     window.gtag('js', new Date());
-    window.gtag('config', GA4_ID, Object.assign({
+    window.gtag('config', GA4_ID, {
       anonymize_ip: true,
       cookie_flags: 'SameSite=None;Secure'
-    }, pageFields(), campaignFields()));
+    });
   }
 
   const CONSENT_KEY = 'fb_cookie_consent';
@@ -139,9 +106,6 @@
   }
   // Única función que enciende medición opcional. Nada la llama sin decisión.
   function enableOptionalMeasurement() {
-    if (!MEASUREMENT_ALLOWED) return;
-    // Antes de cargar cualquier etiqueta: todo hit hereda la dirección recortada.
-    window.gtag('set', pageFields());
     window.gtag('consent', 'update', {
       'ad_storage':         'granted',
       'analytics_storage':  'granted',
@@ -177,6 +141,10 @@
       window._fbMeasurementOn = false;
     }
   };
+
+  // Restaurar una decisión previa de aceptar. 'essentials' (y el valor legado
+  // 'rejected') no encienden nada.
+  if (storedConsent() === 'accepted') enableOptionalMeasurement();
 
   /* -------- 2. Meta Pixel -------- */
   const META_PIXEL_ID = '000000000000000'; // ← REEMPLAZAR con Pixel ID real
@@ -255,20 +223,6 @@
   }
 
   const attribution = getAttribution();
-
-  // La campaña viaja como parámetros acotados, no dentro de page_location.
-  function campaignFields() {
-    const fields = {};
-    if (attribution.source) fields.campaign_source = attribution.source;
-    if (attribution.medium) fields.campaign_medium = attribution.medium;
-    if (attribution.campaign) fields.campaign_name = attribution.campaign;
-    return fields;
-  }
-
-  // Restaurar una decisión previa de aceptar. 'essentials' (y el valor legado
-  // 'rejected') no encienden nada. Va después de la atribución, que la
-  // configuración de GA4 necesita.
-  if (storedConsent() === 'accepted') enableOptionalMeasurement();
 
   function track(eventName, params) {
     // Sin medición opcional activa no se emite ningún evento.

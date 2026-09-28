@@ -32,9 +32,7 @@
  *      says 50 minutes in prose, in its FAQ and in its FAQPage JSON-LD
  *   P0 (2026-09-28) /faq JSON-LD equals the visible FAQ; no unsupported
  *      privacy/price/isapre wording; *4141 beside every self-harm mention on
- *      /servicios; both registrations on /sobre-mi and no PMH-C implication;
- *      with consent accepted, no query/fragment reaches dataLayer, and
- *      /pago-resultado and /manage initialize no measurement
+ *      /servicios; both registrations on /sobre-mi and no PMH-C implication
  *   plus: no horizontal overflow, mobile menu opens with reachable links,
  *   no console errors, no external request besides Google Fonts.
  */
@@ -831,7 +829,7 @@ for (const route of ['/', '/servicios', '/contacto', '/reserva']) {
   check(stops.slice(1).every((x) => x[2]), 'V4.1 every early focus stop draws a visible outline ' + JSON.stringify(stops));
 }
 
-// --- P0 trust + analytics URL privacy (2026-09-28) ---------------------------------
+// --- P0 trust corrections (2026-09-28) ---------------------------------------------
 // Page probes are written as real functions and sent with toString(), so their
 // regular expressions reach the page exactly as written (no template escaping).
 {
@@ -903,37 +901,6 @@ for (const route of ['/', '/servicios', '/contacto', '/reserva']) {
   })()`);
   check(sm.supsal && sm.colegio, 'P0 /sobre-mi lists both registrations in the canonical footer wording');
   check(!sm.pmhc && !sm.miembro, 'P0 /sobre-mi carries no PMH-C / PSI implication and no "Miembro" variant');
-
-  // Analytics: accepted consent on a URL carrying a motivo, a bearer-like key and a fragment.
-  // Measurement hosts are blocked at the network layer; dataLayer is what gtag.js would read.
-  await navigate('/', 'analytics-seed');
-  await evaluate("localStorage.setItem('fb_cookie_consent', 'accepted'); true");
-  await navigate('/reserva?servicio=duelo&token=SYNTHtoken#paso-4', 'analytics-url@reserva');
-  const an = await evaluate(`(() => {
-    const entries = (window.dataLayer || []).map((a) => Array.from(a));
-    const text = JSON.stringify(entries);
-    const configs = entries.filter((e) => e[0] === 'config');
-    return { on: window._fbMeasurementOn === true, leaks: ['?', '#', 'servicio=', 'duelo', 'SYNTH', 'token'].filter((s) => text.includes(s)),
-      configs: configs.length, locations: configs.map((e) => e[2] && e[2].page_location) };
-  })()`);
-  check(an.on && an.configs === 2, 'P0 accepted consent still configures GA4 and Ads (' + an.configs + ')');
-  check(an.leaks.length === 0, 'P0 no query, fragment, motivo or bearer reaches dataLayer ' + JSON.stringify(an.leaks));
-  check(an.locations.every((l) => l === ORIGIN + '/reserva'), 'P0 every config carries page_location = origin + pathname ' + JSON.stringify(an.locations));
-
-  // /manage is probed without a token: with one it calls /api/manage, which this
-  // harness answers 503. Token-bearing /manage URLs are pinned in
-  // scripts/test-analytics-url-privacy.mjs.
-  for (const route of ['/pago-resultado?st=SYNTHst', '/manage']) {
-    await navigate(route, 'analytics-off@' + route.split('?')[0]);
-    const off = await evaluate(`(() => ({
-      on: window._fbMeasurementOn === true,
-      tags: document.querySelectorAll('script[src*="googletagmanager"], script[src*="analytics.js"], script[src*="consent.js"]').length,
-      dataLayer: Array.isArray(window.dataLayer) ? window.dataLayer.length : 0,
-      banner: !!document.getElementById('fb-consent'),
-    }))()`);
-    check(!off.on && off.tags === 0 && off.dataLayer === 0 && !off.banner, 'P0 no measurement initializes on ' + route.split('?')[0] + ' even with accepted consent ' + JSON.stringify(off));
-  }
-  await evaluate("localStorage.setItem('fb_cookie_consent', 'essentials'); true");
 }
 
 // --- Wrap up --------------------------------------------------------------------
