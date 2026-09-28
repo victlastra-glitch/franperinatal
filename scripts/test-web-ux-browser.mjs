@@ -30,6 +30,11 @@
  *      the author avatar is the 400w derivative
  *   I  no public page states a 50-60 minute session; /blog/primera-sesion
  *      says 50 minutes in prose, in its FAQ and in its FAQPage JSON-LD
+ *   P0 (2026-09-28) /faq JSON-LD equals the visible FAQ; no unsupported
+ *      privacy/price/isapre wording; *4141 beside every self-harm mention on
+ *      /servicios; both registrations on /sobre-mi and no PMH-C implication;
+ *      with consent accepted, no query/fragment reaches dataLayer, and
+ *      /pago-resultado and /manage initialize no measurement
  *   plus: no horizontal overflow, mobile menu opens with reachable links,
  *   no console errors, no external request besides Google Fonts.
  */
@@ -824,6 +829,111 @@ for (const route of ['/', '/servicios', '/contacto', '/reserva']) {
   }
   check(stops[0][1] === '#contenido', 'V4.1 first Tab reaches the skip link ' + JSON.stringify(stops[0]));
   check(stops.slice(1).every((x) => x[2]), 'V4.1 every early focus stop draws a visible outline ' + JSON.stringify(stops));
+}
+
+// --- P0 trust + analytics URL privacy (2026-09-28) ---------------------------------
+// Page probes are written as real functions and sent with toString(), so their
+// regular expressions reach the page exactly as written (no template escaping).
+{
+  const faqProbe = () => {
+    const norm = (t) => t.replace(/\s+/g, ' ').trim();
+    const visible = [...document.querySelectorAll('main details.faq-item')].map((d) => ({
+      name: norm(d.querySelector('summary').textContent),
+      // Paragraphs are separated by one space, as the JSON-LD joins them; inline nodes are not.
+      text: norm([...d.querySelector('.faq-body').childNodes].map((n) => n.nodeName === 'P' ? n.textContent + ' ' : n.textContent).join('')),
+    }));
+    const ld = JSON.parse(document.querySelector('script[type="application/ld+json"]').textContent);
+    const structured = ld.mainEntity.map((q) => ({ name: norm(q.name), text: norm(q.acceptedAnswer.text) }));
+    const main = norm(document.querySelector('main').textContent);
+    const crisis = [...document.querySelectorAll('main details.faq-item')].find((d) => /ayuda urgente/.test(d.querySelector('summary').textContent));
+    return {
+      synced: JSON.stringify(visible) === JSON.stringify(structured), visible: visible.length, structured: structured.length,
+      firstDiff: visible.findIndex((v, i) => JSON.stringify(v) !== JSON.stringify(structured[i])),
+      stale: [/cifrad/i, /\bnunca se comparte/i, /eliminaci[oó]n[^.]*en cualquier momento/i, /Absolutamente/i, /código clínico/i,
+        /transferencia automática/i, /Qué duración tienen/i, /Colmena|Banmédica|Cruz Blanca|Vida Tres/i, /la mayoría/i]
+        .filter((re) => re.test(main) || re.test(JSON.stringify(ld))).map(String),
+      price: /Todas las sesiones duran 50 minutos y tienen un valor de \$50\.000, incluida la primera sesión\./.test(main),
+      crisis: !!crisis && !!crisis.querySelector('a[href="tel:*4141"]') && /Línea de Prevención del Suicidio/.test(crisis.textContent)
+        && /servicio de urgencia/.test(crisis.textContent),
+    };
+  };
+  await setViewport(1440, 900);
+  await navigate('/faq', 'faq-p0@1440x900');
+  const fq = await evaluate('(' + faqProbe.toString() + ')()');
+  check(fq.synced, 'P0 FAQPage JSON-LD matches the visible FAQ one-to-one (visible=' + fq.visible + ' ld=' + fq.structured + ' firstDiff=' + fq.firstDiff + ')');
+  check(fq.stale.length === 0, 'P0 no unsupported FAQ wording remains ' + JSON.stringify(fq.stale));
+  check(fq.price, 'P0 the price answer states 50 min · $50.000 · first session included');
+  check(fq.crisis, 'P0 /faq answers "¿Qué hago si necesito ayuda urgente?" with *4141 and urgencia');
+
+  const servProbe = () => {
+    const metas = [...document.querySelectorAll('meta[name="description"], meta[property="og:description"], meta[name="twitter:description"]')].map((m) => m.content);
+    const harm = [...document.querySelectorAll('main li, main p')].filter((el) => /hacerse daño|hacerte daño/.test(el.textContent) && !el.closest('.service-crisis'));
+    const adjacent = harm.map((el) => {
+      const block = el.closest('ul') || el;
+      const next = block.nextElementSibling;
+      const a = next && next.matches('.service-crisis') ? next.querySelector('a[href="tel:*4141"]') : null;
+      return a ? Math.round(a.getBoundingClientRect().height) : 0;
+    });
+    const main = document.querySelector('main').textContent.replace(/\s+/g, ' ');
+    return {
+      metas: metas.length, sixAreas: metas.some((m) => /Seis áreas/i.test(m)), fourPillars: metas.every((m) => /cuatro áreas/.test(m)),
+      harm: harm.length, adjacent,
+      stale: [/conocida clínicamente/i, /Flexibilidad con horarios posparto/i, /Individual o madre-bebé/i,
+        /pronóstico favorable/i, /desarrollo perinatal/i, /responde muy bien/i].filter((re) => re.test(main)).map(String),
+      coordination: /Sin costo si requieres coordinación/.test(main),
+    };
+  };
+  for (const [label, w, h] of [['390x844', 390, 844], ['1440x900', 1440, 900]]) {
+    await setViewport(w, h);
+    await navigate('/servicios', 'servicios-p0@' + label);
+    const sp = await evaluate('(' + servProbe.toString() + ')()');
+    check(sp.metas === 3 && !sp.sixAreas && sp.fourPillars, 'P0 meta, og and twitter descriptions name the four current areas');
+    check(sp.harm >= 1 && sp.adjacent.every((px) => px >= 44), 'P0 every self-harm mention is followed by a *4141 route (44px target) ' + JSON.stringify(sp.adjacent));
+    check(sp.stale.length === 0, 'P0 no removed claim remains on /servicios ' + JSON.stringify(sp.stale));
+    check(sp.coordination, 'P0 the approved coordination claim is untouched');
+    await noOverflow();
+    await shot('servicios-p0-' + label);
+  }
+
+  await navigate('/sobre-mi', 'sobre-mi-p0@1440x900');
+  const sm = await evaluate(`(() => {
+    const t = document.querySelector('.timeline').textContent.replace(/\\s+/g, ' ');
+    return { supsal: t.includes('Superintendencia de Salud · Registro 598177'), colegio: t.includes('Colegio de Psicólogos CL · Registro 12.847'),
+      pmhc: /PMH-C|Certified|Postpartum Support International/i.test(document.body.innerHTML), miembro: /Miembro Col\\./.test(t) };
+  })()`);
+  check(sm.supsal && sm.colegio, 'P0 /sobre-mi lists both registrations in the canonical footer wording');
+  check(!sm.pmhc && !sm.miembro, 'P0 /sobre-mi carries no PMH-C / PSI implication and no "Miembro" variant');
+
+  // Analytics: accepted consent on a URL carrying a motivo, a bearer-like key and a fragment.
+  // Measurement hosts are blocked at the network layer; dataLayer is what gtag.js would read.
+  await navigate('/', 'analytics-seed');
+  await evaluate("localStorage.setItem('fb_cookie_consent', 'accepted'); true");
+  await navigate('/reserva?servicio=duelo&token=SYNTHtoken#paso-4', 'analytics-url@reserva');
+  const an = await evaluate(`(() => {
+    const entries = (window.dataLayer || []).map((a) => Array.from(a));
+    const text = JSON.stringify(entries);
+    const configs = entries.filter((e) => e[0] === 'config');
+    return { on: window._fbMeasurementOn === true, leaks: ['?', '#', 'servicio=', 'duelo', 'SYNTH', 'token'].filter((s) => text.includes(s)),
+      configs: configs.length, locations: configs.map((e) => e[2] && e[2].page_location) };
+  })()`);
+  check(an.on && an.configs === 2, 'P0 accepted consent still configures GA4 and Ads (' + an.configs + ')');
+  check(an.leaks.length === 0, 'P0 no query, fragment, motivo or bearer reaches dataLayer ' + JSON.stringify(an.leaks));
+  check(an.locations.every((l) => l === ORIGIN + '/reserva'), 'P0 every config carries page_location = origin + pathname ' + JSON.stringify(an.locations));
+
+  // /manage is probed without a token: with one it calls /api/manage, which this
+  // harness answers 503. Token-bearing /manage URLs are pinned in
+  // scripts/test-analytics-url-privacy.mjs.
+  for (const route of ['/pago-resultado?st=SYNTHst', '/manage']) {
+    await navigate(route, 'analytics-off@' + route.split('?')[0]);
+    const off = await evaluate(`(() => ({
+      on: window._fbMeasurementOn === true,
+      tags: document.querySelectorAll('script[src*="googletagmanager"], script[src*="analytics.js"], script[src*="consent.js"]').length,
+      dataLayer: Array.isArray(window.dataLayer) ? window.dataLayer.length : 0,
+      banner: !!document.getElementById('fb-consent'),
+    }))()`);
+    check(!off.on && off.tags === 0 && off.dataLayer === 0 && !off.banner, 'P0 no measurement initializes on ' + route.split('?')[0] + ' even with accepted consent ' + JSON.stringify(off));
+  }
+  await evaluate("localStorage.setItem('fb_cookie_consent', 'essentials'); true");
 }
 
 // --- Wrap up --------------------------------------------------------------------

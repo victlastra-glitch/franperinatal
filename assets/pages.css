@@ -373,3 +373,22 @@
 }
 .service-deepdive a:hover { color: var(--malva-deep); text-decoration-color: var(--malva-deep); }
 .service-deepdive-note { font-size: 13.5px; color: var(--ink-3); line-height: 1.5; }
+
+/* ---------- Ruta de crisis junto a contenido de malestar ----------
+   Nota callada, no un componente de campaña: tipo de texto, sin caja ni color
+   de alerta. Se pone sólo donde la página nombra pensamientos de hacerse daño
+   (fran-content-claims). El enlace es un objetivo de 44px sin alterar la caja
+   de línea (relleno compensado con margen negativo), como en Home. */
+.service-crisis {
+  margin: 20px 0 0; max-width: 62ch;
+  font-size: 14.5px; color: var(--ink-2); line-height: 1.6;
+}
+.crisis-inline a {
+  color: var(--accent-deep);
+  text-decoration: underline; text-decoration-color: currentColor; text-underline-offset: 3px;
+  display: inline-block; padding: 11px 4px; margin: -11px -4px;
+}
+
+/* Respuestas de /faq con más de un párrafo. */
+.faq-body p { margin: 0; }
+.faq-body p + p { margin-top: 12px; }
