@@ -230,28 +230,41 @@
 }
 
 /* ============================================================
-   HOME — Editorial Clinical Practice V2 (prefijo ev-)
+   HOME — Editorial Clinical Practice V2.1 (prefijo ev-)
    Fotografía como arquitectura, capítulos con aire, Fraunces expresivo e
    Inter funcional. Crema y tinta dominan; el malva es firma: la cursiva
-   del titular. Todo lo de aquí es exclusivo de Home.
+   del titular. Todo lo de aquí es exclusivo de Home (body.ev-page o ev-).
    ============================================================ */
 
 :root {
   --ev-gutter: clamp(20px, 4vw, 48px);
   /* Borde izquierdo del contenido cuando el contenedor ya está centrado. */
   --ev-edge: max(var(--ev-gutter), calc((100vw - var(--container)) / 2 + var(--ev-gutter)));
-  --ev-chapter: clamp(88px, 11vw, 176px);
+  --ev-chapter: clamp(88px, 11vw, 176px);   /* igual que V2: la reducción viene del contenido, no del aire */
 }
+
+/* ---------- Cabecera, sólo en Home ----------
+   Mientras la apertura está a la vista la barra no dibuja filete ni
+   velo: identidad, cuatro rutas y la reserva como enlace. Al bajar,
+   recupera su filete y la acción vuelve a ser el botón persistente. */
+.ev-page .nav.nav--hero-visible { border-bottom-color: transparent; }
+.ev-page .nav.nav--hero-visible::before { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+.ev-page .nav--hero-visible .nav-actions .btn-primary {
+  border-color: transparent; padding-inline: 4px;
+  text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 5px;
+}
+.ev-page .nav--hero-visible .nav-actions .btn-primary:hover { background: transparent; text-decoration-color: var(--ink); }
+.ev-page .nav--hero-visible .nav-actions .btn .arrow { display: none; }
 
 /* ---------- 01 Apertura ---------- */
 .ev-hero {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  min-height: min(calc(100svh - 72px), 900px);
+  min-height: min(calc(100svh - 72px), 860px);
 }
 .ev-hero-copy {
   align-self: center;
-  padding: clamp(56px, 7vw, 120px) clamp(32px, 5vw, 88px) clamp(56px, 7vw, 120px) var(--ev-edge);
+  padding: clamp(56px, 7vw, 112px) clamp(32px, 5vw, 88px) clamp(56px, 7vw, 112px) var(--ev-edge);
 }
 .ev-hero-title {
   font-size: clamp(46px, 4.7vw, 72px);
@@ -275,11 +288,18 @@
   object-fit: cover; object-position: 66% 40%;
 }
 
+/* ---------- Titulares ---------- */
+.ev-h2 {
+  font-size: clamp(34px, 3.8vw, 58px); line-height: 1.08;
+  letter-spacing: -0.026em; text-wrap: balance;
+}
+.ev-h3 { font-size: clamp(22px, 1.9vw, 27px); line-height: 1.2; letter-spacing: -0.015em; }
+
 /* ---------- 02 Reconocimiento ---------- */
 .ev-recognition { padding-block: var(--ev-chapter); }
 .ev-recognition-grid {
   display: grid; grid-template-columns: repeat(12, minmax(0, 1fr));
-  column-gap: 32px; row-gap: clamp(32px, 4vw, 56px);
+  column-gap: 32px; row-gap: clamp(24px, 3vw, 40px);
 }
 .ev-statement {
   grid-column: 2 / span 9;
@@ -289,45 +309,33 @@
 .ev-recognition-text {
   grid-column: 7 / span 5;
   font-size: clamp(17px, 1.3vw, 19px); line-height: 1.65; color: var(--ink-2);
-  max-width: 44ch;
-}
-
-/* ---------- Titulares de capítulo ---------- */
-.ev-h2 {
-  font-size: clamp(34px, 3.8vw, 58px); line-height: 1.08;
-  letter-spacing: -0.026em; text-wrap: balance;
+  max-width: 40ch;
 }
 
 /* ---------- 03 Áreas ---------- */
-.ev-areas { padding-block: 0 var(--ev-chapter); }
+.ev-areas { padding-bottom: var(--ev-chapter); }
 .ev-areas-grid {
   display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
   column-gap: clamp(32px, 7vw, 120px); align-items: start;
 }
 .ev-areas-head { position: sticky; top: 112px; }
-.ev-areas-note {
-  margin-top: 24px; max-width: 30ch;
-  font-size: 16px; line-height: 1.6; color: var(--ink-2);
-}
+.ev-areas-note { margin-top: 24px; max-width: 30ch; font-size: 16px; line-height: 1.6; color: var(--ink-2); }
 .ev-area {
-  padding: clamp(28px, 3vw, 40px) 0 clamp(24px, 2.6vw, 32px);
+  padding: clamp(24px, 2.6vw, 32px) 0 clamp(16px, 1.8vw, 24px);
   border-top: 1px solid var(--line-strong);
 }
+.ev-area:last-child { border-bottom: 1px solid var(--line-strong); }
 .ev-area h3 { font-size: clamp(26px, 2.5vw, 36px); line-height: 1.15; letter-spacing: -0.02em; }
-.ev-area p { margin-top: 14px; max-width: 54ch; font-size: 17px; line-height: 1.6; color: var(--ink-2); }
-.ev-area .ev-area-links { display: flex; flex-wrap: wrap; gap: 0 28px; margin-top: 8px; }
-.ev-areas-more {
-  padding-top: 28px; border-top: 1px solid var(--line-strong);
-  font-size: 16px; line-height: 1.6; color: var(--ink-2); max-width: 56ch;
-}
+.ev-area p { margin-top: 12px; max-width: 54ch; font-size: 17px; line-height: 1.6; color: var(--ink-2); }
+.ev-area .lnk-action { margin-top: 4px; }
 
-/* ---------- 04 Francisca ---------- */
+/* ---------- 04 Francisca + cómo trabajo ---------- */
 .ev-francisca {
   display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
   column-gap: clamp(40px, 7vw, 120px); align-items: center;
   padding-bottom: var(--ev-chapter);
 }
-.ev-francisca-media { margin: 0; aspect-ratio: 4 / 5; max-height: 94svh; overflow: hidden; background: var(--bg-3); }
+.ev-francisca-media { margin: 0; aspect-ratio: 4 / 5; max-height: 92svh; overflow: hidden; background: var(--bg-3); }
 .ev-francisca-media img { width: 100%; height: 100%; object-fit: cover; object-position: 40% 30%; }
 .ev-francisca-body { padding-right: var(--ev-edge); max-width: calc(560px + var(--ev-edge)); }
 .ev-descriptor {
@@ -336,79 +344,54 @@
   text-transform: uppercase; color: var(--ink-2);
 }
 .ev-francisca-lede {
-  margin-top: clamp(28px, 3vw, 40px);
+  margin-top: clamp(24px, 2.6vw, 36px);
   font-family: var(--serif); font-weight: 300;
   font-size: clamp(21px, 1.7vw, 25px); line-height: 1.45; letter-spacing: -0.01em;
   color: var(--ink);
 }
-.ev-francisca-text { margin-top: 20px; font-size: 17px; line-height: 1.65; color: var(--ink-2); }
-.ev-creds { margin: 36px 0 20px; display: grid; gap: 22px; }
-.ev-creds dt { font-size: 14px; font-weight: 500; color: var(--ink); margin-bottom: 6px; }
-.ev-creds dd { margin: 0; font-size: 15px; line-height: 1.6; color: var(--ink-2); }
-
-/* ---------- 05 Enfoque ---------- */
-.ev-approach { padding-bottom: var(--ev-chapter); }
-/* Momento narrativo: una frase de Francisca a escala de capítulo, sin
-   comillas decorativas ni fondo; el aire hace de marco. */
-.ev-quote { margin: 0 0 clamp(64px, 8vw, 128px); padding-left: calc(100% / 12); }
-.ev-quote p {
-  font-family: var(--serif); font-style: italic; font-weight: 300;
-  font-size: clamp(32px, 4.4vw, 68px); line-height: 1.1; letter-spacing: -0.028em;
-  color: var(--ink); max-width: 18ch; text-wrap: balance;
+.ev-francisca-body .ev-h3 { margin-top: clamp(32px, 3.4vw, 48px); }
+.ev-principles { list-style: none; margin: 14px 0 0; padding: 0; }
+.ev-principles li {
+  padding: 12px 0; border-top: 1px solid var(--line);
+  font-size: 16px; line-height: 1.55; color: var(--ink-2);
 }
-.ev-approach-grid {
-  display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
-  column-gap: clamp(32px, 7vw, 120px);
-}
-.ev-principles { display: grid; gap: 28px; }
-.ev-principles p {
-  font-family: var(--serif); font-weight: 300;
-  font-size: clamp(20px, 1.6vw, 24px); line-height: 1.5; letter-spacing: -0.01em;
-  color: var(--ink-2); max-width: 40ch;
-}
-.ev-principles strong { font-weight: 400; color: var(--ink); }
-.ev-principles .ev-models {
-  font-family: var(--sans); font-size: 15px; line-height: 1.6; letter-spacing: 0;
-  padding-top: 24px; border-top: 1px solid var(--line);
+.ev-principles strong { font-weight: 500; color: var(--ink); }
+.ev-creds {
+  margin: 24px 0 8px; padding-top: 16px; border-top: 1px solid var(--line);
+  font-size: 13.5px; line-height: 1.6; color: var(--ink-2); max-width: 52ch;
 }
 
-/* ---------- 06 Lo práctico ---------- */
-/* Hoja de datos: el único cambio de superficie de la página (arena, a
-   sangre), para que la información de decisión se lea como un capítulo
-   aparte y no como otra columna de texto. */
+/* ---------- 05 Antes de reservar (hoja arena) ---------- */
 .ev-practical {
-  padding-block: clamp(72px, 9vw, 136px);
-  margin-bottom: var(--ev-chapter);
+  padding-block: clamp(64px, 7.6vw, 120px);
   background: var(--bg-2);
 }
-.ev-practical .ev-ledger { border-top-color: rgba(35, 31, 28, 0.28); }
-.ev-practical .ev-ledger-row { border-bottom-color: rgba(35, 31, 28, 0.16); }
-.ev-ledger { margin: clamp(36px, 4vw, 56px) 0 0; border-top: 1px solid var(--line-strong); }
+.ev-practical-grid {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  column-gap: clamp(32px, 6vw, 96px); align-items: start;
+  margin-top: clamp(32px, 3.6vw, 52px);
+}
+.ev-ledger { margin: 0; border-top: 1px solid rgba(35, 31, 28, 0.28); }
 .ev-ledger-row {
-  display: grid; grid-template-columns: minmax(120px, 2fr) minmax(0, 4fr) minmax(0, 6fr);
-  column-gap: 32px; align-items: baseline;
-  padding: 22px 0; border-bottom: 1px solid var(--line);
+  display: grid; grid-template-columns: 104px minmax(0, 1fr);
+  column-gap: 24px; row-gap: 4px; align-items: baseline;
+  padding: 18px 0; border-bottom: 1px solid rgba(35, 31, 28, 0.16);
 }
-.ev-ledger dt { font-size: 15px; color: var(--ink-2); }
-.ev-ledger dd { margin: 0; }
-.ev-ledger-v { font-family: var(--serif); font-size: clamp(22px, 2vw, 28px); font-weight: 300; letter-spacing: -0.015em; color: var(--ink); }
-.ev-ledger-n { font-size: 15.5px; line-height: 1.6; color: var(--ink-2); max-width: 52ch; }
-
-/* ---------- 07 Preguntas ---------- */
-.ev-faq { padding-bottom: var(--ev-chapter); }
-.ev-faq-grid {
-  display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
-  column-gap: clamp(32px, 7vw, 120px); align-items: start;
-}
-.ev-faq-head .lnk-action { margin-top: 16px; }
+.ev-ledger dt { font-size: 14.5px; color: var(--ink-2); grid-row: span 2; }
+.ev-ledger dd { margin: 0; grid-column: 2; }
+.ev-ledger-v { font-family: var(--serif); font-size: clamp(21px, 1.8vw, 26px); font-weight: 300; letter-spacing: -0.015em; color: var(--ink); }
+.ev-ledger-n { font-size: 15px; line-height: 1.55; color: var(--ink-2); max-width: 46ch; }
+.ev-practical-faq .faq-list { border-top-color: rgba(35, 31, 28, 0.28); }
+.ev-practical-faq .faq-item { border-bottom-color: rgba(35, 31, 28, 0.16); }
+.ev-faq-more { margin-top: 6px; }
 .ev-guide {
-  margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--line);
-  font-size: 16px; line-height: 1.6; color: var(--ink-2); max-width: 56ch;
+  margin-top: 24px; padding-top: 20px; border-top: 1px solid rgba(35, 31, 28, 0.16);
+  font-size: 15px; line-height: 1.6; color: var(--ink-2);
 }
-.ev-guide-links { display: flex; flex-wrap: wrap; gap: 0 28px; margin-top: 4px; }
+.ev-guide-links { display: flex; flex-wrap: wrap; gap: 0 28px; margin-top: 2px; }
 .warning-note {
-  margin-top: 28px; padding-block: 20px;
-  border-top: 1px solid var(--line);
+  margin-top: 12px; padding-block: 16px 0;
+  border-top: 1px solid rgba(35, 31, 28, 0.16);
   font-size: 14px; line-height: 1.6; color: var(--ink-2);
 }
 .warning-note strong { color: var(--ink); font-weight: 500; }
@@ -419,61 +402,88 @@
   display: inline-block; padding: 11px 4px; margin: -11px -4px;
 }
 
-/* ---------- 08 Cierre ---------- */
+/* ---------- 06 Cierre ---------- */
 .ev-closing {
   display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  min-height: min(84svh, 820px);
-  border-top: 1px solid var(--line);
+  min-height: min(68svh, 640px);
 }
 .ev-closing-copy {
   align-self: center;
   display: flex; flex-direction: column; align-items: flex-start;
-  padding: clamp(88px, 10vw, 160px) clamp(32px, 5vw, 88px) clamp(88px, 10vw, 160px) var(--ev-edge);
+  padding: clamp(72px, 8vw, 128px) clamp(32px, 5vw, 88px) clamp(72px, 8vw, 128px) var(--ev-edge);
 }
+.ev-closing-title {
+  font-size: clamp(40px, 4.6vw, 70px); line-height: 1.04;
+  letter-spacing: -0.03em; max-width: 12ch; text-wrap: balance;
+  margin-bottom: clamp(32px, 3.4vw, 48px);
+}
+.ev-closing-alt { margin-top: 18px; font-size: 15px; color: var(--ink-2); }
 .ev-closing-media { margin: 0; position: relative; overflow: hidden; background: var(--bg-3); }
 .ev-closing-media img {
   position: absolute; inset: 0; width: 100%; height: 100%;
   object-fit: cover; object-position: 50% 34%;
 }
-.ev-closing-title {
-  font-size: clamp(40px, 5vw, 76px); line-height: 1.04;
-  letter-spacing: -0.03em; max-width: 14ch; text-wrap: balance;
-}
-.ev-closing-text { margin: 28px 0 40px; font-size: clamp(17px, 1.3vw, 19px); line-height: 1.6; color: var(--ink-2); max-width: 44ch; }
-.ev-closing-alt { margin-top: 20px; font-size: 15px; color: var(--ink-2); }
 
-/* ============ Dirección de arte: tablet (768–1040) ============
-   No es el desktop apilado: la foto pasa a ser una placa horizontal a
-   sangre sobre el titular, y los capítulos de dos columnas conservan la
-   asimetría con una columna de encabezado más estrecha. */
+/* ---------- Pie editorial de Home ----------
+   Crema, no tinta: la página termina en el mismo papel en que empezó. */
+.ev-footer {
+  border-top: 1px solid var(--line);
+  padding: clamp(40px, 4.4vw, 64px) 0 calc(24px + env(safe-area-inset-bottom));
+  color: var(--ink-2);
+}
+.ev-footer-top {
+  display: grid; grid-template-columns: minmax(0, 4fr) minmax(0, 7fr);
+  column-gap: clamp(32px, 7vw, 120px); align-items: start;
+}
+.ev-footer-brand {
+  font-family: var(--serif); font-size: 22px; font-weight: 400;
+  letter-spacing: -0.018em; color: var(--ink); line-height: 1.2;
+}
+.ev-footer-brand small {
+  display: block; margin-top: 8px;
+  font-family: var(--sans); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2);
+}
+.ev-footer-nav { display: flex; flex-wrap: wrap; gap: 0 28px; }
+.ev-footer-nav a {
+  min-height: 44px; display: inline-flex; align-items: center;
+  font-size: 15px; color: var(--ink);
+}
+.ev-footer-nav a:hover { color: var(--malva-deep); }
+.ev-footer .ev-footer-bottom {
+  margin-top: clamp(28px, 3vw, 44px); padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-2); font-size: 13px; letter-spacing: 0;
+  flex-wrap: wrap; gap: 0 28px; justify-content: flex-start;
+}
+.ev-footer .footer-consent-btn:hover,
+.ev-footer .ev-footer-bottom a:hover { color: var(--ink); }
+.ev-footer a:focus-visible, .ev-footer button:focus-visible { outline-color: var(--focus); }
+
+/* ============ Tablet (768–1040) ============ */
 @media (max-width: 1040px) {
   .ev-hero { grid-template-columns: 1fr; min-height: 0; }
   .ev-hero-media { order: -1; aspect-ratio: 16 / 10; }
   .ev-hero-media img { object-position: 64% 36%; }
-  /* El texto sube sobre el pie de la fotografía en una placa crema: imagen
-     y titular se leen como una sola composición, sin texto sobre la foto. */
+  /* El texto sube sobre el pie de la fotografía en una placa crema. */
   .ev-hero-copy {
     position: relative; margin-top: -120px; width: min(640px, 86%);
     background: var(--bg);
     padding: clamp(40px, 6vw, 56px) clamp(32px, 5vw, 56px) 8px var(--ev-gutter);
   }
   .ev-hero-title { max-width: 13ch; font-size: clamp(42px, 6.8vw, 62px); }
-  .ev-closing { grid-template-columns: 1fr; min-height: 0; }
-  .ev-closing-media { aspect-ratio: 16 / 10; }
-  .ev-closing-copy { padding: clamp(72px, 10vw, 112px) var(--ev-gutter); }
   .ev-statement { grid-column: 1 / -1; }
-  .ev-recognition-text { grid-column: 4 / -1; }
-  .ev-areas-grid, .ev-faq-grid, .ev-approach-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 5fr); column-gap: 40px; }
+  .ev-recognition-text { grid-column: 5 / -1; }
+  .ev-areas-grid, .ev-footer-top { grid-template-columns: minmax(0, 3fr) minmax(0, 5fr); column-gap: 40px; }
   .ev-areas-head { top: 96px; }
   .ev-francisca { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 40px; }
-  .ev-ledger-row { grid-template-columns: minmax(110px, 2fr) minmax(0, 5fr); row-gap: 6px; }
-  .ev-ledger-n { grid-column: 2; }
+  .ev-practical-grid { grid-template-columns: 1fr; row-gap: 40px; }
+  .ev-closing { grid-template-columns: 1fr; min-height: 0; }
+  .ev-closing-media { aspect-ratio: 16 / 9; }
+  .ev-closing-copy { padding: clamp(64px, 9vw, 96px) var(--ev-gutter); }
 }
 
-/* ============ Dirección de arte: mobile (≤767) ============
-   La foto abre a sangre en proporción vertical, el titular llega pronto,
-   los capítulos son una columna con aire y las credenciales quedan en voz
-   baja bajo el retrato. */
+/* ============ Mobile (≤767) ============ */
 @media (max-width: 767px) {
   .ev-hero-media { aspect-ratio: 5 / 4; }
   .ev-hero-media img { object-position: 70% 30%; }
@@ -483,19 +493,19 @@
   .ev-hero-actions { margin-top: 28px; }
   .ev-recognition-grid { display: block; }
   .ev-statement { font-size: clamp(28px, 7.6vw, 34px); }
-  .ev-recognition-text { margin-top: 28px; }
-  .ev-areas-grid, .ev-faq-grid, .ev-approach-grid { grid-template-columns: 1fr; }
-  .ev-areas-head { position: static; margin-bottom: 36px; }
-  .ev-faq-head { margin-bottom: 28px; }
-  .ev-principles { margin-top: 32px; }
+  .ev-recognition-text { margin-top: 24px; }
+  .ev-areas-grid, .ev-footer-top { grid-template-columns: 1fr; }
+  .ev-areas-head { position: static; margin-bottom: 32px; }
   .ev-francisca { grid-template-columns: 1fr; }
   .ev-francisca-media { aspect-ratio: 4 / 5; max-height: none; margin-right: 12vw; }
-  .ev-francisca-body { padding: 40px var(--ev-gutter) 0; max-width: none; }
+  .ev-francisca-body { padding: 36px var(--ev-gutter) 0; max-width: none; }
+  .ev-ledger-row { grid-template-columns: 1fr; }
+  .ev-ledger dt { grid-row: auto; }
+  .ev-ledger dd { grid-column: auto; }
   .ev-closing-media { aspect-ratio: 4 / 3; }
-  .ev-ledger-row { grid-template-columns: 1fr; row-gap: 4px; padding: 18px 0; }
-  .ev-ledger-n { grid-column: auto; }
   .ev-closing-title { font-size: clamp(36px, 9.6vw, 44px); }
-  .ev-quote { padding-left: 0; }
+  .ev-footer-nav { margin-top: 20px; gap: 0 22px; }
+  .ev-footer .ev-footer-bottom { flex-direction: column; align-items: flex-start; gap: 0; }
 }
 @media (max-width: 480px) {
   .ev-hero-actions { flex-direction: column; align-items: stretch; gap: 6px; }
@@ -503,4 +513,5 @@
   .ev-hero-actions .lnk-action { align-self: flex-start; }
   .ev-closing-copy { align-items: stretch; }
   .ev-closing-copy .btn { width: 100%; }
+  .ev-closing-alt { align-self: flex-start; }
 }

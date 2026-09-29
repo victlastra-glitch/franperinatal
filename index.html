@@ -41,7 +41,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,500;1,9..144,300;1,9..144,400&family=Inter:wght@400;500;600&display=swap" />
 
 <link rel="stylesheet" href="assets/styles.css?v=4" />
-<link rel="stylesheet" href="assets/home.css?v=7" />
+<link rel="stylesheet" href="assets/home.css?v=8" />
 
 <!-- JSON-LD: MedicalBusiness virtual -->
 <script type="application/ld+json">
@@ -69,7 +69,7 @@
 }
 </script>
 </head>
-<body>
+<body class="ev-page">
 
 <a class="skip-link" href="#contenido">Saltar al contenido</a>
 
@@ -107,15 +107,14 @@
 <main id="contenido">
 
 <!-- ============================================================
-     HOME — Editorial Clinical Practice V2 (NONPROD, dirección de diseño)
+     HOME — Editorial Clinical Practice V2.1 (NONPROD)
      Toda la redacción nueva de esta página es PROPUESTA y
      REQUIERE VALIDACIÓN PROFESIONAL DE FRANCISCA antes de publicarse.
-     Los datos (valores, duración, registros, formación, políticas) se
-     reproducen desde las fuentes vigentes del sitio.
+     Valores, duración, registros y políticas se reproducen desde las
+     fuentes vigentes del sitio.
      ============================================================ -->
 
-<!-- 01 · Apertura: reconocimiento, especialidad y presencia. La fotografía
-     es arquitectura: ocupa el lado derecho a sangre, sin marco ni sombra. -->
+<!-- 01 · Apertura -->
 <section class="hero ev-hero" aria-labelledby="ev-hero-title">
   <div class="ev-hero-copy">
     <h1 class="ev-hero-title" id="ev-hero-title">Hacer espacio para lo que <em class="ital">también</em> te pasa a ti.</h1>
@@ -130,64 +129,57 @@
     </div>
   </div>
   <figure class="ev-hero-media">
-    <img src="assets/images/francisca/francisca-sobre-mi-web-3.webp" alt="Francisca Bustos M., psicóloga clínica perinatal, sentada en su consulta junto a una ventana con luz natural" width="1448" height="1086" fetchpriority="high" decoding="async" />
+    <img src="assets/images/francisca/francisca-sobre-mi-web-3.webp" srcset="assets/images/francisca/francisca-sobre-mi-web-3-768w.webp 768w, assets/images/francisca/francisca-sobre-mi-web-3-1024w.webp 1024w, assets/images/francisca/francisca-sobre-mi-web-3.webp 1448w" sizes="(max-width: 767px) 110vw, (max-width: 1040px) 100vw, 78vw" alt="Francisca Bustos M., psicóloga clínica perinatal, sentada en su consulta junto a una ventana con luz natural" width="1448" height="1086" fetchpriority="high" decoding="async" />
   </figure>
 </section>
 
-<!-- 02 · Reconocimiento: la visitante se siente entendida antes de leer
-     servicios. Sin acción, sin lista de síntomas. -->
+<!-- 02 · Reconocimiento: una idea, no un catálogo. -->
 <section class="ev-recognition" aria-labelledby="ev-recognition-title">
   <div class="container ev-recognition-grid">
     <h2 class="ev-statement" id="ev-recognition-title">En el embarazo y en el posparto, casi toda la atención se va hacia el bebé. Lo que te pasa a ti suele quedar para después.</h2>
     <p class="ev-recognition-text">
-      El cansancio, la ansiedad, lo que cambió en tu cuerpo, en tu pareja, en tu
-      trabajo o en cómo te reconoces. Lo que no se parece a lo que imaginabas.
-      Y cuando hay una pérdida, un dolor que se nombra poco. Todo eso merece un
-      espacio propio, con alguien que conoce esta etapa.
+      Esta consulta existe para que eso también tenga un lugar, con alguien
+      que conoce esta etapa.
     </p>
   </div>
 </section>
 
-<!-- 03 · Áreas: tres puertas de entrada, entradas editoriales con filete. -->
+<!-- 03 · Áreas: tres puertas de entrada. -->
 <section class="ev-areas" aria-labelledby="ev-areas-title">
   <div class="container ev-areas-grid">
     <div class="ev-areas-head">
       <h2 class="ev-h2" id="ev-areas-title">Lo que acompaño.</h2>
       <p class="ev-areas-note">
-        No necesitas saber cuál es el tuyo antes de consultar: la primera
-        sesión sirve justamente para eso.
+        No hace falta saber cuál es el tuyo antes de consultar.
+        <a href="/servicios" class="lnk-editorial">Ver todas las áreas</a>
       </p>
     </div>
     <div class="ev-areas-list">
       <article class="ev-area">
         <h3>Embarazo</h3>
-        <p>Miedos, preocupaciones que no ceden o una sensación constante de alerta durante la gestación. También el embarazo después de una pérdida.</p>
-        <p class="ev-area-links"><a href="/ansiedad-perinatal" class="lnk-action">Ansiedad perinatal</a></p>
+        <p>Miedos, preocupaciones que no ceden o una sensación constante de alerta. También el embarazo después de una pérdida.</p>
+        <a href="/ansiedad-perinatal" class="lnk-action">Ansiedad perinatal</a>
       </article>
       <article class="ev-area">
         <h3>Posparto y transición a la maternidad</h3>
-        <p>El primer año: el agotamiento, la tristeza que no cede, la desconexión con el bebé o con una misma, y los cambios de identidad, pareja y trabajo que nadie te contó del todo.</p>
-        <p class="ev-area-links"><a href="/depresion-postparto" class="lnk-action">Depresión posparto</a><a href="/servicios#adaptacion" class="lnk-action">Matrescencia</a></p>
+        <p>El primer año, con sus cambios de identidad, de pareja y de rutina, y lo que no se parece a lo que imaginabas.</p>
+        <a href="/depresion-postparto" class="lnk-action">Depresión posparto</a>
       </article>
       <article class="ev-area">
         <h3>Duelo gestacional y perinatal</h3>
         <p>Pérdidas durante el embarazo, al nacer o en los primeros meses de vida. Un dolor que la cultura nombra poco y que necesita espacio propio.</p>
-        <p class="ev-area-links"><a href="/servicios#duelo" class="lnk-action">Duelo perinatal</a></p>
+        <a href="/servicios#duelo" class="lnk-action">Duelo perinatal</a>
       </article>
-      <p class="ev-areas-more">
-        También acompaño el vínculo con el bebé y momentos difíciles sin un
-        diagnóstico específico. <a href="/servicios" class="lnk-editorial">Ver todas las áreas</a>
-      </p>
     </div>
   </div>
 </section>
 
-<!-- 04 · Francisca: segunda fotografía grande, a sangre por la izquierda.
-     Credenciales como hechos, en voz baja. -->
+<!-- 04 · Francisca + cómo trabaja: un solo capítulo. El retrato es el
+     activo de confianza; las credenciales, una línea de evidencia. -->
 <section class="ev-francisca" id="francisca" aria-labelledby="ev-francisca-title">
   <figure class="ev-francisca-media">
     <picture>
-      <source type="image/webp" srcset="assets/images/francisca/francisca-sobre-mi-web-4-600w.webp 600w, assets/images/francisca/francisca-sobre-mi-web-4-900w.webp 900w, assets/images/francisca/francisca-sobre-mi-web-4-1122w.webp 1122w" sizes="(max-width: 767px) 100vw, 46vw" />
+      <source type="image/webp" srcset="assets/images/francisca/francisca-sobre-mi-web-4-600w.webp 600w, assets/images/francisca/francisca-sobre-mi-web-4-900w.webp 900w, assets/images/francisca/francisca-sobre-mi-web-4-1122w.webp 1122w" sizes="(max-width: 767px) 88vw, 46vw" />
       <img src="assets/images/francisca/francisca-sobre-mi-web-4-900w.webp" alt="Retrato de Francisca Bustos M. sentada en un sofá, junto a una ventana" width="900" height="1124" loading="lazy" decoding="async" />
     </picture>
   </figure>
@@ -195,173 +187,109 @@
     <h2 class="ev-h2" id="ev-francisca-title">Francisca Bustos M.</h2>
     <p class="ev-descriptor">Psicóloga Clínica · Perinatal</p>
     <p class="ev-francisca-lede">
-      Acompaño a mujeres mientras la maternidad cambia la identidad, el cuerpo,
+      Acompaño a mujeres mientras la maternidad transforma la identidad, el cuerpo,
       los vínculos y la relación con el mundo, incluyendo historias personales
       antiguas que muchas veces no estaban nombradas.
     </p>
-    <p class="ev-francisca-text">
-      Mi trabajo consiste en ofrecerte un espacio clínico donde eso que está
-      ocurriendo pueda pensarse y decirse, a tu ritmo y con el cuidado que merece.
+    <h3 class="ev-h3" id="como-trabajo">Cómo trabajo</h3>
+    <ul class="ev-principles">
+      <li><strong>Sin prisa.</strong> Las sesiones respetan el tiempo que cada historia necesita.</li>
+      <li><strong>Libre de juicio.</strong> No hay una única forma "correcta" de vivir la maternidad.</li>
+      <li><strong>Colaborativo.</strong> El proceso clínico se construye contigo, y coordino con tu equipo de salud cuando corresponde.</li>
+    </ul>
+    <p class="ev-creds">
+      Experto Universitario en Salud Mental Reproductiva y Perinatal, Universidad de Zaragoza.
+      Superintendencia de Salud · Registro 598177. Colegio de Psicólogos CL · Registro 12.847.
     </p>
-    <dl class="ev-creds">
-      <div>
-        <dt>Formación</dt>
-        <dd>Psicóloga, Universidad del Desarrollo</dd>
-        <dd>Experto Universitario en Salud Mental Reproductiva y Perinatal, Universidad de Zaragoza</dd>
-        <dd>Diplomado en Psicoterapia Perinatal, Universidad de los Andes</dd>
-      </div>
-      <div>
-        <dt>Registro</dt>
-        <dd>Superintendencia de Salud · Registro 598177</dd>
-        <dd>Colegio de Psicólogos de Chile · Registro 12.847</dd>
-      </div>
-    </dl>
     <a href="/sobre-mi" class="lnk-action">Conocer mi trayectoria</a>
   </div>
 </section>
 
-<!-- 05 · Enfoque: cómo se siente la terapia antes que la lista de modelos.
-     Sin fotografía aquí: el retrato de Francisca queda justo encima. -->
-<section class="ev-approach" aria-labelledby="ev-approach-title">
-  <div class="container">
-    <blockquote class="ev-quote"><p>“Escuchar sin apuro es la primera intervención clínica.”</p></blockquote>
-  </div>
-  <div class="container ev-approach-grid">
-    <h2 class="ev-h2" id="ev-approach-title">Cómo trabajo.</h2>
-    <div class="ev-principles">
-      <p><strong>Sin prisa.</strong> Cada sesión respeta el tiempo que tu historia necesita, sin atajos ni recetas.</p>
-      <p><strong>Sin juicio.</strong> No hay una única forma correcta de vivir la maternidad. Puedes hablar con honestidad, incluso de lo que cuesta decir.</p>
-      <p><strong>Contigo.</strong> El proceso se construye en conjunto, con transparencia sobre objetivos, enfoque y tiempos, y en coordinación con tu equipo de salud cuando corresponde.</p>
-      <p class="ev-models">Integro enfoques cognitivo-conductual, sistémico y específicos en salud mental perinatal.</p>
-    </div>
-  </div>
-</section>
-
-<!-- 06 · Lo práctico: la información de decisión, como libro mayor
-     editorial. Valores desde SESSION_DURATION_MINUTES y el catálogo CLP 50000;
+<!-- 05 · Antes de reservar: datos de decisión y tres dudas, en una hoja.
+     Valores desde SESSION_DURATION_MINUTES y el catálogo CLP 50000;
      cancelación desde la política vigente de 24 horas. -->
 <section class="ev-practical" id="empezar" aria-labelledby="ev-practical-title">
   <div class="container">
     <h2 class="ev-h2" id="ev-practical-title">Antes de reservar.</h2>
-    <dl class="ev-ledger">
-      <div class="ev-ledger-row"><dt>Modalidad</dt><dd class="ev-ledger-v">Online</dd><dd class="ev-ledger-n">Por videollamada, para personas en Chile.</dd></div>
-      <div class="ev-ledger-row"><dt>Duración</dt><dd class="ev-ledger-v">50 minutos</dd><dd class="ev-ledger-n">La primera sesión y las de seguimiento.</dd></div>
-      <div class="ev-ledger-row"><dt>Valor</dt><dd class="ev-ledger-v">$50.000</dd><dd class="ev-ledger-n">Por sesión. Boleta para reembolso parcial de isapre, según tu plan.</dd></div>
-      <div class="ev-ledger-row"><dt>Frecuencia</dt><dd class="ev-ledger-v">Semanal o quincenal</dd><dd class="ev-ledger-n">A convenir contigo después de la primera sesión.</dd></div>
-      <div class="ev-ledger-row"><dt>Reserva</dt><dd class="ev-ledger-v">En línea</dd><dd class="ev-ledger-n">Eliges día y hora en el calendario y pagas online. Tu hora queda confirmada una vez aprobado el pago.</dd></div>
-      <div class="ev-ledger-row"><dt>Cambios</dt><dd class="ev-ledger-v">Hasta 24 horas antes</dd><dd class="ev-ledger-n">Puedes reagendar o cancelar sin costo con al menos 24 horas de anticipación.</dd></div>
-    </dl>
-  </div>
-</section>
+    <div class="ev-practical-grid">
+      <dl class="ev-ledger">
+        <div class="ev-ledger-row"><dt>Modalidad</dt><dd class="ev-ledger-v">Online</dd><dd class="ev-ledger-n">Por videollamada, para personas en Chile.</dd></div>
+        <div class="ev-ledger-row"><dt>Sesión</dt><dd class="ev-ledger-v">50 minutos · $50.000</dd><dd class="ev-ledger-n">Boleta para reembolso parcial de isapre según tu plan.</dd></div>
+        <div class="ev-ledger-row"><dt>Reserva</dt><dd class="ev-ledger-v">En línea</dd><dd class="ev-ledger-n">El pago se realiza online por Flow al finalizar la reserva. Tu hora queda confirmada una vez aprobado el pago.</dd></div>
+        <div class="ev-ledger-row"><dt>Cambios</dt><dd class="ev-ledger-v">Hasta 24 horas antes</dd><dd class="ev-ledger-n">Puedes reagendar o cancelar tu sesión sin costo con al menos 24 horas de anticipación.</dd></div>
+      </dl>
+      <div class="ev-practical-faq">
+        <div class="faq-list">
+          <details class="faq-item">
+            <summary>¿Qué pasa en la primera sesión?</summary>
+            <div class="faq-body">La primera sesión dura 50 minutos. Conversamos ampliamente sobre qué te trae, tu historia, la etapa en la que estás y cómo te sientes. Al final, te planteo una propuesta de trabajo: enfoque, frecuencia, objetivos. Decides con calma si quieres continuar.</div>
+          </details>
+          <details class="faq-item">
+            <summary>¿Necesito un diagnóstico previo para consultar?</summary>
+            <div class="faq-body">No. Muchas mujeres consultan sin un diagnóstico formal. La primera sesión incluye una evaluación clínica cuidada donde vemos juntas qué está ocurriendo y si corresponde o no hablar de un cuadro específico.</div>
+          </details>
+          <details class="faq-item">
+            <summary>¿Puedo tener a mi bebé cerca durante la sesión online?</summary>
+            <div class="faq-body">Sí. Puedes organizar tu espacio de la forma que te resulte más cómoda y segura para ti y tu bebé.</div>
+          </details>
+        </div>
+        <p class="ev-faq-more"><a href="/faq" class="lnk-action">Todas las preguntas</a></p>
 
-<!-- 07 · Preguntas: sólo las que cambian una decisión. Respuestas vigentes de /faq. -->
-<section class="ev-faq" aria-labelledby="ev-faq-title">
-  <div class="container ev-faq-grid">
-    <div class="ev-faq-head">
-      <h2 class="ev-h2" id="ev-faq-title">Preguntas antes de empezar.</h2>
-      <a href="/faq" class="lnk-action">Todas las preguntas</a>
-    </div>
-    <div>
-      <div class="faq-list">
-        <details class="faq-item">
-          <summary>¿Qué pasa en la primera sesión?</summary>
-          <div class="faq-body">La primera sesión dura 50 minutos. Conversamos ampliamente sobre qué te trae, tu historia, la etapa en la que estás y cómo te sientes. Al final, te planteo una propuesta de trabajo: enfoque, frecuencia, objetivos. Decides con calma si quieres continuar.</div>
-        </details>
-        <details class="faq-item">
-          <summary>¿Necesito un diagnóstico previo para consultar?</summary>
-          <div class="faq-body">No. Muchas mujeres consultan sin un diagnóstico formal. La primera sesión incluye una evaluación clínica cuidada donde vemos juntas qué está ocurriendo y si corresponde o no hablar de un cuadro específico.</div>
-        </details>
-        <details class="faq-item">
-          <summary>¿Puedo tener a mi bebé cerca durante la sesión online?</summary>
-          <div class="faq-body">Sí. Puedes organizar tu espacio de la forma que te resulte más cómoda y segura para ti y tu bebé.</div>
-        </details>
-        <details class="faq-item">
-          <summary>¿Qué tan confidencial es lo que conversamos?</summary>
-          <div class="faq-body">Absolutamente confidencial. La información clínica está protegida por el secreto profesional de mi colegiatura y por la ley. Solo se comparte información si tú lo autorizas por escrito, o en los casos excepcionales que la ley exige (riesgo vital inminente).</div>
-        </details>
+        <!-- La guía se lee directamente en el sitio: /guia/10-senales (y su PDF).
+             No se pide correo, no se promete un envío y no hay llamada a
+             /api/leadmagnet. -->
+        <aside class="leadmag ev-guide" aria-label="Guía gratuita">
+          <p>Guía gratuita: <em class="ital">10 señales de que necesitas apoyo en el posparto</em>. Lectura libre, sin correo y sin registro.</p>
+          <p class="ev-guide-links">
+            <a class="lnk-action" href="/guia/10-senales">Leer la guía</a>
+            <a class="lnk-action" href="/guia/10-senales.pdf" target="_blank" rel="noopener">Descargar el PDF</a>
+          </p>
+        </aside>
+
+        <p class="warning-note">
+          <strong>Importante.</strong> Si estás en crisis o con pensamientos de hacerte daño, llama a
+          <a href="tel:*4141">*4141</a> (Línea de Prevención del Suicidio) o acude al servicio de urgencia más cercano.
+        </p>
       </div>
-
-      <!-- La guía se lee directamente en el sitio: /guia/10-senales (y su PDF).
-           No se pide correo, no se promete un envío y no hay llamada a
-           /api/leadmagnet. -->
-      <aside class="leadmag ev-guide" aria-label="Guía gratuita">
-        <p>
-          ¿Te preguntas si lo que sientes en el posparto pide ayuda? La guía
-          <em class="ital">10 señales</em> se lee aquí mismo, sin correo y sin registro.
-        </p>
-        <p class="ev-guide-links">
-          <a class="lnk-action" href="/guia/10-senales">Leer la guía</a>
-          <a class="lnk-action" href="/guia/10-senales.pdf" target="_blank" rel="noopener">Descargar el PDF</a>
-        </p>
-      </aside>
-
-      <p class="warning-note">
-        <strong>Importante.</strong> Si estás en crisis o con pensamientos de hacerte daño, llama a
-        <a href="tel:*4141">*4141</a> (Línea de Prevención del Suicidio) o acude al servicio de urgencia más cercano.
-      </p>
     </div>
   </div>
 </section>
 
-<!-- 08 · Cierre: una invitación y una sola acción. La tercera fotografía
-     cierra la página como la primera la abrió: a sangre por la derecha. -->
+<!-- 06 · Cierre: una invitación, una acción. La tercera fotografía cierra
+     la página como la primera la abrió. -->
 <section class="ev-closing" aria-labelledby="ev-closing-title">
   <div class="ev-closing-copy">
     <h2 class="ev-closing-title" id="ev-closing-title">Si algo de esto te resonó, conversemos.</h2>
-    <p class="ev-closing-text">Una primera sesión basta para saber si este es el espacio que buscas.</p>
     <a href="/reserva" class="btn btn-primary btn-lg">Reservar sesión <span class="arrow" aria-hidden="true">→</span></a>
-    <p class="ev-closing-alt">¿Prefieres escribir antes? <a href="/contacto" class="lnk-editorial">Escríbeme</a></p>
+    <p class="ev-closing-alt">¿Prefieres escribir antes? <a href="/contacto" class="lnk-editorial">Contacto</a></p>
   </div>
   <figure class="ev-closing-media">
     <picture>
-      <source type="image/webp" srcset="assets/images/francisca/francisca-hero-web-1-768w.webp 768w, assets/images/francisca/francisca-hero-web-1-1024w.webp 1024w, assets/images/francisca/francisca-hero-web-1-1448w.webp 1448w" sizes="(max-width: 1040px) 100vw, 50vw" />
+      <source type="image/webp" srcset="assets/images/francisca/francisca-hero-web-1-768w.webp 768w, assets/images/francisca/francisca-hero-web-1-1024w.webp 1024w, assets/images/francisca/francisca-hero-web-1-1448w.webp 1448w" sizes="(max-width: 1040px) 100vw, 62vw" />
       <img src="assets/images/francisca/francisca-hero-web-1-1024w.webp" alt="Francisca Bustos M. en el sillón de su espacio de consulta" width="1024" height="768" loading="lazy" decoding="async" />
     </picture>
   </figure>
 </section>
 
-<!-- =================== FOOTER =================== -->
 </main>
 
-<footer class="footer">
+<!-- Pie editorial de Home (NONPROD V2.1): crema sobre crema, una línea de
+     identidad, rutas y cierre legal. Las demás páginas conservan su pie. -->
+<footer class="ev-footer">
   <div class="container">
-    <div class="footer-grid">
-      <div>
-        <div class="footer-brand-name">Francisca Bustos M.</div>
-        <p class="footer-brand-desc">
-          Psicología clínica especializada en salud mental perinatal: embarazo,
-          posparto y matrescencia, y duelo gestacional y perinatal.
-        </p>
-      </div>
-      <nav class="footer-col" aria-labelledby="ft-seguir">
-        <p class="footer-col-title" id="ft-seguir">Continuar</p>
-        <ul>
-          <li><a href="/sobre-mi">Sobre mí</a></li>
-          <li><a href="/servicios">Servicios</a></li>
-          <li><a href="/blog">Blog</a></li>
-          <li><a href="/faq">Preguntas</a></li>
-          <li><a href="/recursos/test-edimburgo">Test de Edimburgo</a></li>
-          <li><a href="/guia/10-senales">Guía 10 señales</a></li>
-        </ul>
+    <div class="ev-footer-top">
+      <p class="ev-footer-brand">Francisca Bustos M.<small>Psicóloga Clínica · Perinatal</small></p>
+      <nav class="ev-footer-nav" aria-label="Pie de página">
+        <a href="/sobre-mi">Sobre mí</a>
+        <a href="/servicios">Servicios</a>
+        <a href="/blog">Blog</a>
+        <a href="/faq">Preguntas</a>
+        <a href="/recursos/test-edimburgo">Test de Edimburgo</a>
+        <a href="/contacto">Contacto</a>
+        <a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a>
       </nav>
-      <div class="footer-col">
-        <p class="footer-col-title" id="ft-contacto">Contacto</p>
-        <ul aria-labelledby="ft-contacto">
-          <li><a href="mailto:hola@franciscabustos.cl">hola@franciscabustos.cl</a></li>
-          <li><a href="/contacto">Formulario de contacto</a></li>
-          <li>Atención online por videollamada</li>
-        </ul>
-      </div>
-      <div class="footer-col">
-        <p class="footer-col-title" id="ft-respaldo">Respaldo</p>
-        <ul class="footer-creds" aria-labelledby="ft-respaldo">
-          <li><span class="cred-name">Univ. Zaragoza</span></li>
-          <li><span class="cred-name">Superintendencia de Salud</span><span class="cred-reg">Registro 598177</span></li>
-          <li><span class="cred-name">Colegio de Psicólogos CL</span><span class="cred-reg">Registro 12.847</span></li>
-        </ul>
-      </div>
     </div>
-    <div class="footer-bottom">
+    <div class="footer-bottom ev-footer-bottom">
       <small>© <span id="yr">2026</span> Francisca Bustos M.</small>
       <small>Consulta confidencial · Secreto profesional</small>
       <small><a href="/privacidad">Aviso de privacidad</a></small>
