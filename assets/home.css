@@ -452,6 +452,11 @@
   .hm-row-link { grid-column: 2; justify-self: start; }
   .hm-closing-inner { grid-template-columns: 1fr; align-items: start; }
 }
+/* Tablet: el retrato, más angosto que el contenedor, se centra en vez de
+   quedar pegado a la izquierda con un vacío a su derecha. */
+@media (min-width: 768px) and (max-width: 900px) {
+  .hm-hero-portrait { justify-self: center; }
+}
 @media (max-width: 767px) {
   .hm-creds-grid { grid-template-columns: 1fr; }
   .hm-creds .cred-row { gap: 14px; }
