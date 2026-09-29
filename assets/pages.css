@@ -230,6 +230,15 @@
   width: 14px; height: 1px; background: currentColor; opacity: 0.6;
 }
 
+/* ---------- Páginas de profundización: retrato + introducción clínica ----------
+   /ansiedad-perinatal y /depresion-postparto abren con el texto clínico y el
+   retrato existente, sin ficha de precios en la primera vista. */
+.deep-hero-grid {
+  display: grid; grid-template-columns: 1.15fr 0.85fr;
+  gap: clamp(32px, 5vw, 80px); align-items: center;
+}
+.deep-hero .about-main-portrait { max-width: 520px; }
+
 /* ---------- FAQ page ---------- */
 .faq-page-grid {
   display: grid; grid-template-columns: minmax(180px, 0.5fr) minmax(0, 2fr);
@@ -253,6 +262,10 @@
   padding-top: clamp(36px, 3.4vw, 48px);
 }
 .faq-section:first-child h2 { padding-top: 0; }
+/* En /faq la columna de respuestas mide ~860px en escritorio; el 62ch
+   compartido con Home dejaba el texto en ~550px. 760px conserva una línea
+   legible y deja la cruz alineada con la pregunta. */
+.faq-page-grid .faq-body { max-width: 760px; }
 
 /* ---------- Contact page ---------- */
 .contact-grid {
@@ -290,6 +303,7 @@
 /* ---------- Responsive ---------- */
 @media (max-width: 1040px) {
   .about-intro-grid { grid-template-columns: 1fr; }
+  .deep-hero-grid { grid-template-columns: 1fr; }
   .about-main-portrait .hero-portrait-frame { max-width: 420px; }
   .formation-grid { grid-template-columns: 1fr; }
   .principles-grid { grid-template-columns: 1fr; }

@@ -677,7 +677,8 @@ for (const [label, w, h] of VIEWPORTS) {
     h2: [...document.querySelectorAll('section.service-block h2')].map((h) => h.textContent.trim()),
     deep: [...document.querySelectorAll('.service-deepdive a')].map((a) => a.getAttribute('href')),
     anchors: ['ansiedad', 'depresion', 'adaptacion', 'duelo', 'vinculo', 'acompanamiento'].filter((id) => !document.getElementById(id)),
-    // The approved coordination claim: only under its own label, next to the explicit price.
+    // The coordination row (and the "Sesión inicial" row beside it) was removed at
+    // Francisca's request (2026-09-29); these probes now guard against its return.
     coord: (() => {
       const hits = [...document.querySelectorAll('main *')].filter((el) => el.children.length === 0 && /Sin costo si requieres coordinación/.test(el.textContent));
       return hits.map((dd) => {
@@ -694,8 +695,8 @@ for (const [label, w, h] of VIEWPORTS) {
   check(JSON.stringify(sv.subs) === JSON.stringify([['vinculo', 'depresion', 1, 0], ['acompanamiento', 'adaptacion', 1, 0]]), 'V4.1 vínculo sits under posparto, acompañamiento under matrescencia, one heading step down, no filled CTA ' + JSON.stringify(sv.subs));
   check(sv.anchors.length === 0, 'V4.1 every pre-existing /servicios anchor still resolves ' + JSON.stringify(sv.anchors));
   check(JSON.stringify(sv.deep) === JSON.stringify(['/ansiedad-perinatal', '/depresion-postparto']), 'V4.1 both deep pages stay linked ' + JSON.stringify(sv.deep));
-  check(sv.coord.length === 1 && sv.coord[0].tag === 'DD' && sv.coord[0].label === 'Coordinación con equipo de salud' && sv.coord[0].section === 'duelo' && sv.coord[0].price,
-    'V4.1 the coordination claim is restored once, labelled as coordination, beside the explicit $50.000 ' + JSON.stringify(sv.coord));
+  check(sv.coord.length === 0,
+    'The removed coordination claim does not reappear on /servicios ' + JSON.stringify(sv.coord));
 
   await navigate('/contacto', 'contacto-v41@1440x900');
   const ct = await evaluate(`(() => {
@@ -888,7 +889,7 @@ for (const route of ['/', '/servicios', '/contacto', '/reserva']) {
     check(sp.metas === 3 && !sp.sixAreas && sp.fourPillars, 'P0 meta, og and twitter descriptions name the four current areas');
     check(sp.harm >= 1 && sp.adjacent.every((px) => px >= 44), 'P0 every self-harm mention is followed by a *4141 route (44px target) ' + JSON.stringify(sp.adjacent));
     check(sp.stale.length === 0, 'P0 no removed claim remains on /servicios ' + JSON.stringify(sp.stale));
-    check(sp.coordination, 'P0 the approved coordination claim is untouched');
+    check(!sp.coordination, 'The removed coordination claim stays absent');
     await noOverflow();
     await shot('servicios-p0-' + label);
   }
