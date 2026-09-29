@@ -108,6 +108,11 @@
 /* ---------- Service block ---------- */
 .service-block {
   padding-block: calc(var(--section-gap) * 1.15);
+  /* Destino de /servicios#<área>: el salto se detiene bajo la barra fija
+     (.nav-inner mide 72px; 64px en ≤640). El aire lo pone el propio
+     padding superior del bloque. Sin esto el rótulo y el h2 quedaban
+     tapados por la barra. */
+  scroll-margin-top: 72px;
 }
 .service-grid {
   display: grid; grid-template-columns: 1fr 2.3fr;
