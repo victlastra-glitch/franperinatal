@@ -225,7 +225,8 @@ try {
   // Ordinary site traffic must never reach the Function.
   const staticPaths = ['/', '/index.html', '/reserva.html', '/reserva', '/assets/booking.js', '/assets/styles.css',
     '/assets/booking.css', '/assets/francisca-hero-1200.webp', '/servicios', '/sobre-mi', '/faq', '/contacto',
-    '/blog', '/blog/sintomas-depresion-postparto', '/guia/10-senales', '/recursos/test-edimburgo',
+    '/blog', '/blog/sintomas-depresion-postparto', '/guia/10-senales', '/guia/acompanar-posparto',
+    '/guia/acompanar-posparto.html', '/recursos/test-edimburgo',
     '/manage', '/manage.html', '/pago', '/pago.html', '/pago-resultado.html', '/privacidad',
     '/sitemap.xml', '/robots.txt', '/favicon.ico'];
   for (const pathname of staticPaths) {
@@ -242,6 +243,30 @@ try {
   assert.ok(workerSource.includes("url.hostname === 'www.franciscabustos.cl'"),
     'and the Worker keeps its own copy for the routes it still sees');
   console.log('WWW_CANONICAL_REDIRECT=BOTH_LAYERS');
+
+  // /guia/acompanar-posparto is the URL the Instagram DM hands out: one clean
+  // canonical, its .html twin 301s to it, and nothing points the clean URL
+  // anywhere else (no loop). Both ends stay static.
+  const ruleFor = (text, source) => text.split('\n').map((line) => line.trim().split(/\s+/))
+    .find(([from]) => from === source);
+  const guideRule = (text) => {
+    const rule = ruleFor(text, '/guia/acompanar-posparto.html');
+    return Boolean(rule) && rule[1] === '/guia/acompanar-posparto' && rule[2] === '301'
+      && !ruleFor(text, '/guia/acompanar-posparto');
+  };
+  assert.ok(guideRule(redirects), '_redirects must 301 /guia/acompanar-posparto.html to the clean URL, with no loop');
+  assert.ok(!invokesFunction('/guia/acompanar-posparto') && !invokesFunction('/guia/acompanar-posparto.html'),
+    'both ends of the guide redirect are served statically');
+  const guideHtml = await readFile(new URL('../guia/acompanar-posparto.html', import.meta.url), 'utf8');
+  assert.match(guideHtml, /<link rel="canonical" href="https:\/\/franciscabustos\.cl\/guia\/acompanar-posparto" \/>/,
+    'the guide declares the clean URL as canonical');
+  assert.ok(!guideRule(redirects.replace('/guia/acompanar-posparto.html /guia/acompanar-posparto 301\n', '')),
+    'MUTATION_DROP_GUIDE_REDIRECT: removing the rule really is detected');
+  assert.ok(!guideRule(redirects + '/guia/acompanar-posparto /guia/acompanar-posparto.html 301\n'),
+    'MUTATION_GUIDE_REDIRECT_LOOP: a rule sending the clean URL back really is detected');
+  console.log('GUIDE_HTML_REDIRECT=301_TO_CLEAN_CANONICAL');
+  console.log('MUTATION_DROP_GUIDE_REDIRECT=DETECTED');
+  console.log('MUTATION_GUIDE_REDIRECT_LOOP=DETECTED');
 
   // Adversarial mutations: each assertion above must be able to fail.
   const mutate = (manifest) => {
